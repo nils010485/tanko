@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+    --color-accent: #f97316;
+    --color-accent-soft: #fb923c;
+    --color-canvas: #09090b;
+    --color-surface: #18181b;
+    --color-line: #27272a;
+    --color-fg: #f4f4f5;
+    --color-muted: #a1a1aa;
+    --color-faint: #71717a;
+}
+
+:root {
+    color-scheme: dark;
+}
+
+body {
+    @apply bg-canvas text-fg antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+}
+
+/* subtle, dark scrollbars */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #3f3f46 transparent;
+}
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::selection {
+    background: rgba(249, 115, 22, 0.35);
+}
+
+/* consistent focus rings */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 2px solid rgba(249, 115, 22, 0.6);
+    outline-offset: 1px;
+}

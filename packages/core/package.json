@@ -1,0 +1,30 @@
+{
+  "name": "@tanko/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tanko/shared": "*",
+    "crypto-js": "^4.2.0",
+    "jszip": "^3.10.1",
+    "linkedom": "^0.18.5",
+    "protobufjs": "^7.4.0",
+    "puppeteer-core": "^25.8.0",
+    "tough-cookie": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

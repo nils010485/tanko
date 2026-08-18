@@ -1,0 +1,21 @@
+{
+  "name": "tanko",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/shared",
+    "packages/core",
+    "packages/server",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "build": "npm run build -w @tanko/shared -w @tanko/core -w @tanko/server -w @tanko/dashboard",
+    "dev": "npm run dev -w @tanko/server",
+    "start": "node packages/server/dist/index.js",
+    "test": "npm run test -w @tanko/server --if-present"
+  }
+}

@@ -1,0 +1,182 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { Database } from '../src/db.js';
+import { EventBus } from '../src/ws.js';
+import { DownloadQueue } from '../src/downloader/queue.js';
+
+// A tiny 1x1 PNG served by a local HTTP server stands in for a real source.
+const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64'
+);
+
+let server: http.Server;
+let baseUrl: string;
+let tmpDir: string;
+let database: Database;
+let queue: DownloadQueue;
+
+const fakeSource = {
+    id: 'test-source',
+    label: 'Test Source',
+    tags: ['test'],
+    kind: 'native',
+    url: undefined,
+    initialize: async () => undefined,
+    searchMangas: async () => [],
+    getChapters: async () => [],
+    getPages: async () => [`${baseUrl}/page1.png`, `${baseUrl}/page2.png`, `${baseUrl}/page3.png`],
+    checkHealth: async () => ({ ok: true, latencyMs: 1 })
+};
+
+const fakeRegistry: any = {
+    get: async (id: string) => (id === 'test-source' ? fakeSource : undefined),
+    list: async () => [fakeSource]
+};
+
+function waitForJob(jobId: number, statuses: string[], timeoutMs = 20000): Promise<any> {
+    const startedAt = Date.now();
+    return new Promise((resolve, reject) => {
+        const timer = setInterval(() => {
+            const row = database.db.prepare('SELECT * FROM download_jobs WHERE id = ?').get(jobId) as any;
+            if (row && statuses.includes(row.status)) {
+                clearInterval(timer);
+                resolve(row);
+            } else if (Date.now() - startedAt > timeoutMs) {
+                clearInterval(timer);
+                reject(new Error(`Job ${jobId} did not reach ${statuses.join('|')} in time (status: ${row?.status})`));
+            }
+        }, 200);
+    });
+}
+
+beforeAll(async () => {
+    server = http.createServer((_, response) => {
+        response.writeHead(200, { 'Content-Type': 'image/png' });
+        response.end(PNG);
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as any).port}`;
+
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-test-'));
+    database = new Database(tmpDir);
+    queue = new DownloadQueue({
+        db: database,
+        registry: fakeRegistry,
+        events: new EventBus(),
+        settings: {
+            dataDirectory: path.join(tmpDir, 'downloads'),
+            chapterFormat: 'img',
+            concurrency: 2,
+            throttleMs: 10
+        }
+    });
+});
+
+afterAll(async () => {
+    queue.stop();
+    database.close();
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+describe('DownloadQueue', () => {
+    it('downloads a chapter and marks it completed', async () => {
+        const { added } = queue.enqueue([{
+            sourceId: 'test-source',
+            mangaId: 'manga-1',
+            mangaTitle: 'Test Manga',
+            chapterId: 'chapter-1',
+            chapterTitle: 'Chapter 1'
+        }]);
+        expect(added).toBe(1);
+
+        const row = await waitForJob(1, ['completed']);
+        expect(row.pages_total).toBe(3);
+        expect(row.pages_done).toBe(3);
+
+        const directory = path.join(tmpDir, 'downloads', 'Test Source', 'Test Manga', 'Chapter 1');
+        const files = fs.readdirSync(directory).sort();
+        expect(files).toEqual(['1.png', '2.png', '3.png']);
+    });
+
+    it('deduplicates identical chapters', () => {
+        const result = queue.enqueue([{
+            sourceId: 'test-source',
+            mangaId: 'manga-1',
+            mangaTitle: 'Test Manga',
+            chapterId: 'chapter-1',
+            chapterTitle: 'Chapter 1'
+        }]);
+        expect(result.added).toBe(0);
+        expect(result.skipped).toBe(1);
+    });
+
+    it('fails cleanly for an unknown source', async () => {
+        queue.enqueue([{
+            sourceId: 'missing-source',
+            mangaId: 'manga-x',
+            mangaTitle: 'Ghost',
+            chapterId: 'chapter-x',
+            chapterTitle: 'Chapter X'
+        }]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE source_id = ?').all('missing-source') as any[];
+        const row = await waitForJob(rows[0].id, ['failed']);
+        expect(row.error).toContain('not found');
+    });
+
+    it('requeues failed jobs via enqueue', async () => {
+        queue.pause();
+        const before = database.db.prepare('SELECT status FROM download_jobs WHERE source_id = ?').get('missing-source') as any;
+        expect(before.status).toBe('failed');
+        const result = queue.enqueue([{
+            sourceId: 'missing-source',
+            mangaId: 'manga-x',
+            mangaTitle: 'Ghost',
+            chapterId: 'chapter-x',
+            chapterTitle: 'Chapter X'
+        }]);
+        expect(result.retried).toBe(1);
+        const after = database.db.prepare('SELECT status FROM download_jobs WHERE source_id = ?').get('missing-source') as any;
+        expect(after.status).toBe('queued');
+        queue.resume();
+    });
+
+    it('cancels a queued job', async () => {
+        queue.pause();
+        queue.enqueue([{
+            sourceId: 'test-source',
+            mangaId: 'manga-1',
+            mangaTitle: 'Test Manga',
+            chapterId: 'chapter-cancel',
+            chapterTitle: 'Chapter Cancel'
+        }]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-cancel') as any[];
+        expect(queue.cancel(rows[0].id)).toBe(true);
+        const row = await waitForJob(rows[0].id, ['cancelled']);
+        expect(row.status).toBe('cancelled');
+        queue.resume();
+    });
+
+    it('skips chapters whose output already exists', async () => {
+        // pre-create the chapter directory with a file -> job completes without downloading
+        const directory = path.join(tmpDir, 'downloads', 'Test Source', 'Test Manga', 'Chapter Existing');
+        fs.mkdirSync(directory, { recursive: true });
+        fs.writeFileSync(path.join(directory, '01.png'), PNG);
+
+        queue.enqueue([{
+            sourceId: 'test-source',
+            mangaId: 'manga-1',
+            mangaTitle: 'Test Manga',
+            chapterId: 'chapter-existing',
+            chapterTitle: 'Chapter Existing'
+        }]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-existing') as any[];
+        const row = await waitForJob(rows[0].id, ['completed']);
+        // the shortcut must NOT have downloaded: only the pre-created file remains
+        expect(fs.readdirSync(directory)).toEqual(['01.png']);
+    });
+});

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+*.log
+.DS_Store
+.env
+*.pid
+*.tmp.mjs
+repro.tmp.mjs
+*.tsbuildinfo
+docker-compose.yml
+!docker-compose.yml.example
+.plasma/
