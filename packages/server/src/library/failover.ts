@@ -78,9 +78,6 @@ export class FailoverService {
                     }
                 }
             } catch { /* a broken alternative is simply skipped */ }
-            if (best && (best.score || 0) >= 1) {
-                break;
-            }
         }
 
         candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -93,26 +90,43 @@ export class FailoverService {
      * Returns 'migrated' | 'suggested' | 'none'.
      */
     async maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto = true): Promise<'migrated' | 'suggested' | 'none'> {
-        const { best, confidence } = await this.findAlternative(entry);
-        if (!best || confidence === 'none') {
+        const { candidates } = await this.findAlternative(entry);
+        if (candidates.length === 0) {
             return 'none';
         }
-        // Validate the candidate BEFORE migrating: the source must actually
-        // serve chapters in the preferred languages. A reachable-but-broken
-        // connector (legacy sites that moved) must not swallow the entry.
+        // Validate candidates in score order: the best match may sit on a
+        // broken connector, the runner-up on a perfectly usable source.
         const preferred = this.opts.getPreferredLanguages();
-        const adapter = await this.opts.registry.get(best.sourceId);
-        if (!adapter) {
-            return 'none';
-        }
-        try {
-            const chapters = await adapter.getChapters({ id: best.mangaId, title: best.mangaTitle });
-            if (!chapters.some(chapter => chapterAllowed(chapter.language, preferred))) {
-                console.log(`[failover] "${entry.title}" : ${best.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
-                return 'none';
+        const triedSources = new Set<string>();
+        let best: MigrationTarget | null = null;
+        let confidence: 'auto' | 'review' | 'none' = 'none';
+        for (const candidate of candidates) {
+            if (triedSources.has(candidate.sourceId)) {
+                continue;
             }
-        } catch (error) {
-            console.log(`[failover] "${entry.title}" : ${best.sourceLabel} inutilisable (${(error as Error).message})`);
+            triedSources.add(candidate.sourceId);
+            if (triedSources.size > 4) {
+                break; // bound the latency: 4 distinct sources max
+            }
+            const adapter = await this.opts.registry.get(candidate.sourceId);
+            if (!adapter) {
+                continue;
+            }
+            try {
+                const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+                if (!chapters.some(chapter => chapterAllowed(chapter.language, preferred))) {
+                    console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
+                    continue;
+                }
+            } catch (error) {
+                console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
+                continue;
+            }
+            best = candidate;
+            confidence = confidenceFor(candidate.score);
+            break;
+        }
+        if (!best || confidence === 'none') {
             return 'none';
         }
         if (confidence === 'auto' && auto) {
