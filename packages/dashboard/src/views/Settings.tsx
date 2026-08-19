@@ -200,7 +200,7 @@ export default function Settings() {
                     ))}
                 </nav>
 
-                <Card className="min-w-0 flex-1 space-y-4 p-4">
+                <Card className="min-w-0 flex-1 divide-y divide-line px-4 py-1">
                     {section === 'general' && (
                         <>
                             <SettingRow label={t('settings.interfaceLanguage')} hint={t('settings.interfaceLanguageHint')}>
@@ -260,7 +260,7 @@ export default function Settings() {
                     )}
 
                     {section === 'languages' && (
-                        <>
+                        <div className="space-y-3 py-3">
                             <div className="text-xs text-zinc-500">{t('settings.languagesHint')}</div>
                             <div className="flex flex-wrap gap-2">
                                 {CONTENT_LANGUAGES.map(item => {
@@ -281,7 +281,7 @@ export default function Settings() {
                                     );
                                 })}
                             </div>
-                        </>
+                        </div>
                     )}
 
                     {section === 'data' && (
@@ -297,7 +297,7 @@ export default function Settings() {
                             <SettingRow label={t('settings.clearHistory')} hint={t('settings.clearHistoryHint')}>
                                 <Button small variant="danger" onClick={() => setConfirmClear(true)}>{t('settings.clearHistory')}</Button>
                             </SettingRow>
-                            <div className="space-y-2 border-t border-zinc-800 pt-4">
+                            <div className="space-y-2 py-3">
                                 <div className="flex items-baseline gap-2">
                                     <span className="text-3xl font-bold text-orange-400">{disk !== null ? formatBytes(disk) : '…'}</span>
                                     <span className="text-sm text-zinc-500">{t('settings.storageUsed')}</span>
@@ -312,15 +312,17 @@ export default function Settings() {
 
                     {section === 'sources' && (
                         <>
-                            <div className="flex items-baseline gap-2">
-                                <span className="text-3xl font-bold text-orange-400">{updateStatus ? updateStatus.activeCount : '…'}</span>
-                                <span className="text-sm text-zinc-500">{t('settings.sourcesAvailable')}</span>
+                            <div className="space-y-2 py-3">
+                                <div className="flex items-baseline gap-2">
+                                    <span className="text-3xl font-bold text-orange-400">{updateStatus ? updateStatus.activeCount : '…'}</span>
+                                    <span className="text-sm text-zinc-500">{t('settings.sourcesAvailable')}</span>
+                                </div>
+                                <div className="text-xs text-zinc-500">
+                                    {t('settings.lastUpdate')} {updateStatus?.last ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}` : t('settings.never')}
+                                </div>
+                                {updateMessage && <div className="text-xs text-sky-300">{updateMessage}</div>}
                             </div>
-                            <div className="text-xs text-zinc-500">
-                                {t('settings.lastUpdate')} {updateStatus?.last ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}` : t('settings.never')}
-                            </div>
-                            {updateMessage && <div className="text-xs text-sky-300">{updateMessage}</div>}
-                            <div className="flex flex-wrap items-center gap-3 border-t border-zinc-800 pt-3">
+                            <div className="flex flex-wrap items-center gap-3 py-3">
                                 {updating && <Spinner />}
                                 <Button onClick={updateSources} disabled={updating || !!updateStatus?.running}>
                                     {updating ? t('settings.updatingSources') : t('settings.updateSources')}

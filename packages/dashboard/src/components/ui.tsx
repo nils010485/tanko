@@ -176,7 +176,7 @@ export function Select({
 /** One settings line: label + optional hint on the left, control on the right. */
 export function SettingRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
     return (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
                 <div className="text-sm">{label}</div>
                 {hint && <div className="text-xs text-zinc-500">{hint}</div>}
