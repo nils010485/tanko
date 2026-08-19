@@ -157,6 +157,7 @@ export const api = {
     entryChapters: (entryId: number) => request<LibraryChapterDto[]>(`/api/library/${entryId}/chapters`),
     checkEntry: (entryId: number) => request<{ newChapters: number }>(`/api/library/${entryId}/check`, { method: 'POST' }),
     downloadNew: (entryId: number) => request<{ queued: number }>(`/api/library/${entryId}/download-new`, { method: 'POST' }),
+    downloadAllNew: () => request<{ queued: number; entries: number }>('/api/library/download-new', { method: 'POST' }),
     entryHistory: (entryId: number) => request<ChapterHistoryEntry[]>(`/api/library/${entryId}/history`),
     rollbackChapter: (entryId: number, chapterId: string) =>
         request<{ ok: boolean }>(`/api/library/${entryId}/chapters/${encodeURIComponent(chapterId)}/rollback`, { method: 'POST' }),

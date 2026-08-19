@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { api, type CoverStatusDto, type SchedulePatch } from '../lib/api.js';
 import { Badge, Button, Card, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
-import { IconRefresh } from '../components/icons.js';
+import { IconDownload, IconRefresh } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { useI18n } from '../i18n/index.js';
 import type { TFunction } from '../i18n/index.js';
@@ -25,15 +25,20 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
     const [cron, setCron] = useState('');
     const [saving, setSaving] = useState(false);
     const [running, setRunning] = useState(false);
+    const [totalNew, setTotalNew] = useState(0);
+    const [dlAllBusy, setDlAllBusy] = useState(false);
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
     const [regenBusy, setRegenBusy] = useState(false);
     const toast = useToast();
 
     useEffect(() => {
+    useEffect(() => {
         api.schedule().then(data => {
             setSettings(data.settings);
             setCron(data.settings.cron);
         });
+        api.library().then(entries => setTotalNew(entries.reduce((sum, entry) => sum + entry.newCount, 0))).catch(() => { /* badge stays hidden */ });
+    }, []);
     }, []);
 
     // cover cache status: polled every few seconds while the view is open
@@ -91,6 +96,19 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
         }
     };
 
+    const downloadAllNew = async () => {
+        setDlAllBusy(true);
+        try {
+            const result = await api.downloadAllNew();
+            setTotalNew(0);
+            toast.success(t('schedule.downloadAllNewDone', { queued: result.queued, entries: result.entries }));
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setDlAllBusy(false);
+        }
+    };
+
     if (!settings) {
         return (
             <div className="space-y-6">
@@ -111,7 +129,14 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
     return (
         <div className="space-y-6">
             <SectionTitle
-                right={<Button small onClick={runNow} loading={running}>{t('schedule.runNow')}</Button>}
+                right={
+                    <div className="flex items-center gap-2">
+                        <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('schedule.downloadAllNewHint')}>
+                            <IconDownload size={13} /> {t('schedule.downloadAllNew')}{totalNew > 0 && <Badge tone="orange">{totalNew}</Badge>}
+                        </Button>
+                        <Button small variant="ghost" onClick={runNow} loading={running}>{t('schedule.runNow')}</Button>
+                    </div>
+                }
             >
                 {t('schedule.title')}
             </SectionTitle>

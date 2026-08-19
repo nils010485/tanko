@@ -189,6 +189,26 @@ export function registerLibraryRoutes(
         return { queued };
     });
 
+    // Enqueue every already-detected new chapter across all visible entries
+    // (no source re-check, no auto-download flag required)
+    app.post('/api/library/download-new', async () => {
+        const entries = await store.listEntries('visible');
+        let queued = 0;
+        let affected = 0;
+        for (const entry of entries) {
+            if (entry.newCount === 0) {
+                continue;
+            }
+            const count = store.enqueueNewChapters(entry.id, queue);
+            if (count > 0) {
+                queued += count;
+                affected += 1;
+                publishEntry(entry.id);
+            }
+        }
+        return { queued, entries: affected };
+    });
+
     // ------------------------------------------------------------------
     // Scheduler
     // ------------------------------------------------------------------
