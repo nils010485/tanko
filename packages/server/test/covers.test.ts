@@ -14,6 +14,7 @@ import { registerCoverRoutes } from '../src/routes/covers.js';
 let tmpDir: string;
 let database: Database;
 let covers: CoverService;
+let libraryStore: LibraryStore;
 let app: FastifyInstance;
 
 /** Tiny solid-color page PNG. */
@@ -57,13 +58,14 @@ async function waitForIdle(timeoutMs = 10_000): Promise<void> {
 let entryCbz: number;
 let entryEarliest: number;
 let entryFolder: number;
+let entryDisk: number;
 let entryEmpty: number;
 
 beforeAll(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-covers-'));
     database = new Database(tmpDir);
     // the store creates the library tables the covers FK points to
-    new LibraryStore({
+    const store = new LibraryStore({
         db: database,
         registry: { get: async () => undefined, list: async () => [] } as never,
         queueSettings: {
@@ -74,7 +76,8 @@ beforeAll(async () => {
             throttleMs: 0
         }
     });
-    covers = new CoverService({ db: database, events: new EventBus() });
+    covers = new CoverService({ db: database, events: new EventBus(), directoryOf: entryId => store.seriesDirectory(entryId) });
+    libraryStore = store;
 
     // entry with one cbz chapter
     entryCbz = addEntry('Solo Leveling');
@@ -95,6 +98,13 @@ beforeAll(async () => {
     fs.writeFileSync(path.join(chapterDir, '001.png'), await page({ r: 0, g: 255, b: 0 }));
     fs.writeFileSync(path.join(chapterDir, '002.png'), await page({ r: 20, g: 20, b: 20 }));
     addChapter(entryFolder, 'Chapter 1', chapterDir);
+
+    // entry whose chapters exist on disk but were never registered in the
+    // database (import whose source-based sync failed) — disk fallback
+    entryDisk = addEntry('Damn Reincarnation');
+    const diskSeries = path.join(tmpDir, 'Source', 'Damn Reincarnation');
+    fs.mkdirSync(diskSeries, { recursive: true });
+    await writeCbz(path.join(diskSeries, 'Chapter 001.cbz'), { r: 120, g: 0, b: 120 });
 
     // entry without any downloaded chapter
     entryEmpty = addEntry('Nirvana');
@@ -121,9 +131,17 @@ describe('CoverService', () => {
         await waitForIdle();
 
         const status = covers.status();
-        expect(status.done).toBe(3);
+        expect(status.done).toBe(4);
         expect(status.skipped).toBe(1);
         expect(status.failed).toBe(0);
+        // counts of the disk-only entry come from the folder, not the database
+        const entries = await libraryStore.listEntries('all');
+        const disk = entries.find(entry => entry.id === entryDisk)!;
+        expect(disk.chapterCount).toBe(1);
+        expect(disk.downloadedCount).toBe(1);
+        const empty = entries.find(entry => entry.id === entryEmpty)!;
+        expect(empty.chapterCount).toBe(0);
+        expect(empty.downloadedCount).toBe(0);
 
         // webp magic bytes
         const cover = covers.getCover(entryCbz)!;
@@ -140,7 +158,7 @@ describe('CoverService', () => {
         expect(folder.dominant.g).toBeGreaterThan(150);
 
         expect(covers.hasCover(entryEmpty)).toBe(false);
-        expect(covers.coveredEntryIds()).toEqual(new Set([entryCbz, entryEarliest, entryFolder]));
+        expect(covers.coveredEntryIds()).toEqual(new Set([entryCbz, entryEarliest, entryFolder, entryDisk]));
     });
 
     it('serves covers through the route with image/webp content type', async () => {
@@ -154,7 +172,7 @@ describe('CoverService', () => {
 
         const status = await app.inject({ method: 'GET', url: '/api/library/covers/status' });
         expect(status.statusCode).toBe(200);
-        expect(status.json()).toMatchObject({ running: false, done: 3, skipped: 1 });
+        expect(status.json()).toMatchObject({ running: false, done: 4, skipped: 1 });
     });
 
     it('clears the cache', () => {

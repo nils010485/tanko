@@ -152,3 +152,28 @@ export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz'): boolea
         return false;
     }
 }
+/**
+ * Chapter entries of a series folder on disk: CBZ files plus image-folder
+ * chapters (sub-directories), dot-files excluded. Empty when the folder is
+ * missing. Purely local — no source involved.
+ */
+export function listChapterEntries(seriesDirectory: string): string[] {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(seriesDirectory, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+    return entries
+        .filter(entry => !entry.name.startsWith('.')
+            && ((entry.isFile() && entry.name.toLowerCase().endsWith('.cbz')) || entry.isDirectory()))
+        .map(entry => entry.name);
+}
+
+/**
+ * Chapter count of a series folder on disk — used to display counts for
+ * entries whose chapters were never registered in the database.
+ */
+export function countLocalChapters(seriesDirectory: string): number {
+    return listChapterEntries(seriesDirectory).length;
+}

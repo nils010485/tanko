@@ -57,7 +57,7 @@ const queueSettings: QueueSettings = {
 };
 const preferredLanguages = createLanguagePreference(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });
-const covers = new CoverService({ db: database, events });
+const covers = new CoverService({ db: database, events, directoryOf: entryId => library.seriesDirectory(entryId) });
 const healthService = new SourceHealthService({
     db: database,
     events,

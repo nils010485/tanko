@@ -2,13 +2,16 @@
  * First-chapter cover cache: when the user opts in, the first page of the
  * earliest downloaded chapter of each series is converted to a small WebP and
  * stored in SQLite, so the library grid renders instantly from local data
- * instead of remote thumbnails. Disk-only: series without a downloaded
- * chapter keep their source thumbnail (or letter placeholder).
+ * instead of remote thumbnails. Purely local: chapters registered in the
+ * database are used first, and entries without any (e.g. import whose
+ * source-based sync failed) fall back to a direct scan of their series
+ * folder on disk.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { listChapterEntries } from '../downloader/paths.js';
 import type { Database } from '../db.js';
 import type { EventBus } from '../ws.js';
 import { parseChapterNumber } from '../import/scanner.js';
@@ -41,8 +44,12 @@ export class CoverService {
     /** Bumped on clear(): an in-flight regeneration loop aborts when it changes. */
     private generation = 0;
 
-    constructor(private readonly opts: { db: Database; events: EventBus }) {
-        // created after the library tables (FK) — LibraryStore runs first
+    constructor(private readonly opts: {
+        db: Database;
+        events: EventBus;
+        /** Resolves the on-disk series folder of an entry (LibraryStore.seriesDirectory). */
+        directoryOf?: (entryId: number) => string | null;
+    }) {
         this.opts.db.db.exec(`
             CREATE TABLE IF NOT EXISTS library_covers (
                 entry_id    INTEGER PRIMARY KEY REFERENCES library(id) ON DELETE CASCADE,
@@ -137,24 +144,46 @@ export class CoverService {
     }
 
     /**
-     * Build the cover for one entry from its earliest downloaded chapter on
-     * disk. Resolves false when no readable chapter/page exists (skipped).
+     * Build the cover for one entry from its earliest chapter on disk —
+     * chapters registered in the database first, series-folder scan as a
+     * fallback for entries the database knows nothing about. Resolves false
+     * when no readable page exists (skipped).
      */
     async generateForEntry(entryId: number): Promise<boolean> {
-        const chapters = this.opts.db.db.prepare(
+        const registered = this.opts.db.db.prepare(
             "SELECT title, path FROM library_chapters WHERE entry_id = ? AND status = 'downloaded' AND path IS NOT NULL"
         ).all(entryId) as Array<{ title: string; path: string }>;
-        // earliest chapter first: the cover must come from chapter 1 whenever it is on disk
-        chapters.sort((a, b) => {
-            const numberA = parseChapterNumber(a.title) ?? Number.MAX_SAFE_INTEGER;
-            const numberB = parseChapterNumber(b.title) ?? Number.MAX_SAFE_INTEGER;
-            return numberA - numberB || naturalCompare(a.title, b.title);
-        });
-        for (const chapter of chapters) {
-            const page = await this.firstPage(chapter.path);
-            if (!page || page.byteLength > MAX_SOURCE_BYTES) {
-                continue;
+        registered.sort((a, b) => byChapterNumber(a.title, b.title));
+        const candidates = [
+            ...registered.map(chapter => chapter.path),
+            ...this.diskChapters(entryId)
+        ];
+        for (const chapterPath of candidates) {
+            const page = await this.firstPage(chapterPath);
+            if (page && await this.storeCover(entryId, page)) {
+                return true;
             }
+        }
+        return false;
+    }
+
+    /** Chapter paths found by scanning the series folder on disk. */
+    private diskChapters(entryId: number): string[] {
+        const directory = this.opts.directoryOf?.(entryId);
+        if (!directory) {
+            return [];
+        }
+        return listChapterEntries(directory)
+            .sort(byChapterNumber)
+            .map(name => path.join(directory, name));
+    }
+
+    /** Convert a first page to WebP and persist it (false when unusable). */
+    private async storeCover(entryId: number, page: Buffer): Promise<boolean> {
+        if (page.byteLength > MAX_SOURCE_BYTES) {
+            return false;
+        }
+        try {
             const webp = await sharp(page)
                 .rotate()
                 .resize({ width: COVER_WIDTH, withoutEnlargement: true })
@@ -164,9 +193,12 @@ export class CoverService {
                 'INSERT INTO library_covers (entry_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(entry_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
             ).run(entryId, webp, new Date().toISOString());
             return true;
+        } catch (error) {
+            this.log(`cover conversion failed for entry ${entryId}: ${(error as Error).message}`, 'warn');
+            return false;
         }
-        return false;
     }
+
 
     /**
      * First page of a downloaded chapter: either the first image inside the
@@ -213,4 +245,9 @@ export class CoverService {
 function extension(name: string): string {
     const dot = name.lastIndexOf('.');
     return dot === -1 ? '' : name.slice(dot).toLowerCase();
+}
+/** Numeric-aware chapter ordering: parsed number first (unparsable last), then natural compare. */
+function byChapterNumber(a: string, b: string): number {
+    return (parseChapterNumber(a) ?? Number.MAX_SAFE_INTEGER) - (parseChapterNumber(b) ?? Number.MAX_SAFE_INTEGER)
+        || naturalCompare(a, b);
 }

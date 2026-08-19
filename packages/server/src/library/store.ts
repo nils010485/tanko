@@ -11,7 +11,7 @@ import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { Database } from '../db.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
-import { chapterPaths, outputExists } from '../downloader/paths.js';
+import { chapterPaths, countLocalChapters, outputExists } from '../downloader/paths.js';
 import { chapterAllowed } from '../languages.js';
 import { parseChapterNumber } from '../import/scanner.js';
 
@@ -620,6 +620,17 @@ export class LibraryStore {
         } catch {
             suggestion = undefined;
         }
+        let chapterCount = Number(counts.total || 0);
+        let downloadedCount = Number(counts.downloaded || 0);
+        // no chapter registered (import whose source-based sync failed,
+        // files pre-dating the database): show what actually sits on disk
+        if (chapterCount === 0) {
+            const directory = this.seriesDirectory(row.id, row);
+            if (directory) {
+                downloadedCount = countLocalChapters(directory);
+                chapterCount = downloadedCount;
+            }
+        }
         return {
             id: row.id,
             sourceId: row.source_id,
@@ -628,8 +639,8 @@ export class LibraryStore {
             title: row.title,
             thumbnail: row.thumbnail || undefined,
             autoDownload: row.auto_download === 1,
-            chapterCount: Number(counts.total || 0),
-            downloadedCount: Number(counts.downloaded || 0),
+            chapterCount,
+            downloadedCount,
             newCount: Number(counts.fresh || 0),
             lastCheckedAt: row.last_checked_at || undefined,
             addedAt: row.added_at,
