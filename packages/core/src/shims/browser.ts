@@ -5,28 +5,23 @@
  * download) so the base image stays lean; the browser is launched lazily on first
  * need and reused.
  *
- * Enabled by default when a Chromium binary is detected; force off with
- * HEADLESS_BROWSER=0, or point to a custom binary with CHROMIUM_PATH.
+ * Enabled whenever a Chromium binary is detected — the Docker image ships one.
  */
 import { existsSync } from 'node:fs';
 import type { Browser } from 'puppeteer-core';
 
 const CHROMIUM_CANDIDATES = [
-    process.env.CHROMIUM_PATH,
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable'
-].filter(Boolean) as string[];
+];
 
 export function detectChromium(): string | undefined {
     return CHROMIUM_CANDIDATES.find(path => existsSync(path));
 }
 
 export function browserEnabled(): boolean {
-    if (process.env.HEADLESS_BROWSER === '0' || process.env.HEADLESS_BROWSER === 'false') {
-        return false;
-    }
     return detectChromium() !== undefined;
 }
 

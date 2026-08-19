@@ -8,16 +8,8 @@ services:
       # HOST:CONTAINER — dashboard + API + WebSocket
       - "8080:8080"
     environment:
-      # Chapters as CBZ archives ('cbz') or folders of images ('img')
-      CHAPTER_FORMAT: cbz
-      # Number of chapters downloaded in parallel
-      # DOWNLOAD_CONCURRENCY: "2"
-      # Minimum delay (ms) between two requests to the same domain
-      DOWNLOAD_THROTTLE_MS: "250"
-      # Preferred languages (ISO codes, comma separated): filters sources at
-      # import and chapters of multi-language sources. Empty = no filter.
-      # Can also be changed at runtime in Settings.
-      PREFERRED_LANGUAGES: "en"
+      # Chapter format, concurrency, throttle and preferred languages are
+      # configured in the dashboard's Settings tab, not here.
       # Automatic import at startup: path (inside the container) of an
       # existing library to scan/match/sync.
       # IMPORT_PATH: /biblio

@@ -39,21 +39,19 @@ Podman works too: the image is OCI-compatible, `podman build -t tanko .` or
 
 ## Configuration
 
-Environment variables, set in `docker-compose.yml`:
+Chapter format, download concurrency/throttle and preferred languages are
+user settings: change them anytime in the dashboard's Settings tab, they
+are persisted in the database.
+
+Environment variables, set in `docker-compose.yml` (deployment only):
 
 | Variable | Default | Description |
 |---|---|---|
-| `CHAPTER_FORMAT` | `cbz` | `cbz` or `img` (folder of images) |
-| `DOWNLOAD_CONCURRENCY` | `2` | chapters downloaded in parallel |
-| `DOWNLOAD_THROTTLE_MS` | `250` | minimum delay between requests to one domain |
 | `PORT` | `8080` | HTTP port of the service |
-| `HEADLESS_BROWSER` | auto | `0` disables the anti-bot headless browser; enabled when Chromium is detected |
-| `CHROMIUM_PATH` | auto | path to a custom Chromium/Chrome binary |
-| `PREFERRED_LANGUAGES` | (empty) | ISO codes, e.g. `en,fr`; filters sources at import and multi-language chapters; empty = no filter |
+| `CONNECTORS_AUTO_RESTART` | `1` | restart after a source sync to load new connectors; `0` disables |
 | `IMPORT_PATH` | (empty) | container path of an existing library to import at startup |
 | `IMPORT_AUTO_CONFIRM` | `auto` | `auto` confirms reliable matches, `all` confirms everything, `none` requires manual validation |
 | `IMPORT_AUTO_DOWNLOAD` | `0` | `1` makes imported series auto-download future chapters |
-
 ## Development
 
 Requires Node.js >= 22.

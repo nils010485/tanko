@@ -219,6 +219,9 @@ export const en = {
     // settings
     'settings.title': 'Settings',
     'settings.saved': 'Settings saved',
+    'settings.sectionGeneral': 'General',
+    'settings.sectionData': 'Data & storage',
+    'settings.unsavedChanges': 'Unsaved changes',
     'settings.downloads': 'Downloads',
     'settings.chapterFormat': 'Chapter format',
     'settings.chapterFormatHint': 'CBZ = one archive per chapter, Folder = loose images',
@@ -242,7 +245,6 @@ export const en = {
     'settings.historyCleared': '{n} job(s) removed from history',
     'settings.languages': 'Languages',
     'settings.languagesHint': 'Only these languages are kept: they filter sources on import and chapters offered by multilingual sources (MangaDex…). Unchecking everything means no filter.',
-    'settings.covers': 'Library covers',
     'settings.useFirstChapterCovers': 'Use the first chapter as thumbnail',
     'settings.useFirstChapterCoversHint': 'Stores a compressed WebP of the first page of the earliest downloaded chapter in the database',
 
@@ -266,10 +268,8 @@ export const en = {
     'settings.languageJa': 'Japanese',
     'settings.languageKo': 'Korean',
     'settings.languageZh': 'Chinese',
-    'settings.interface': 'Interface',
     'settings.interfaceLanguage': 'Interface language',
     'settings.interfaceLanguageHint': 'Applied immediately, stored on the server',
-    'settings.storage': 'Storage',
     'settings.storageUsed': 'used by the library',
     'settings.currentFolder': 'Current folder:',
     'settings.refresh': 'Refresh',

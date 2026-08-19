@@ -22,15 +22,14 @@ function readJsonSetting<T>(db: Database, key: string, fallback: T): T {
     }
 }
 
-/** Load persisted queue settings (merged over env defaults at startup). */
+/** Load persisted queue settings (merged over the built-in defaults at startup). */
 export function loadPersistedQueueSettings(db: Database): Partial<QueueSettings> {
     return readJsonSetting<Partial<QueueSettings>>(db, QUEUE_SETTINGS_KEY, {});
 }
 
-/** Preferred chapter/source languages (ISO codes); env default, persisted override, live reads. */
+/** Preferred chapter/source languages (ISO codes); empty = no filter. Persisted in the KV store. */
 export function createLanguagePreference(db: Database): () => string[] {
-    const fallback = parseLanguageList(process.env.PREFERRED_LANGUAGES);
-    return () => readJsonSetting<string[]>(db, LANGUAGES_KEY, fallback);
+    return () => readJsonSetting<string[]>(db, LANGUAGES_KEY, []);
 }
 
 /** Dashboard interface language; English until the user picks otherwise. */

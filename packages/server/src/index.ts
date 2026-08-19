@@ -45,16 +45,16 @@ const cacheStore = new SqliteCacheStore(database);
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
 const queueSettings: QueueSettings = {
-    // persisted setting wins over the env default so a reboot keeps the
-    // user-configured download destination
+    // persisted settings win over the built-in defaults so a reboot keeps the
+    // user-configured values (all editable in the Settings tab)
     dataDirectory: persistedQueueSettings.dataDirectory || config.dataDirectory,
     directoryLayout: persistedQueueSettings.directoryLayout || 'source',
-    chapterFormat: persistedQueueSettings.chapterFormat || (process.env.CHAPTER_FORMAT === 'cbz' ? 'cbz' : 'img'),
+    chapterFormat: persistedQueueSettings.chapterFormat || 'cbz',
     // NB: || (not ??) on concurrency is intentional — a persisted 0 must not
-    // override the env default, while throttleMs 0 is a valid value (hence ??).
-    concurrency: persistedQueueSettings.concurrency || Number(process.env.DOWNLOAD_CONCURRENCY || 2),
-    throttleMs: persistedQueueSettings.throttleMs ?? Number(process.env.DOWNLOAD_THROTTLE_MS || 250),
-    historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? Number(process.env.HISTORY_RETENTION_DAYS || 30)
+    // override the default, while throttleMs 0 is a valid value (hence ??).
+    concurrency: persistedQueueSettings.concurrency || 2,
+    throttleMs: persistedQueueSettings.throttleMs ?? 250,
+    historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? 30
 };
 const preferredLanguages = createLanguagePreference(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });

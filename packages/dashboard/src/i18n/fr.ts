@@ -219,6 +219,9 @@ export const fr: typeof import('./en.js').en = {
     // settings
     'settings.title': 'Paramètres',
     'settings.saved': 'Paramètres enregistrés',
+    'settings.sectionGeneral': 'Général',
+    'settings.sectionData': 'Données & stockage',
+    'settings.unsavedChanges': 'Modifications non enregistrées',
     'settings.downloads': 'Téléchargements',
     'settings.chapterFormat': 'Format des chapitres',
     'settings.chapterFormatHint': 'CBZ = une archive par chapitre, Dossier = images en vrac',
@@ -253,10 +256,8 @@ export const fr: typeof import('./en.js').en = {
     'settings.languageJa': 'Japonais',
     'settings.languageKo': 'Coréen',
     'settings.languageZh': 'Chinois',
-    'settings.interface': 'Interface',
     'settings.interfaceLanguage': 'Langue de l’interface',
     'settings.interfaceLanguageHint': 'Appliquée immédiatement, stockée côté serveur',
-    'settings.storage': 'Stockage',
     'settings.storageUsed': 'utilisés par la bibliothèque',
     'settings.currentFolder': 'Dossier actuel :',
     'settings.refresh': 'Actualiser',
@@ -271,7 +272,6 @@ export const fr: typeof import('./en.js').en = {
     'settings.updatedManual': 'Sources mises à jour : {n} sources{diff} — redémarrez le serveur pour les charger.',
     'settings.errorPrefix': 'Erreur : {msg}',
     'settings.unreachableAfterUpdate': 'Serveur injoignable après la mise à jour — vérifiez qu’il redémarre, puis rechargez la page.',
-    'settings.covers': 'Vignettes de la librairie',
     'settings.useFirstChapterCovers': 'Utiliser le premier chapitre comme vignette',
     'settings.useFirstChapterCoversHint': 'Stocke en base un WebP compressé de la première page du premier chapitre téléchargé',
 
