@@ -132,7 +132,7 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
                         <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('schedule.downloadAllNewHint')}>
                             <IconDownload size={13} /> {t('schedule.downloadAllNew')}{totalNew > 0 && <Badge tone="orange">{totalNew}</Badge>}
                         </Button>
-                        <Button small variant="ghost" onClick={runNow} loading={running}>{t('schedule.runNow')}</Button>
+                            <IconDownload size={13} /> {t('schedule.downloadAllNew')}{totalNew > 0 && <span className="rounded-full bg-white/25 px-1.5 text-xs font-semibold">{totalNew}</span>}
                     </div>
                 }
             >
