@@ -1,11 +1,11 @@
 /**
- * Settings view organized in sections with side navigation: general,
- * downloads, languages, data & storage, sources. Edits go through a single
- * sticky save bar; interface language and cover cache apply instantly.
+ * Settings view organized in tabbed sections: general, downloads, languages,
+ * data & storage, sources. Edits go through a single sticky save bar;
+ * interface language and cover cache apply instantly.
  */
 import { useEffect, useState } from 'react';
 import { api, formatBytes } from '../lib/api.js';
-import { Button, Card, Input, SectionTitle, Select, SettingRow, Skeleton, Spinner, Toggle } from '../components/ui.js';
+import { Button, Card, Input, SectionTitle, Select, SettingRow, Skeleton, Toggle } from '../components/ui.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import { useToast } from '../components/toast.js';
 import { useI18n, LANGUAGES, type TFunction } from '../i18n/index.js';
@@ -18,16 +18,15 @@ function toNonNegative(value: string): number {
     return Math.max(0, Number(value) || 0);
 }
 
-
 type Section = 'general' | 'downloads' | 'languages' | 'data' | 'sources';
 type SettingsKey = Parameters<TFunction>[0];
 
-const SECTIONS: Array<{ id: Section; labelKey: SettingsKey }> = [
-    { id: 'general', labelKey: 'settings.sectionGeneral' },
-    { id: 'downloads', labelKey: 'settings.downloads' },
-    { id: 'languages', labelKey: 'settings.languages' },
-    { id: 'data', labelKey: 'settings.sectionData' },
-    { id: 'sources', labelKey: 'settings.sources' }
+const SECTIONS: Array<{ id: Section; labelKey: SettingsKey; descKey: SettingsKey }> = [
+    { id: 'general', labelKey: 'settings.sectionGeneral', descKey: 'settings.sectionGeneralDesc' },
+    { id: 'downloads', labelKey: 'settings.downloads', descKey: 'settings.sectionDownloadsDesc' },
+    { id: 'languages', labelKey: 'settings.languages', descKey: 'settings.sectionLanguagesDesc' },
+    { id: 'data', labelKey: 'settings.sectionData', descKey: 'settings.sectionDataDesc' },
+    { id: 'sources', labelKey: 'settings.sources', descKey: 'settings.sectionSourcesDesc' }
 ];
 
 /** Content languages offered as filter chips (ISO codes). */
@@ -164,7 +163,8 @@ export default function Settings() {
         return (
             <div className="space-y-6">
                 <SectionTitle>{t('settings.title')}</SectionTitle>
-                <Card className="space-y-4 p-4">
+                <Skeleton className="h-9 w-full max-w-3xl" />
+                <Card className="max-w-3xl space-y-4 p-5">
                     <Skeleton className="h-4 w-1/2" />
                     <Skeleton className="h-3 w-2/3" />
                     <Skeleton className="h-8 w-full" />
@@ -174,33 +174,41 @@ export default function Settings() {
         );
     }
 
-    const dirty = JSON.stringify(draft) !== JSON.stringify(settings)
-        || JSON.stringify(languages) !== JSON.stringify(savedLanguages);
-
     /** Merge one field change into the draft queue settings. */
     const patchDraft = (patch: Partial<QueueSettingsDto>) => setDraft({ ...draft, ...patch });
+
+    const dirty = JSON.stringify(draft) !== JSON.stringify(settings)
+        || JSON.stringify(languages) !== JSON.stringify(savedLanguages);
+    const active = SECTIONS.find(item => item.id === section) ?? SECTIONS[0];
 
     return (
         <div className="space-y-6">
             <SectionTitle>{t('settings.title')}</SectionTitle>
 
-            <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-                <nav className="flex flex-none gap-1 overflow-x-auto lg:w-44 lg:flex-col lg:overflow-visible">
+            <div className="border-b border-line">
+                <nav className="-mb-px flex gap-1 overflow-x-auto">
                     {SECTIONS.map(item => (
                         <button
                             key={item.id}
                             type="button"
                             onClick={() => setSection(item.id)}
-                            className={`whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${section === item.id
-                                ? 'bg-accent/10 text-accent-soft'
-                                : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}
+                            className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${section === item.id
+                                ? 'border-accent text-accent-soft'
+                                : 'border-transparent text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                         >
                             {t(item.labelKey)}
                         </button>
                     ))}
                 </nav>
+            </div>
 
-                <Card className="min-w-0 flex-1 divide-y divide-line px-4 py-1">
+            <Card className="max-w-3xl">
+                <div className="border-b border-line px-5 py-4">
+                    <h2 className="text-sm font-semibold">{t(active.labelKey)}</h2>
+                    <p className="mt-0.5 text-xs text-zinc-500">{t(active.descKey)}</p>
+                </div>
+
+                <div className="divide-y divide-line px-5">
                     {section === 'general' && (
                         <>
                             <SettingRow label={t('settings.interfaceLanguage')} hint={t('settings.interfaceLanguageHint')}>
@@ -260,8 +268,8 @@ export default function Settings() {
                     )}
 
                     {section === 'languages' && (
-                        <div className="space-y-3 py-3">
-                            <div className="text-xs text-zinc-500">{t('settings.languagesHint')}</div>
+                        <div className="py-4">
+                            <p className="mb-3 text-xs text-zinc-500">{t('settings.languagesHint')}</p>
                             <div className="flex flex-wrap gap-2">
                                 {CONTENT_LANGUAGES.map(item => {
                                     const selected = languages.includes(item.code);
@@ -297,46 +305,45 @@ export default function Settings() {
                             <SettingRow label={t('settings.clearHistory')} hint={t('settings.clearHistoryHint')}>
                                 <Button small variant="danger" onClick={() => setConfirmClear(true)}>{t('settings.clearHistory')}</Button>
                             </SettingRow>
-                            <div className="space-y-2 py-3">
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-3xl font-bold text-orange-400">{disk !== null ? formatBytes(disk) : '…'}</span>
-                                    <span className="text-sm text-zinc-500">{t('settings.storageUsed')}</span>
-                                </div>
-                                <div className="text-xs text-zinc-500">{t('settings.currentFolder')} <code className="break-all text-zinc-300">{settings.dataDirectory}</code></div>
+                            <div className="flex items-center justify-between gap-3 py-4">
                                 <div>
-                                    <Button small variant="ghost" onClick={load}>{t('settings.refresh')}</Button>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-2xl font-bold text-accent-soft">{disk !== null ? formatBytes(disk) : '…'}</span>
+                                        <span className="text-sm text-zinc-500">{t('settings.storageUsed')}</span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-zinc-500">{t('settings.currentFolder')} <code className="break-all text-zinc-400">{settings.dataDirectory}</code></div>
                                 </div>
+                                <Button small variant="ghost" onClick={load}>{t('settings.refresh')}</Button>
                             </div>
                         </>
                     )}
 
                     {section === 'sources' && (
-                        <>
-                            <div className="space-y-2 py-3">
+                        <div className="flex items-center justify-between gap-3 py-4">
+                            <div>
                                 <div className="flex items-baseline gap-2">
-                                    <span className="text-3xl font-bold text-orange-400">{updateStatus ? updateStatus.activeCount : '…'}</span>
+                                    <span className="text-2xl font-bold text-accent-soft">{updateStatus ? updateStatus.activeCount : '…'}</span>
                                     <span className="text-sm text-zinc-500">{t('settings.sourcesAvailable')}</span>
                                 </div>
-                                <div className="text-xs text-zinc-500">
+                                <div className="mt-1 text-xs text-zinc-500">
                                     {t('settings.lastUpdate')} {updateStatus?.last ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}` : t('settings.never')}
                                 </div>
-                                {updateMessage && <div className="text-xs text-sky-300">{updateMessage}</div>}
+                                {updateMessage && <div className="mt-1 text-xs text-sky-300">{updateMessage}</div>}
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 py-3">
-                                {updating && <Spinner />}
-                                <Button onClick={updateSources} disabled={updating || !!updateStatus?.running}>
-                                    {updating ? t('settings.updatingSources') : t('settings.updateSources')}
-                                </Button>
-                                <span className="text-xs text-zinc-500">{t('settings.updateSourcesHint')}</span>
-                            </div>
-                        </>
+                            <Button loading={updating} onClick={updateSources} disabled={updating || !!updateStatus?.running}>
+                                {updating ? t('settings.updatingSources') : t('settings.updateSources')}
+                            </Button>
+                        </div>
                     )}
-                </Card>
-            </div>
+                </div>
+            </Card>
 
             {dirty && (
-                <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-lg shadow-black/40">
-                    <span className="text-sm text-zinc-400">{t('settings.unsavedChanges')}</span>
+                <div className="sticky bottom-4 z-10 flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-line bg-surface/95 px-5 py-3 shadow-lg shadow-black/40 backdrop-blur">
+                    <span className="flex items-center gap-2 text-sm text-zinc-400">
+                        <span className="h-2 w-2 rounded-full bg-accent" />
+                        {t('settings.unsavedChanges')}
+                    </span>
                     <div className="flex gap-2">
                         <Button small variant="ghost" onClick={cancel}>{t('common.cancel')}</Button>
                         <Button small onClick={save}>{t('common.save')}</Button>
