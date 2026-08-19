@@ -44,6 +44,9 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         return result;
     });
 
+
+    // Wipe the finished-job history (completed/failed/cancelled)
+    app.delete('/api/downloads/history', async () => ({ removed: queue.clearHistory() }));
     // Cancel a job (queued or downloading)
     app.delete('/api/downloads/:jobId', async (request, reply) => {
         const { jobId } = request.params as { jobId: string };

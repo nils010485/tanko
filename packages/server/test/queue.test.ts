@@ -179,4 +179,41 @@ describe('DownloadQueue', () => {
         // the shortcut must NOT have downloaded: only the pre-created file remains
         expect(fs.readdirSync(directory)).toEqual(['01.png']);
     });
+
+    it('prunes finished jobs older than the retention, keeps recent and active ones', () => {
+        const old = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+        database.db.prepare(
+            `INSERT INTO download_jobs
+                (source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
+             VALUES ('old-source', 'old-manga', 'old-chapter', 'Old', 'Old Ch', 'completed', 1, 1, 1, ?, ?)`
+        ).run(old, old);
+        const settings = queue.updateSettings({ historyRetentionDays: 30 });
+        expect(settings.historyRetentionDays).toBe(30);
+        const pruned = database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = ?').get('old-source') as any;
+        expect(pruned.n).toBe(0);
+        const recent = database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = ?').get('test-source') as any;
+        expect(recent.n).toBeGreaterThan(0);
+        queue.updateSettings({ historyRetentionDays: 0 });
+    });
+
+    it('clearHistory removes finished jobs only', async () => {
+        queue.pause();
+        queue.enqueue([{
+            sourceId: 'test-source',
+            mangaId: 'manga-clear',
+            mangaTitle: 'Clear Manga',
+            chapterId: 'chapter-queued',
+            chapterTitle: 'Chapter Queued'
+        }]);
+        const removed = queue.clearHistory();
+        expect(removed).toBeGreaterThan(0);
+        const finished = database.db.prepare(
+            "SELECT COUNT(*) AS n FROM download_jobs WHERE status IN ('completed', 'failed', 'cancelled')"
+        ).get() as any;
+        expect(finished.n).toBe(0);
+        const queued = database.db.prepare('SELECT status FROM download_jobs WHERE chapter_id = ?').get('chapter-queued') as any;
+        expect(queued.status).toBe('queued');
+        queue.resume();
+        await waitForJob((database.db.prepare('SELECT id FROM download_jobs WHERE chapter_id = ?').get('chapter-queued') as any).id, ['completed']);
+    });
 });

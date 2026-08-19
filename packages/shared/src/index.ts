@@ -174,6 +174,8 @@ export interface QueueSettingsDto {
     concurrency: number;
     /** Minimum delay (ms) between two requests to the same domain. */
     throttleMs: number;
+    /** Days to keep finished jobs (completed/failed/cancelled); 0 keeps them forever. */
+    historyRetentionDays: number;
 }
 
 /** Response of GET /api/settings (diskUsedBytes is absent on PATCH). */

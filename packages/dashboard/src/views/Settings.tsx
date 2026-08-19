@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { api, formatBytes } from '../lib/api.js';
 import { Button, Card, Input, SectionTitle, Select, Skeleton, Spinner, Toggle } from '../components/ui.js';
+import { ConfirmDialog } from '../components/confirm.js';
 import { useToast } from '../components/toast.js';
 import { useI18n, LANGUAGES, type TFunction } from '../i18n/index.js';
 import type { ConnectorsUpdateStatus, QueueSettingsDto } from '@tanko/shared';
@@ -21,6 +22,7 @@ export default function Settings() {
     const [updateMessage, setUpdateMessage] = useState('');
     const [languages, setLanguages] = useState<string[]>([]);
     const [useCovers, setUseCovers] = useState(false);
+    const [confirmClear, setConfirmClear] = useState(false);
 
     const load = async () => {
         const data = await api.settings();
@@ -57,6 +59,17 @@ export default function Settings() {
             }
         } catch (error) {
             setUseCovers(!value);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Wipe the finished-job history after confirmation. */
+    const clearHistory = async () => {
+        setConfirmClear(false);
+        try {
+            const { removed } = await api.clearHistory();
+            toast.success(t('settings.historyCleared', { n: removed }));
+        } catch (error) {
             toast.error((error as Error).message);
         }
     };
@@ -193,6 +206,29 @@ export default function Settings() {
                         />
                     </div>
 
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <div className="text-sm">{t('settings.historyRetention')}</div>
+                            <div className="text-xs text-zinc-500">{t('settings.historyRetentionHint')}</div>
+                        </div>
+                        <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={draft.historyRetentionDays}
+                            onChange={event => setDraft({ ...draft, historyRetentionDays: Number(event.target.value) })}
+                            className="w-24 rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <div className="text-sm">{t('settings.clearHistory')}</div>
+                            <div className="text-xs text-zinc-500">{t('settings.clearHistoryHint')}</div>
+                        </div>
+                        <Button small variant="danger" onClick={() => setConfirmClear(true)}>{t('settings.clearHistory')}</Button>
+                    </div>
+
                     <div className="flex justify-end border-t border-zinc-800 pt-3">
                         <Button onClick={save} disabled={!dirty}>{t('common.save')}</Button>
                     </div>
@@ -293,6 +329,14 @@ export default function Settings() {
                     </div>
                 </Card>
             </div>
+
+            <ConfirmDialog
+                open={confirmClear}
+                title={t('settings.clearHistory')}
+                body={t('settings.clearHistoryConfirm')}
+                onConfirm={clearHistory}
+                onCancel={() => setConfirmClear(false)}
+            />
         </div>
     );
 }

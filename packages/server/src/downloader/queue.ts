@@ -29,7 +29,18 @@ export interface QueueSettings {
     concurrency: number;
     /** Minimum delay (ms) between two requests to the same domain. */
     throttleMs: number;
+    /** Days to keep finished jobs (completed/failed/cancelled); 0 keeps them forever. */
+    historyRetentionDays?: number;
 }
+
+/** SQL filter matching finished jobs (history pruning / manual clearing). */
+const FINISHED_JOBS = "status IN ('completed', 'failed', 'cancelled')";
+
+/** Default retention when the setting is absent (older installs, tests). */
+const DEFAULT_HISTORY_RETENTION_DAYS = 30;
+
+/** Re-run the automatic pruning once a day. */
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const USER_AGENT = randomUserAgent();
 const PAGE_ATTEMPTS = 3;
@@ -67,6 +78,7 @@ export class DownloadQueue {
     private paused = false;
     private active = 0;
     private timer: ReturnType<typeof setInterval> | undefined;
+    private pruneTimer: ReturnType<typeof setInterval> | undefined;
 
     constructor(private readonly opts: {
         db: Database;
@@ -79,6 +91,8 @@ export class DownloadQueue {
         this.gate = new DomainGate(opts.settings.throttleMs);
         this._migrate();
         this._recover();
+        this._pruneHistory();
+        this.pruneTimer = setInterval(() => this._pruneHistory(), PRUNE_INTERVAL_MS);
         this.timer = setInterval(() => this._schedule(), 1000);
     }
 
@@ -184,7 +198,7 @@ export class DownloadQueue {
     }
 
     getSettings(): QueueSettings {
-        return { ...this.opts.settings };
+        return { ...this.opts.settings, historyRetentionDays: this._retentionDays() };
     }
 
     updateSettings(patch: Partial<QueueSettings>): QueueSettings {
@@ -209,13 +223,28 @@ export class DownloadQueue {
             fs.mkdirSync(resolved, { recursive: true });
             settings.dataDirectory = resolved;
         }
+        if (typeof patch.historyRetentionDays === 'number' && patch.historyRetentionDays >= 0) {
+            settings.historyRetentionDays = Math.floor(patch.historyRetentionDays);
+            this._pruneHistory(); // apply the new limit right away
+        }
         return this.getSettings();
+    }
+
+    /** Delete every finished job (completed/failed/cancelled); returns the number removed. */
+    clearHistory(): number {
+        return Number(this.opts.db.db.prepare(
+            `DELETE FROM download_jobs WHERE ${FINISHED_JOBS}`
+        ).run().changes);
     }
 
     stop(): void {
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = undefined;
+        }
+        if (this.pruneTimer) {
+            clearInterval(this.pruneTimer);
+            this.pruneTimer = undefined;
         }
     }
 
@@ -252,6 +281,24 @@ export class DownloadQueue {
         this.opts.db.db.prepare(
             'UPDATE download_jobs SET status = ?, updated_at = ? WHERE status IN (\'queued\', \'downloading\')'
         ).run('queued', new Date().toISOString());
+    }
+
+    /** Effective retention in days (setting absent → default). */
+    private _retentionDays(): number {
+        return this.opts.settings.historyRetentionDays ?? DEFAULT_HISTORY_RETENTION_DAYS;
+    }
+
+    /** Drop finished jobs older than the configured retention; 0 keeps everything. */
+    private _pruneHistory(): void {
+        const days = this._retentionDays();
+        if (days <= 0) {
+            return;
+        }
+        // updated_at is ISO-8601, so a lexicographic cutoff works
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        this.opts.db.db.prepare(
+            `DELETE FROM download_jobs WHERE ${FINISHED_JOBS} AND updated_at < ?`
+        ).run(cutoff);
     }
 
     private _schedule(): void {

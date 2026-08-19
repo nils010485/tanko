@@ -53,7 +53,8 @@ const queueSettings: QueueSettings = {
     // NB: || (not ??) on concurrency is intentional — a persisted 0 must not
     // override the env default, while throttleMs 0 is a valid value (hence ??).
     concurrency: persistedQueueSettings.concurrency || Number(process.env.DOWNLOAD_CONCURRENCY || 2),
-    throttleMs: persistedQueueSettings.throttleMs ?? Number(process.env.DOWNLOAD_THROTTLE_MS || 250)
+    throttleMs: persistedQueueSettings.throttleMs ?? Number(process.env.DOWNLOAD_THROTTLE_MS || 250),
+    historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? Number(process.env.HISTORY_RETENTION_DAYS || 30)
 };
 const preferredLanguages = createLanguagePreference(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });

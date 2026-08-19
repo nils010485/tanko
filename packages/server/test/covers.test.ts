@@ -175,6 +175,22 @@ describe('CoverService', () => {
         expect(status.json()).toMatchObject({ running: false, done: 4, skipped: 1 });
     });
 
+    it('crops very tall pages (webtoon strips) instead of failing', async () => {
+        const entryStrip = addEntry('Webtoon Strip');
+        const chapterDir = path.join(tmpDir, 'strip-1');
+        fs.mkdirSync(chapterDir, { recursive: true });
+        // 400x20000px: a width-only resize to 400 would exceed WebP's 16383px limit
+        fs.writeFileSync(path.join(chapterDir, '001.png'),
+            await sharp({ create: { width: 400, height: 20000, channels: 3, background: { r: 10, g: 10, b: 200 } } }).png().toBuffer());
+        addChapter(entryStrip, 'Chapter 1', chapterDir);
+
+        expect(await covers.generateForEntry(entryStrip)).toBe(true);
+        const meta = await sharp(covers.getCover(entryStrip)!).metadata();
+        expect(meta.format).toBe('webp');
+        expect(meta.width).toBe(400);
+        expect(meta.height).toBe(600);
+    });
+
     it('clears the cache', () => {
         covers.clear();
         expect(covers.coveredEntryIds().size).toBe(0);

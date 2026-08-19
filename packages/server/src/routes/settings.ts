@@ -84,6 +84,10 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             if (body.uiLanguage !== undefined && body.uiLanguage !== 'en' && body.uiLanguage !== 'fr') {
                 return reply.code(400).send({ error: 'uiLanguage must be "en" or "fr"' });
             }
+            if (body.historyRetentionDays !== undefined
+                && (typeof body.historyRetentionDays !== 'number' || !Number.isFinite(body.historyRetentionDays) || body.historyRetentionDays < 0)) {
+                return reply.code(400).send({ error: 'historyRetentionDays must be a number of days (0 keeps everything)' });
+            }
             if (body.useFirstChapterCovers !== undefined && typeof body.useFirstChapterCovers !== 'boolean') {
                 return reply.code(400).send({ error: 'useFirstChapterCovers must be a boolean' });
             }

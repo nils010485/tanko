@@ -18,6 +18,8 @@ import { parseChapterNumber } from '../import/scanner.js';
 
 const COVERS_KEY = 'first-chapter-covers';
 const COVER_WIDTH = 400;
+/** Crop height for webtoon-strip covers (2:3 ratio). */
+const COVER_STRIP_HEIGHT = Math.round(COVER_WIDTH * 1.5);
 const COVER_QUALITY = 80;
 /** Hard cap on the source image size we feed to sharp (protection against huge scans). */
 const MAX_SOURCE_BYTES = 30 * 1024 * 1024;
@@ -184,9 +186,16 @@ export class CoverService {
             return false;
         }
         try {
-            const webp = await sharp(page)
-                .rotate()
-                .resize({ width: COVER_WIDTH, withoutEnlargement: true })
+            const image = sharp(page).rotate();
+            const meta = await image.metadata();
+            // Extremely tall pages (webtoon strips) would exceed WebP's 16383px
+            // per-dimension limit after the width-only resize — crop the top in a
+            // cover-like 2:3 ratio instead of shrinking the whole strip.
+            const strip = (meta.height ?? 0) > (meta.width ?? 1) * 3;
+            const webp = await image
+                .resize(strip
+                    ? { width: COVER_WIDTH, height: COVER_STRIP_HEIGHT, fit: 'cover', position: 'top', withoutEnlargement: true }
+                    : { width: COVER_WIDTH, withoutEnlargement: true })
                 .webp({ quality: COVER_QUALITY })
                 .toBuffer();
             this.opts.db.db.prepare(
