@@ -47,9 +47,6 @@ export class SqliteCacheStore implements CacheStore {
         this.db.db.prepare('DELETE FROM cache WHERE key = ?').run(key);
     }
 
-    async close(): Promise<void> {
-        // nothing to release for SQLite
-    }
 
     private purgeExpired(): void {
         this.db.db.prepare('DELETE FROM cache WHERE expires_at <= ?').run(Date.now());

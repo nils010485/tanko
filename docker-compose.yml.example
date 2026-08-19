@@ -26,9 +26,6 @@ services:
       # IMPORT_AUTO_CONFIRM: auto
       # "1" = imported series auto-download their future chapters
       # IMPORT_AUTO_DOWNLOAD: "0"
-      # Optional Redis cache for manga/chapter lists.
-      # Without REDIS_URL the cache uses SQLite (self-sufficient).
-      # REDIS_URL: redis://redis:6379
       # Source updates: restarts the container after a sync to load new
       # connectors. Set "0" to disable.
       # CONNECTORS_AUTO_RESTART: "0"

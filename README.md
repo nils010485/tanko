@@ -47,7 +47,6 @@ Environment variables, set in `docker-compose.yml`:
 | `DOWNLOAD_CONCURRENCY` | `2` | chapters downloaded in parallel |
 | `DOWNLOAD_THROTTLE_MS` | `250` | minimum delay between requests to one domain |
 | `PORT` | `8080` | HTTP port of the service |
-| `REDIS_URL` | (empty) | optional `redis://host:6379` for source caching; SQLite otherwise |
 | `HEADLESS_BROWSER` | auto | `0` disables the anti-bot headless browser; enabled when Chromium is detected |
 | `CHROMIUM_PATH` | auto | path to a custom Chromium/Chrome binary |
 | `PREFERRED_LANGUAGES` | (empty) | ISO codes, e.g. `en,fr`; filters sources at import and multi-language chapters; empty = no filter |

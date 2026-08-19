@@ -17,7 +17,6 @@
     "@tanko/shared": "*",
     "croner": "^9.0.0",
     "fastify": "^5.0.0",
-    "ioredis": "^6.0.0",
     "jszip": "^3.10.1",
     "sharp": "^0.35.3"
   },

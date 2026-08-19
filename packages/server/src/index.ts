@@ -28,7 +28,7 @@ import { Scheduler } from './scheduler/scheduler.js';
 import { SourceHealthService } from './sources/health.js';
 import { registerImportRoutes } from './routes/import.js';
 import { ImportService } from './import/service.js';
-import { createCacheStore } from './cache/cache.js';
+import { SqliteCacheStore } from './cache/sqlite-store.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
 
 const config = loadConfig();
@@ -41,7 +41,7 @@ console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed
 // --- persistence + events ----------------------------------------------------
 const database = new Database(config.dataDirectory);
 const events = new EventBus();
-const cacheStore = await createCacheStore(database, process.env.REDIS_URL);
+const cacheStore = new SqliteCacheStore(database);
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
 const queueSettings: QueueSettings = {
@@ -200,7 +200,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         queue.stop();
         scheduler.stop();
         await app.close();
-        await cacheStore.close();
         database.close();
         process.exit(0);
     });
