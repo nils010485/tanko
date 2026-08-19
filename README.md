@@ -95,3 +95,9 @@ packages/
   `packages/core/src/sources/native/`.
 - Respect the source sites: throttling is enabled by default, avoid overly
   frequent checks.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The HakuNeko connectors in
+`packages/core/vendor/` are public domain (Unlicense), see the upstream
+repository for details.
