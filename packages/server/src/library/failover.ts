@@ -114,9 +114,16 @@ export class FailoverService {
             }
             try {
                 const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
-                if (!chapters.some(chapter => chapterAllowed(chapter.language, preferred))) {
+                const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
+                if (!chapter) {
                     console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
                     continue;
+                }
+                // a connector can list chapters but serve broken page lists
+                // (MangaHere grabbing): probe one chapter before committing
+                const pages = await adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title });
+                if (!pages.length) {
+                    throw new Error('page list is empty');
                 }
             } catch (error) {
                 console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);

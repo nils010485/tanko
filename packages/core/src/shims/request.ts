@@ -160,9 +160,23 @@ export class HeadlessRequest {
         const document = parseDocument(html);
         const location = new URL(url);
 
+        // page scripts schedule timers that may throw later — a raw setTimeout
+        // callback escapes the inline try/catch and kills the whole process
+        const safeSetTimeout = (callback: (...args: any[]) => void, ms?: number, ...args: any[]) =>
+            setTimeout(() => {
+                try {
+                    callback(...args);
+                } catch { /* hostile page script, ignore */ }
+            }, ms);
+        const safeSetInterval = (callback: (...args: any[]) => void, ms?: number, ...args: any[]) =>
+            setInterval(() => {
+                try {
+                    callback(...args);
+                } catch { /* hostile page script, ignore */ }
+            }, ms);
         const sandbox: any = {
             console,
-            setTimeout, clearTimeout, setInterval, clearInterval,
+            setTimeout: safeSetTimeout, clearTimeout, setInterval: safeSetInterval, clearInterval,
             URL, URLSearchParams, TextDecoder, TextEncoder,
             atob, btoa, JSON, Math, Date, RegExp, Promise,
             Object, Array, String, Number, Boolean, Symbol, Map, Set, WeakMap,
@@ -198,7 +212,27 @@ export class HeadlessRequest {
             }
         }
 
-        const result = vm.runInContext('(' + script + ')', context, { timeout: timeoutMs });
-        return Promise.resolve(result);
+        // connectors hand us expression snippets that may end with a
+        // statement semicolon (« new Promise(...); ») — a naive
+        // '(' + script + ')' wrap is then a syntax error
+        const expression = script.trim().replace(/;+\s*$/, '');
+        let result: unknown;
+        try {
+            result = vm.runInContext('(' + expression + ')', context, { timeout: timeoutMs });
+        } catch (error) {
+            if (!(error instanceof SyntaxError)) {
+                throw error;
+            }
+            result = vm.runInContext('(function(){' + expression + '})()', context, { timeout: timeoutMs });
+        }
+        // the snippet may resolve a promise that never settles (a page script
+        // waiting on browser-only APIs) — race it so the caller is never stuck
+        const settled = Promise.resolve(result);
+        let timer: NodeJS.Timeout | undefined;
+        const expired = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('script evaluation timed out')), timeoutMs);
+            timer.unref?.();
+        });
+        return Promise.race([settled, expired]).finally(() => clearTimeout(timer));
     }
 }

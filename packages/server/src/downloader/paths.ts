@@ -58,9 +58,14 @@ export function chapterFileNames(chapterTitle: string): string[] {
     }
     const match = normalized.match(/^Chapter\s+(\d+(?:\.\d+)?)/i) || normalized.match(/^(\d+(?:\.\d+)?)/);
     if (match) {
-        const short = `Chapter ${match[1]}`;
-        if (short !== normalized && !names.includes(short)) {
-            names.push(short);
+        const number = match[1]!;
+        // padded and unpadded spellings: a library written by another tool
+        // may use « Chapter 1 » where the source says « Ch.001 »
+        const variants = [`Chapter ${number}`, `Chapter ${Number(number)}`, `Ch.${number}`, `Ch.${Number(number)}`];
+        for (const variant of variants) {
+            if (variant !== normalized && !names.includes(variant)) {
+                names.push(variant);
+            }
         }
     }
     return names;

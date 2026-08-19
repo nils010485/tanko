@@ -43,9 +43,15 @@ describe('chapterFileNames', () => {
         expect(names).toContain('Ch.2 - Let Her Go!');
     });
 
-    it('keeps a bare number unique', () => {
-        const names = chapterFileNames('Chapter 7');
-        expect(names).toEqual(['Chapter 7']);
+    it('keeps a bare number unique, plus its raw spelling', () => {
+        expect(chapterFileNames('Chapter 7')).toEqual(['Chapter 7', 'Ch.7']);
+    });
+
+    it('accepts the unpadded spelling of a zero-padded number', () => {
+        // MangaHere says « Ch.001 », the library on disk has « Chapter 1.cbz »
+        const names = chapterFileNames('Ch.001');
+        expect(names).toContain('Chapter 1');
+        expect(names).toContain('Ch.1');
     });
 });
 

@@ -127,7 +127,16 @@ export class LegacySourceAdapter implements SourceAdapter {
     /** Wrap a legacy callback-style connector call into a Promise. */
     private _promisify<T>(invoke: (callback: (error: any, result: T) => void) => void): Promise<T> {
         return new Promise((resolve, reject) => {
-            invoke((error, result) => error ? reject(error) : resolve(result));
+            const timer = setTimeout(() => reject(new Error('legacy connector timed out')), 90_000);
+            timer.unref?.();
+            invoke((error, result) => {
+                clearTimeout(timer);
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            });
         });
     }
 
