@@ -32,13 +32,11 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
     const toast = useToast();
 
     useEffect(() => {
-    useEffect(() => {
         api.schedule().then(data => {
             setSettings(data.settings);
             setCron(data.settings.cron);
         });
         api.library().then(entries => setTotalNew(entries.reduce((sum, entry) => sum + entry.newCount, 0))).catch(() => { /* badge stays hidden */ });
-    }, []);
     }, []);
 
     // cover cache status: polled every few seconds while the view is open
