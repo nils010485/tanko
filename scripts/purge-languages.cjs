@@ -35,7 +35,7 @@ const jobsPurged = db.prepare("DELETE FROM download_jobs WHERE status IN ('queue
 const chaptersReset = db.prepare("UPDATE library_chapters SET status='new' WHERE status='queued'").run().changes;
 
 // --- 2. classify chapter rows -----------------------------------------------
-const rows = db.prepare('SELECT rowid, entry_id, chapter_id, title, language, status, path FROM library_chapters').all();
+const rows = db.prepare('SELECT id, entry_id, chapter_id, title, language, status, path FROM library_chapters').all();
 const dropRows = rows.filter(r => !isKeep(r));
 const keepRows = rows.filter(isKeep);
 
@@ -44,22 +44,22 @@ const keepPaths = new Set(keepRows.filter(r => r.path).map(r => r.path));
 const keepKeys = new Set(keepRows.map(r => `${r.entry_id}||${r.title}`));
 
 // kept chapters to reset: their file is shared with a dropped language variant
-const tainted = new Map(); // rowid -> { kept, file }
+const tainted = new Map(); // id -> { kept, file }
 for (const dropped of dropRows) {
     if (!dropped.path) continue;
     const key = `${dropped.entry_id}||${dropped.title}`;
     for (const kept of keepRows) {
         if (kept.path === dropped.path || `${kept.entry_id}||${kept.title}` === key) {
-            tainted.set(kept.rowid, { kept, file: dropped.path });
+            tainted.set(kept.id, { kept, file: dropped.path });
         }
     }
 }
 
 // --- 3. apply ---------------------------------------------------------------
 const delHistory = db.prepare('DELETE FROM chapter_history WHERE entry_id = ? AND chapter_id = ?');
-const delRow = db.prepare('DELETE FROM library_chapters WHERE rowid = ?');
+const delRow = db.prepare('DELETE FROM library_chapters WHERE id = ?');
 const delJobByChapter = db.prepare('DELETE FROM download_jobs WHERE chapter_id = ?');
-const resetRow = db.prepare("UPDATE library_chapters SET status='new', path=NULL, downloaded_at=NULL WHERE rowid = ?");
+const resetRow = db.prepare("UPDATE library_chapters SET status='new', path=NULL, downloaded_at=NULL WHERE id = ?");
 
 let rowsDropped = 0;
 let filesDeleted = 0;
@@ -81,7 +81,7 @@ const removeFile = target => {
 for (const row of dropRows) {
     delHistory.run(row.entry_id, row.chapter_id);
     delJobByChapter.run(row.chapter_id);
-    delRow.run(row.rowid);
+    delRow.run(row.id);
     rowsDropped++;
     if (row.path && !keepPaths.has(row.path) && !keepKeys.has(`${row.entry_id}||${row.title}`)) {
         removeFile(row.path); // file owned by a dropped language only
@@ -92,7 +92,7 @@ for (const row of dropRows) {
 // reset the row, clear its job (an old 'completed' job would block re-enqueue)
 for (const { kept, file } of tainted.values()) {
     delJobByChapter.run(kept.chapter_id);
-    resetRow.run(kept.rowid);
+    resetRow.run(kept.id);
     removeFile(file);
 }
 
