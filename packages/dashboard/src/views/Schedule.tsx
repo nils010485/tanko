@@ -138,7 +138,7 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
                     <div className="flex items-center gap-2">
                         <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('schedule.downloadAllNewHint')}>
                             <IconDownload size={13} /> {t('schedule.downloadAllNew')}
-                            {totalNew > 0 && <Badge tone="orange">{totalNew}</Badge>}
+                            {totalNew > 0 && <span className="rounded-full bg-zinc-950/15 px-1.5 text-xs font-semibold text-zinc-950">{totalNew}</span>}
                         </Button>
                     </div>
                 }
