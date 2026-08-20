@@ -25,7 +25,7 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
     const [settings, setSettings] = useState<ScheduleSettingsDto | null>(null);
     const [cron, setCron] = useState('');
     const [saving, setSaving] = useState(false);
-    const [_running, setRunning] = useState(false);
+    const [running, setRunning] = useState(false);
     const [totalNew, setTotalNew] = useState(0);
     const [dlAllBusy, setDlAllBusy] = useState(false);
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
@@ -89,7 +89,7 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
         }
     };
 
-    const _runNow = async () => {
+    const runNow = async () => {
         setRunning(true);
         try {
             const result = await api.runSchedule();
@@ -154,6 +154,11 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
                             <div className="text-xs text-zinc-500">{t('schedule.autoCheckHint')}</div>
                         </div>
                         <Toggle checked={settings.enabled} onChange={value => save({ enabled: value })} />
+                    </div>
+                    <div className="flex justify-end">
+                        <Button small variant="ghost" onClick={runNow} loading={running} title={t('schedule.autoCheckHint')}>
+                            <IconRefresh size={13} /> {t('schedule.runNow')}
+                        </Button>
                     </div>
 
                     <div className="space-y-2">
