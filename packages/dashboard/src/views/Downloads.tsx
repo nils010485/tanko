@@ -7,7 +7,8 @@
 import type { DownloadJobDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Cover } from '../components/Cover.js';
-import { IconDownload, IconPause, IconPlay, IconX } from '../components/icons.js';
+import { ConfirmDialog } from '../components/confirm.js';
+import { IconDownload, IconPause, IconPlay, IconTrash, IconX } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ProgressBar, SectionTitle, Skeleton } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -54,6 +55,8 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
     const [queueStatus, setQueueStatus] = useState<{ paused: boolean; active: number; queued: number } | null>(null);
     const [sourceLabels, setSourceLabels] = useState<Record<string, string>>({});
     const toast = useToast();
+    const [confirmClear, setConfirmClear] = useState(false);
+    const [clearing, setClearing] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -113,6 +116,21 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
         }
     };
 
+    const clearQueue = async () => {
+        setConfirmClear(false);
+        setClearing(true);
+        try {
+            const { cancelled, removed, paused, active, queued } = await api.clearQueue();
+            toast.info(t('downloads.clearQueueDone', { n: removed + cancelled }));
+            await load();
+            setQueueStatus({ paused, active, queued });
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setClearing(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <SectionTitle
@@ -127,6 +145,16 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                                 <IconPause size={13} /> {t('downloads.pauseAll')}
                             </Button>
                         )}
+                        <Button
+                            small
+                            variant="ghost"
+                            onClick={() => setConfirmClear(true)}
+                            loading={clearing}
+                            disabled={queueStatus !== null && queueStatus.queued + queueStatus.active === 0}
+                            title={t('downloads.clearQueueHint')}
+                        >
+                            <IconTrash size={13} /> {t('downloads.clearQueue')}
+                        </Button>
                     </div>
                 }
             >
@@ -241,6 +269,14 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                     </Button>
                 </div>
             )}
+            <ConfirmDialog
+                open={confirmClear}
+                title={t('downloads.clearQueueTitle')}
+                body={t('downloads.clearQueueConfirm')}
+                confirmLabel={t('downloads.clearQueue')}
+                onConfirm={clearQueue}
+                onCancel={() => setConfirmClear(false)}
+            />
         </div>
     );
 }

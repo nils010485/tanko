@@ -7,6 +7,7 @@ import type {
     ChapterDto,
     ConnectorsUpdateInfo,
     ConnectorsUpdateStatus,
+    DeadSeriesDto,
     DownloadsPageDto,
     LibraryChapterDto,
     LibraryEntryDto,
@@ -155,6 +156,8 @@ export const api = {
     library: (hidden = false) => request<LibraryEntryDto[]>(`/api/library${hidden ? '?hidden=1' : ''}`),
     removeFromLibrary: (entryId: number, disk = false) =>
         request<{ ok: boolean; deletedPath: string | null }>(`/api/library/${entryId}${disk ? '?disk=1' : ''}`, { method: 'DELETE' }),
+    rescanLibrary: () => request<{ dead: DeadSeriesDto[] }>('/api/library/rescan', { method: 'POST' }),
+    pruneLibrary: (ids: number[]) => request<{ removed: number }>('/api/library/prune', { method: 'POST', body: JSON.stringify({ ids }) }),
     setHidden: (entryId: number, hidden: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ hidden }) }),
     entryDiskPath: (entryId: number) => request<{ path: string | null }>(`/api/library/${entryId}/disk-path`),
@@ -197,6 +200,7 @@ export const api = {
     clearHistory: () => request<{ removed: number }>('/api/downloads/history', { method: 'DELETE' }),
     pauseQueue: () => request<QueueStatusDto>('/api/downloads/pause', { method: 'POST' }),
     resumeQueue: () => request<QueueStatusDto>('/api/downloads/resume', { method: 'POST' }),
+    clearQueue: () => request<{ cancelled: number; removed: number } & QueueStatusDto>('/api/downloads/clear', { method: 'POST' }),
 
     // schedule
     schedule: () => request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule'),

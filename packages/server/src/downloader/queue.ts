@@ -208,6 +208,18 @@ export class DownloadQueue {
         this._schedule();
     }
 
+    /** Empty the pending queue: queued jobs are deleted, running ones get the
+     *  cancel flag (consumed at the worker's next checkpoint, so they finish
+     *  as 'cancelled'). History is left untouched. */
+    clearQueue(): { cancelled: number; removed: number } {
+        const active = this.opts.db.db.prepare("SELECT id FROM download_jobs WHERE status = 'downloading'").all() as unknown as Array<{ id: number }>;
+        for (const job of active) {
+            this.cancelFlags.set(job.id, true);
+        }
+        const removed = Number(this.opts.db.db.prepare("DELETE FROM download_jobs WHERE status = 'queued'").run().changes);
+        return { cancelled: active.length, removed };
+    }
+
     status(): { paused: boolean; active: number; queued: number } {
         const row = this.opts.db.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'queued'").get() as { n: number };
         return { paused: this.paused, active: this.active, queued: row.n };

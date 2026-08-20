@@ -68,4 +68,10 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         queue.resume();
         return queue.status();
     });
+
+    // Empty the pending queue (queued deleted, running cancelled; history kept)
+    app.post('/api/downloads/clear', async () => {
+        const result = queue.clearQueue();
+        return { ...result, ...queue.status() };
+    });
 }

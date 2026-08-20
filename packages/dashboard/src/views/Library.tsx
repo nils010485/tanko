@@ -6,7 +6,7 @@
  * per-user display preferences (persisted in localStorage).
  */
 
-import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
+import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
@@ -135,6 +135,8 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
     const [diskPath, setDiskPath] = useState<string | null>(null);
     const [showHidden, setShowHidden] = useState(false);
     const [rematchAllBusy, setRematchAllBusy] = useState(false);
+    const [rescanBusy, setRescanBusy] = useState(false);
+    const [pendingRescan, setPendingRescan] = useState<DeadSeriesDto[] | null>(null);
     const [hiddenList, setHiddenList] = useState<LibraryEntryDto[]>([]);
     const [sort, setSort] = useState<SortKey>('recent');
     const [view, setView] = useState<ViewMode>(loadView);
@@ -297,6 +299,37 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
             toast.error((error as Error).message);
         } finally {
             setRematchAllBusy(false);
+        }
+    };
+
+    // Compare the database against the files actually on disk; dead entries
+    // (series folder deleted outside Tanko) are pruned after confirmation.
+    const rescan = async () => {
+        setRescanBusy(true);
+        try {
+            const { dead } = await api.rescanLibrary();
+            if (dead.length === 0) {
+                toast.info(t('library.rescanNone'));
+            } else {
+                setPendingRescan(dead);
+            }
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setRescanBusy(false);
+        }
+    };
+
+    const confirmRescan = async () => {
+        const dead = pendingRescan ?? [];
+        setPendingRescan(null);
+        try {
+            const { removed } = await api.pruneLibrary(dead.map(entry => entry.id));
+            toast.success(t('library.rescanDone', { n: removed }));
+            await refreshLibrary();
+            await refreshHidden();
+        } catch (error) {
+            toast.error((error as Error).message);
         }
     };
 
@@ -695,6 +728,9 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                             <IconEyeOff size={13} /> {t('library.hidden')}
                             {hiddenList.length > 0 ? ` (${hiddenList.length})` : ''}
                         </Button>
+                        <Button small variant="ghost" onClick={rescan} loading={rescanBusy} title={t('library.rescanHint')}>
+                            <IconRefresh size={13} /> {t('library.rescan')}
+                        </Button>
                     </div>
                 }
             >
@@ -884,6 +920,25 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                 confirmLabel={t('library.deleteEverything')}
                 onConfirm={confirmRemoveFromDisk}
                 onCancel={() => setPendingDisk(null)}
+            />
+            <ConfirmDialog
+                open={pendingRescan !== null}
+                title={t('library.rescanTitle', { n: pendingRescan?.length ?? 0 })}
+                body={
+                    <ul className="max-h-60 space-y-1 overflow-y-auto text-sm">
+                        {(pendingRescan ?? []).map(entry => (
+                            <li key={entry.id} className="flex items-baseline justify-between gap-3">
+                                <span className="truncate font-medium">{entry.title}</span>
+                                <code className="truncate text-xs text-zinc-500" title={entry.directory ?? undefined}>
+                                    {entry.directory}
+                                </code>
+                            </li>
+                        ))}
+                    </ul>
+                }
+                confirmLabel={t('library.rescanConfirm')}
+                onConfirm={confirmRescan}
+                onCancel={() => setPendingRescan(null)}
             />
         </div>
     );

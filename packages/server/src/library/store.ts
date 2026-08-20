@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
-import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
+import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { Database } from '../db.js';
 import { chapterPaths, countLocalChapters, outputExists } from '../downloader/paths.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
@@ -195,6 +195,57 @@ export class LibraryStore {
         const settings = this.opts.queueSettings;
         const target = chapterPaths(settings.dataDirectory, entry.source_label, entry.title, 'Chapter 0', settings.directoryLayout).cbzFile;
         return path.dirname(target);
+    }
+
+    /** Sync helper for the dashboard: entries whose files vanished from disk
+     *  (e.g. a series folder deleted directly on the NAS). An entry is dead only
+     *  when it has downloaded chapters on record and neither its series folder
+     *  nor any recorded chapter file exists anymore; series with nothing
+     *  downloaded keep their expected folder layout and are never reported. */
+    findDeadEntries(): DeadSeriesDto[] {
+        const dead: DeadSeriesDto[] = [];
+        for (const row of this._all<EntryRow>('SELECT * FROM library')) {
+            const directory = this._deadDirectory(row);
+            if (directory !== undefined) {
+                dead.push({ id: row.id, title: row.title, directory });
+            }
+        }
+        return dead;
+    }
+
+    /** Remove entries identified by findDeadEntries(); nothing is deleted on
+     *  disk (the files are already gone). Each id is re-validated against the
+     *  current disk state — a download completed since the dry-run keeps its
+     *  entry. Returns the number of entries removed. */
+    pruneEntries(ids: number[]): number {
+        let removed = 0;
+        for (const id of ids) {
+            const row = this._getEntryRow(id);
+            if (!row || this._deadDirectory(row) === undefined) {
+                continue;
+            }
+            // no FK on these two tables: clean the journal explicitly
+            this.opts.db.db.prepare('DELETE FROM chapter_history WHERE entry_id = ?').run(id);
+            this.opts.db.db.prepare('DELETE FROM entry_snapshots WHERE entry_id = ?').run(id);
+            removed += Number(this.opts.db.db.prepare('DELETE FROM library WHERE id = ?').run(id).changes);
+        }
+        return removed;
+    }
+
+    /** The entry's last known folder when its files are gone from disk,
+     *  undefined when the entry is still alive (or has nothing downloaded). */
+    private _deadDirectory(row: EntryRow): string | null | undefined {
+        const paths = this._all<{ path: string }>(
+            `SELECT path FROM library_chapters
+             WHERE entry_id = ? AND status = 'downloaded' AND path IS NOT NULL AND length(path) > 0`,
+            row.id
+        ).map(item => item.path);
+        if (paths.length === 0) {
+            return undefined;
+        }
+        const directory = this.seriesDirectory(row.id, row);
+        const alive = (directory !== null && fs.existsSync(directory)) || paths.some(item => fs.existsSync(item));
+        return alive ? undefined : directory;
     }
 
     getEntry(entryId: number): LibraryEntryDto | undefined {

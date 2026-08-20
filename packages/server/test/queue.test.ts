@@ -227,4 +227,32 @@ describe('DownloadQueue', () => {
         queue.resume();
         await waitForJob((database.db.prepare('SELECT id FROM download_jobs WHERE chapter_id = ?').get('chapter-queued') as any).id, ['completed']);
     });
+
+    it('clearQueue removes queued jobs, flags downloading ones, keeps history', () => {
+        queue.pause();
+        queue.enqueue([
+            { sourceId: 'test-source', mangaId: 'manga-cq', mangaTitle: 'CQ Manga', chapterId: 'chapter-cq-1', chapterTitle: 'Chapter CQ 1' },
+            { sourceId: 'test-source', mangaId: 'manga-cq', mangaTitle: 'CQ Manga', chapterId: 'chapter-cq-2', chapterTitle: 'Chapter CQ 2' }
+        ]);
+        const now = new Date().toISOString();
+        database.db
+            .prepare(
+                `INSERT INTO download_jobs
+                (source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
+             VALUES ('dl-source', 'dl-manga', 'dl-chapter', 'DL', 'DL Ch', 'downloading', 0, 3, 0, ?, ?)`
+            )
+            .run(now, now);
+
+        const result = queue.clearQueue();
+        expect(result.removed).toBe(2);
+        expect(result.cancelled).toBe(1);
+
+        const queued = database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE chapter_id LIKE ?').get('chapter-cq-%') as any;
+        expect(queued.n).toBe(0);
+        const downloading = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = 'dl-source'").get() as any;
+        expect(downloading.n).toBe(1);
+        const history = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'completed'").get() as any;
+        expect(history.n).toBeGreaterThan(0);
+        queue.resume();
+    });
 });

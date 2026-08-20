@@ -80,6 +80,15 @@ export function registerLibraryRoutes(
         return { ok: true, deletedPath: result.deletedPath ?? null };
     });
 
+    // Dry-run disk sync: list entries whose files disappeared from the library folder
+    app.post('/api/library/rescan', async () => ({ dead: store.findDeadEntries() }));
+
+    // Apply a rescan: drop the dead entries listed by a previous /rescan
+    app.post<{ Body: { ids?: number[] } }>('/api/library/prune', async request => {
+        const ids = Array.isArray(request.body?.ids) ? request.body.ids.filter(id => Number.isInteger(id)) : [];
+        return { removed: store.pruneEntries(ids) };
+    });
+
     // Folder that a "remove from disk" would delete (preview for the dashboard)
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/disk-path', async (request, reply) => {
         const { entryId } = request.params;

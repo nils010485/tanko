@@ -43,95 +43,95 @@ const MIME = {
 
 const hours = n => new Date(Date.now() + n * 3_600_000).toISOString();
 
- const LIBRARY = [
-     {
-         id: 1,
-         sourceId: 'dcm',
-         sourceLabel: 'Digital Comic Museum',
-         mangaId: 'planet-comics',
-         title: 'Planet Comics',
-         coverUrl: '/covers/planet-comics.jpg',
-         autoDownload: true,
-         chapterCount: 73,
-         downloadedCount: 61,
-         newCount: 4,
-         lastCheckedAt: hours(-1),
-         addedAt: hours(-2400)
-     },
-     {
-         id: 2,
-         sourceId: 'cbp',
-         sourceLabel: 'Comic Book Plus',
-         mangaId: 'whiz-comics',
-         title: 'Whiz Comics',
-         coverUrl: '/covers/whiz-comics.jpg',
-         autoDownload: true,
-         chapterCount: 155,
-         downloadedCount: 155,
-         newCount: 0,
-         lastCheckedAt: hours(-2),
-         addedAt: hours(-2200)
-     },
-     {
-         id: 3,
-         sourceId: 'dcm',
-         sourceLabel: 'Digital Comic Museum',
-         mangaId: 'master-comics',
-         title: 'Master Comics',
-         coverUrl: '/covers/master-comics.jpg',
-         autoDownload: true,
-         chapterCount: 133,
-         downloadedCount: 42,
-         newCount: 2,
-         lastCheckedAt: hours(-3),
-         addedAt: hours(-2000)
-     },
-     {
-         id: 4,
-         sourceId: 'cbp',
-         sourceLabel: 'Comic Book Plus',
-         mangaId: 'fight-comics',
-         title: 'Fight Comics',
-         coverUrl: '/covers/fight-comics.jpg',
-         autoDownload: false,
-         chapterCount: 88,
-         downloadedCount: 30,
-         newCount: 0,
-         lastCheckedAt: hours(-5),
-         addedAt: hours(-3000)
-     },
-     {
-         id: 5,
-         sourceId: 'dcm',
-         sourceLabel: 'Digital Comic Museum',
-         mangaId: 'flash-gordon',
-         title: 'Flash Gordon: Strange Adventures',
-         coverUrl: '/covers/flash-gordon.png',
-         autoDownload: true,
-         chapterCount: 1,
-         downloadedCount: 1,
-         newCount: 0,
-         lastCheckedAt: hours(-6),
-         addedAt: hours(-1800),
-         canRollbackMigration: true
-     }
- ];
+const LIBRARY = [
+    {
+        id: 1,
+        sourceId: 'dcm',
+        sourceLabel: 'Digital Comic Museum',
+        mangaId: 'planet-comics',
+        title: 'Planet Comics',
+        coverUrl: '/covers/planet-comics.jpg',
+        autoDownload: true,
+        chapterCount: 73,
+        downloadedCount: 61,
+        newCount: 4,
+        lastCheckedAt: hours(-1),
+        addedAt: hours(-2400)
+    },
+    {
+        id: 2,
+        sourceId: 'cbp',
+        sourceLabel: 'Comic Book Plus',
+        mangaId: 'whiz-comics',
+        title: 'Whiz Comics',
+        coverUrl: '/covers/whiz-comics.jpg',
+        autoDownload: true,
+        chapterCount: 155,
+        downloadedCount: 155,
+        newCount: 0,
+        lastCheckedAt: hours(-2),
+        addedAt: hours(-2200)
+    },
+    {
+        id: 3,
+        sourceId: 'dcm',
+        sourceLabel: 'Digital Comic Museum',
+        mangaId: 'master-comics',
+        title: 'Master Comics',
+        coverUrl: '/covers/master-comics.jpg',
+        autoDownload: true,
+        chapterCount: 133,
+        downloadedCount: 42,
+        newCount: 2,
+        lastCheckedAt: hours(-3),
+        addedAt: hours(-2000)
+    },
+    {
+        id: 4,
+        sourceId: 'cbp',
+        sourceLabel: 'Comic Book Plus',
+        mangaId: 'fight-comics',
+        title: 'Fight Comics',
+        coverUrl: '/covers/fight-comics.jpg',
+        autoDownload: false,
+        chapterCount: 88,
+        downloadedCount: 30,
+        newCount: 0,
+        lastCheckedAt: hours(-5),
+        addedAt: hours(-3000)
+    },
+    {
+        id: 5,
+        sourceId: 'dcm',
+        sourceLabel: 'Digital Comic Museum',
+        mangaId: 'flash-gordon',
+        title: 'Flash Gordon: Strange Adventures',
+        coverUrl: '/covers/flash-gordon.png',
+        autoDownload: true,
+        chapterCount: 1,
+        downloadedCount: 1,
+        newCount: 0,
+        lastCheckedAt: hours(-6),
+        addedAt: hours(-1800),
+        canRollbackMigration: true
+    }
+];
 
- const SOURCES = [
-     { id: 'dcm', label: 'Digital Comic Museum', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 312 },
-     { id: 'cbp', label: 'Comic Book Plus', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 480 },
-     { id: 'gutenberg', label: 'Project Gutenberg', tags: ['en', 'ebooks'], kind: 'legacy', health: 'ok', healthLatencyMs: 1250 },
-     { id: 'archive', label: 'Internet Archive', tags: ['en', 'scans'], kind: 'legacy', health: 'untested' }
- ];
+const SOURCES = [
+    { id: 'dcm', label: 'Digital Comic Museum', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 312 },
+    { id: 'cbp', label: 'Comic Book Plus', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 480 },
+    { id: 'gutenberg', label: 'Project Gutenberg', tags: ['en', 'ebooks'], kind: 'legacy', health: 'ok', healthLatencyMs: 1250 },
+    { id: 'archive', label: 'Internet Archive', tags: ['en', 'scans'], kind: 'legacy', health: 'untested' }
+];
 
- const SEARCH = [
-     { sourceId: 'dcm', id: 'planet-comics', title: 'Planet Comics', thumbnail: '/covers/planet-comics.jpg' },
+const SEARCH = [
+    { sourceId: 'dcm', id: 'planet-comics', title: 'Planet Comics', thumbnail: '/covers/planet-comics.jpg' },
     { sourceId: 'dcm', id: 'planet-stories', title: 'Planet Stories', thumbnail: '/covers/planet-stories.jpg' },
-     { sourceId: 'dcm', id: 'whiz-comics', title: 'Whiz Comics', thumbnail: '/covers/whiz-comics.jpg' },
-     { sourceId: 'dcm', id: 'master-comics', title: 'Master Comics', thumbnail: '/covers/master-comics.jpg' },
-     { sourceId: 'dcm', id: 'fight-comics', title: 'Fight Comics', thumbnail: '/covers/fight-comics.jpg' },
-     { sourceId: 'dcm', id: 'strange-adventures', title: 'Flash Gordon: Strange Adventures', thumbnail: '/covers/flash-gordon.png' }
- ];
+    { sourceId: 'dcm', id: 'whiz-comics', title: 'Whiz Comics', thumbnail: '/covers/whiz-comics.jpg' },
+    { sourceId: 'dcm', id: 'master-comics', title: 'Master Comics', thumbnail: '/covers/master-comics.jpg' },
+    { sourceId: 'dcm', id: 'fight-comics', title: 'Fight Comics', thumbnail: '/covers/fight-comics.jpg' },
+    { sourceId: 'dcm', id: 'strange-adventures', title: 'Flash Gordon: Strange Adventures', thumbnail: '/covers/flash-gordon.png' }
+];
 
 const ROUTES = {
     'GET /api/library': LIBRARY,

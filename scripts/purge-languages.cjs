@@ -25,7 +25,11 @@ const { DatabaseSync } = require('node:sqlite');
 const KEEP_LANG = 'en'; // e.g. 'en,fr'
 const DB_FILE = '/data/hakuneko.db';
 
-const keep = new Set(KEEP_LANG.split(',').map(s => s.trim()).filter(Boolean));
+const keep = new Set(
+    KEEP_LANG.split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+);
 const isKeep = row => row.language == null || keep.has(row.language);
 
 const db = new DatabaseSync(DB_FILE);

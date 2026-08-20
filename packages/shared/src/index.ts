@@ -109,6 +109,13 @@ export interface LibraryChapterDto {
     historyCount?: number;
 }
 
+export interface DeadSeriesDto {
+    id: number;
+    title: string;
+    /** Last known series folder on disk (null when it cannot be determined). */
+    directory: string | null;
+}
+
 export type DownloadStatus = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
 
 export interface DownloadJobDto {
