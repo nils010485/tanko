@@ -27,9 +27,12 @@ export function loadPersistedQueueSettings(db: Database): Partial<QueueSettings>
     return readJsonSetting<Partial<QueueSettings>>(db, QUEUE_SETTINGS_KEY, {});
 }
 
-/** Preferred chapter/source languages (ISO codes); empty = no filter. Persisted in the KV store. */
+/** Preferred chapter/source languages (ISO codes); empty = no filter (all).
+ *  Defaults to English until the user picks otherwise; the dashboard always
+ *  saves an explicit list (possibly empty), so the default only applies to
+ *  installs that never touched the setting. Persisted in the KV store. */
 export function createLanguagePreference(db: Database): () => string[] {
-    return () => readJsonSetting<string[]>(db, LANGUAGES_KEY, []);
+    return () => readJsonSetting<string[]>(db, LANGUAGES_KEY, ['en']);
 }
 
 /** Dashboard interface language; English until the user picks otherwise. */
