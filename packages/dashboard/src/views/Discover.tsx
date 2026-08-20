@@ -24,6 +24,7 @@ import { Badge, Button, Card, EmptyState, Input, SectionTitle, Spinner } from '.
 import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
+import { useEscapeKey } from '../lib/hooks.js';
 
 function healthDot(health: string | undefined, t: TFunction) {
     switch (health) {
@@ -102,17 +103,11 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
     }, []);
 
     // close the chapters / page-preview modals with Escape
-    useEffect(() => {
-        if (selected === null && preview === null && !previewLoading) return;
-        const onKey = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setSelected(null);
-                setPreview(null);
-            }
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [selected, preview, previewLoading]);
+    const closeModals = useCallback(() => {
+        setSelected(null);
+        setPreview(null);
+    }, []);
+    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading);
 
     const visibleSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);

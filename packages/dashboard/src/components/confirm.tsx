@@ -2,8 +2,9 @@
  * Accessible confirmation modal — replaces window.confirm().
  * Closes on Escape and on backdrop click.
  */
-import { type ReactNode, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/index.js';
+import { useEscapeKey } from '../lib/hooks.js';
 import { Button } from './ui.js';
 
 export function ConfirmDialog({
@@ -25,14 +26,7 @@ export function ConfirmDialog({
 }) {
     const { t } = useI18n();
     const resolvedConfirmLabel = confirmLabel ?? t('confirm.confirm');
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') onCancel();
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [open, onCancel]);
+    useEscapeKey(onCancel, open);
 
     if (!open) return null;
 
