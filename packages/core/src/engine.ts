@@ -88,6 +88,14 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
                 const buffer = await connector.handleConnectorURI(uri);
                 return new Response(new Blob([buffer.data], { type: buffer.mimeType }), { status: 200 });
             }
+            // Legacy connectors stash the real destination headers as x-* (x-referer,
+            // x-cookie, ...) on the Request object; the Electron main process used to
+            // translate them before sending. Route those through HeadlessRequest so the
+            // transformation happens headless — otherwise CDNs receive literal x-*
+            // headers and serve hotlink-protection HTML instead of the image.
+            if (input instanceof Request && [...input.headers.keys()].some(name => name.toLowerCase().startsWith('x-'))) {
+                return request.fetch(input);
+            }
             return nativeFetch(input, init);
         }) as typeof fetch;
     }
