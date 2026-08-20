@@ -104,6 +104,7 @@ export const fr: typeof import('./en.js').en = {
     'library.hide': 'Masquer',
     'library.rematchHint': 'Chercher la série sur une autre source',
     'library.rematch': 'Re-matcher',
+    'library.moreActions': 'Plus d’actions',
     'library.rollbackMigrationHint': 'Revenir à la source précédente',
     'library.rollbackMigration': '⟲ migration',
     'library.reestablish': 'Rétablir',

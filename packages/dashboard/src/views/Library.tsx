@@ -13,6 +13,7 @@ import { ConfirmDialog } from '../components/confirm.js';
 import {
     IconBookmark,
     IconBookmarkFilled,
+    IconDots,
     IconDownload,
     IconEyeOff,
     IconFolder,
@@ -140,7 +141,9 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
     const [activeFilters, setActiveFilters] = useState<Set<FilterId>>(new Set());
     const [prefs, setPrefs] = useState<DisplayPrefs>(loadPrefs);
     const [prefsOpen, setPrefsOpen] = useState(false);
+    const [menuFor, setMenuFor] = useState<number | null>(null);
     const prefsRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
     const { t, formatDate } = useI18n();
 
@@ -175,6 +178,25 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         document.addEventListener('mousedown', onClick);
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
+
+    // close a card's overflow menu on click-outside or Escape
+    useEffect(() => {
+        if (menuFor === null) return;
+        const onClick = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setMenuFor(null);
+            }
+        };
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setMenuFor(null);
+        };
+        document.addEventListener('mousedown', onClick);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onClick);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [menuFor]);
 
     useEffect(() => {
         localStorage.setItem(VIEW_KEY, view);
@@ -427,17 +449,65 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         </>
     );
 
-    const actionButtons = (entry: LibraryEntryDto) => (
-        <div className="card-actions flex items-center gap-1">
+    /** Primary actions stay inline on the card; rare ones move to the overflow menu. */
+    const primaryActions = (entry: LibraryEntryDto, withChapters = true) => (
+        <>
             <IconButton title={t('library.check')} onClick={() => checkEntry(entry)} loading={busy[`check-${entry.id}`]}>
                 <IconRefresh size={14} />
             </IconButton>
             <IconButton title={t('library.downloadNew')} onClick={() => downloadNew(entry)} disabled={entry.newCount === 0} loading={busy[`dl-${entry.id}`]}>
                 <IconDownload size={14} />
             </IconButton>
-            <IconButton title={expanded === entry.id ? t('library.hide') : t('discover.chapters')} onClick={() => openChapters(entry)}>
-                <IconList size={14} />
-            </IconButton>
+            {withChapters && (
+                <IconButton title={expanded === entry.id ? t('library.hide') : t('discover.chapters')} onClick={() => openChapters(entry)}>
+                    <IconList size={14} />
+                </IconButton>
+            )}
+        </>
+    );
+
+    /** Labeled dropdown for secondary actions (rematch, undo migration, remove/restore). */
+    const actionMenu = (entry: LibraryEntryDto, withChapters = false) => {
+        const item = (icon: React.ReactNode, label: string, onClick: () => void, danger = false, loading = false) => (
+            <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                    setMenuFor(null);
+                    onClick();
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors disabled:opacity-50 ${
+                    danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+            >
+                <span className="flex-none">{loading ? <Spinner size={13} /> : icon}</span>
+                {label}
+            </button>
+        );
+        return (
+            <div className="relative" ref={menuFor === entry.id ? menuRef : undefined}>
+                <IconButton title={t('library.moreActions')} onClick={() => setMenuFor(current => (current === entry.id ? null : entry.id))}>
+                    <IconDots size={14} />
+                </IconButton>
+                {menuFor === entry.id && (
+                    <div className="absolute bottom-8 right-0 z-30 w-48 rounded-xl border border-line bg-surface p-1.5 shadow-xl shadow-black/60">
+                        {withChapters &&
+                            item(<IconList size={14} />, expanded === entry.id ? t('library.hide') : t('discover.chapters'), () => openChapters(entry))}
+                        {item(<IconSearch size={14} />, t('library.rematch'), () => rematch(entry), false, busy[`rematch-${entry.id}`])}
+                        {entry.canRollbackMigration && item(<IconUndo size={14} />, t('library.rollbackMigrationHint'), () => undoMigration(entry))}
+                        <div className="my-1 border-t border-line" />
+                        {showHidden
+                            ? item(<IconRefresh size={14} />, t('library.reestablish'), () => restoreEntry(entry))
+                            : item(<IconTrash size={14} />, t('library.remove'), () => setPendingRemove(entry), true)}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    /** List rows have room: everything stays inline. */
+    const secondaryActions = (entry: LibraryEntryDto) => (
+        <>
             <IconButton title={t('library.rematchHint')} onClick={() => rematch(entry)} loading={busy[`rematch-${entry.id}`]}>
                 <IconSearch size={14} />
             </IconButton>
@@ -455,7 +525,7 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                     <IconTrash size={14} />
                 </IconButton>
             )}
-        </div>
+        </>
     );
 
     const migrationBanner = (entry: LibraryEntryDto, className = '') =>
@@ -506,8 +576,8 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         );
 
     const renderGridCard = (entry: LibraryEntryDto) => (
-        <article key={entry.id} className="overflow-hidden rounded-xl border border-line bg-surface/60 transition-colors hover:border-zinc-600">
-            <div className="relative aspect-[2/3]">
+        <article key={entry.id} className="relative rounded-xl border border-line bg-surface/60 transition-colors hover:border-zinc-600">
+            <div className="relative aspect-[2/3] overflow-hidden rounded-t-xl">
                 <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
                 <div className="absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry)}</div>
                 <button
@@ -520,17 +590,20 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                 </button>
             </div>
             <div className="space-y-1.5 p-3">
-                <div className="line-clamp-2 min-h-8 text-sm font-semibold leading-tight" title={entry.title}>
+                <div className="line-clamp-2 min-h-[2.5em] text-sm font-semibold leading-tight" title={entry.title}>
                     {entry.title}
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
                     {prefs.source && (entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>)}
                     {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">{statLine(entry)}</div>
+                <div className="flex min-h-[2.125rem] flex-wrap content-start items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4">{statLine(entry)}</div>
                 {prefs.progress && <ProgressBar value={progressOf(entry)} tone={progressTone(entry)} />}
                 {migrationBanner(entry)}
-                <div className="flex justify-end pt-0.5">{actionButtons(entry)}</div>
+                <div className="card-actions flex items-center justify-between pt-0.5">
+                    <div className="flex items-center gap-1">{primaryActions(entry, view !== 'grid-compact')}</div>
+                    {actionMenu(entry, view === 'grid-compact')}
+                </div>
                 {chaptersPanel(entry)}
             </div>
         </article>
@@ -573,7 +646,10 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                     onChange={value => toggleFollow(entry, value)}
                     label={entry.autoDownload ? t('library.following') : t('library.paused')}
                 />
-                <div className="flex-none">{actionButtons(entry)}</div>
+                <div className="card-actions flex flex-none items-center gap-1">
+                    {primaryActions(entry)}
+                    {secondaryActions(entry)}
+                </div>
             </div>
             {migrationBanner(entry, 'mt-2')}
             {chaptersPanel(entry, 'mt-2')}

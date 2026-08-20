@@ -104,6 +104,7 @@ export const en = {
     'library.hide': 'Hide',
     'library.rematchHint': 'Look for the series on another source',
     'library.rematch': 'Rematch',
+    'library.moreActions': 'More actions',
     'library.rollbackMigrationHint': 'Go back to the previous source',
     'library.rollbackMigration': '⟲ migration',
     'library.reestablish': 'Restore',

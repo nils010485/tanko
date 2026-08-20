@@ -19,7 +19,8 @@
     "start": "node packages/server/dist/index.js",
     "test": "npm run test -w @tanko/server --if-present",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.9"
