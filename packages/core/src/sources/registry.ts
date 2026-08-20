@@ -2,13 +2,13 @@
  * Unified source registry: native connectors first (curated, reliable),
  * then every legacy Hakuneko connector behind the LegacySourceAdapter.
  */
-import type { SourceAdapter } from './types.js';
+
+import { loadConnectors } from '../engine.js';
 import { LegacySourceAdapter } from './legacy-adapter.js';
 import { createNativeConnectors } from './native/index.js';
-import { loadConnectors } from '../engine.js';
+import type { SourceAdapter } from './types.js';
 
 export class SourceRegistry {
-
     private readonly adapters = new Map<string, SourceAdapter>();
     private loaded = false;
 

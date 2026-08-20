@@ -8,7 +8,6 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 export class Database {
-
     readonly db: DatabaseSync;
 
     constructor(dataDirectory: string) {
@@ -35,8 +34,7 @@ export class Database {
     }
 
     kvSet(key: string, value: string): void {
-        this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-            .run(key, value);
+        this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
     }
 
     close(): void {

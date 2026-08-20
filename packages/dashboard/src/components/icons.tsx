@@ -15,6 +15,8 @@ function base({ size = 16, ...props }: IconProps) {
         strokeWidth: 2,
         strokeLinecap: 'round' as const,
         strokeLinejoin: 'round' as const,
+        // decorative icons: hidden from assistive tech (buttons carry titles)
+        'aria-hidden': true,
         ...props
     };
 }
@@ -213,6 +215,87 @@ export function IconMenu(props: IconProps) {
             <path d="M4 6h16" />
             <path d="M4 12h16" />
             <path d="M4 18h16" />
+        </svg>
+    );
+}
+
+export function IconGrid(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+    );
+}
+
+export function IconGridSmall(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <rect x="3" y="3" width="4" height="4" rx="1" />
+            <rect x="10" y="3" width="4" height="4" rx="1" />
+            <rect x="17" y="3" width="4" height="4" rx="1" />
+            <rect x="3" y="10" width="4" height="4" rx="1" />
+            <rect x="10" y="10" width="4" height="4" rx="1" />
+            <rect x="17" y="10" width="4" height="4" rx="1" />
+            <rect x="3" y="17" width="4" height="4" rx="1" />
+            <rect x="10" y="17" width="4" height="4" rx="1" />
+            <rect x="17" y="17" width="4" height="4" rx="1" />
+        </svg>
+    );
+}
+
+export function IconList(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <line x1="8" x2="21" y1="6" y2="6" />
+            <line x1="8" x2="21" y1="12" y2="12" />
+            <line x1="8" x2="21" y1="18" y2="18" />
+            <line x1="3" x2="3.01" y1="6" y2="6" />
+            <line x1="3" x2="3.01" y1="12" y2="12" />
+            <line x1="3" x2="3.01" y1="18" y2="18" />
+        </svg>
+    );
+}
+
+export function IconSliders(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <line x1="4" x2="4" y1="21" y2="14" />
+            <line x1="4" x2="4" y1="10" y2="3" />
+            <line x1="12" x2="12" y1="21" y2="12" />
+            <line x1="12" x2="12" y1="8" y2="3" />
+            <line x1="20" x2="20" y1="21" y2="16" />
+            <line x1="20" x2="20" y1="12" y2="3" />
+            <line x1="2" x2="6" y1="14" y2="14" />
+            <line x1="10" x2="14" y1="8" y2="8" />
+            <line x1="18" x2="22" y1="16" y2="16" />
+        </svg>
+    );
+}
+
+export function IconBookmark(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+        </svg>
+    );
+}
+
+export function IconBookmarkFilled(props: IconProps) {
+    return (
+        <svg {...base({ fill: 'currentColor', ...props })}>
+            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+        </svg>
+    );
+}
+
+export function IconUndo(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <path d="M9 14 4 9l5-5" />
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
         </svg>
     );
 }

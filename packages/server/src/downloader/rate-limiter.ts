@@ -3,7 +3,6 @@
  * requests to the same hostname (politeness towards source sites).
  */
 export class DomainGate {
-
     private readonly lastHit = new Map<string, number>();
     constructor(private minIntervalMs: number) {}
 

@@ -2,8 +2,8 @@
  * Curated native connectors registered by default (before the legacy adapters).
  */
 import type { SourceAdapter } from '../types.js';
-import { MangaDexConnector } from './mangadex.js';
 import { MadaraConnector } from './madara.js';
+import { MangaDexConnector } from './mangadex.js';
 
 export function createNativeConnectors(): SourceAdapter[] {
     return [

@@ -2,19 +2,21 @@
  * Global shims required by the legacy Hakuneko engine + connectors when
  * running outside of the Electron renderer (headless Node.js).
  */
-import { parseHTML } from 'linkedom';
+
 import { createRequire } from 'node:module';
+import { parseHTML } from 'linkedom';
+import type { EngineContext } from '../engine.js';
 
 const require = createRequire(import.meta.url);
 
 declare global {
-    // eslint-disable-next-line no-var
     var __hakunekoShimsInstalled: boolean | undefined;
-    // eslint-disable-next-line no-var
     var EventListener: Record<string, string>;
-    // eslint-disable-next-line no-var
-    var Engine: any;
+    var Engine: EngineContext;
 }
+
+/** linkedom document type, inferred once (no deep import into linkedom's types). */
+type ShimDocument = ReturnType<typeof parseHTML>['window']['document'];
 
 /**
  * Container returned by document.createElement('html').
@@ -25,37 +27,37 @@ declare global {
  * so parse with parseHTML() instead — far more robust.
  */
 class DOMContainer {
-    private _document: any = null;
+    private _document: ShimDocument | null = null;
 
     set innerHTML(content: string) {
-        this._document = parseHTML('<!doctype html>' + content).document;
+        this._document = parseHTML(`<!doctype html>${content}`).document;
     }
 
     get innerHTML(): string {
         return this._document ? this._document.documentElement.innerHTML : '';
     }
 
-    querySelectorAll(selector: string): any {
+    querySelectorAll(selector: string) {
         return this._document ? this._document.querySelectorAll(selector) : [];
     }
 
-    querySelector(selector: string): any {
+    querySelector(selector: string) {
         return this._document ? this._document.querySelector(selector) : null;
     }
 
-    getElementsByTagName(tag: string): any {
+    getElementsByTagName(tag: string) {
         return this._document ? this._document.getElementsByTagName(tag) : [];
     }
 
-    getElementById(id: string): any {
+    getElementById(id: string) {
         return this._document ? this._document.getElementById(id) : null;
     }
 
-    get body(): any {
+    get body() {
         return this._document?.body;
     }
 
-    get documentElement(): any {
+    get documentElement() {
         return this._document?.documentElement;
     }
 
@@ -71,18 +73,18 @@ export function installGlobals(): void {
     globalThis.__hakunekoShimsInstalled = true;
 
     // DOM environment (used by Connector.createDOM, querySelectorAll, etc.)
-    const dom: any = parseHTML('<!doctype html><html><head></head><body></body></html>');
+    const dom = parseHTML('<!doctype html><html><head></head><body></body></html>');
     // document events are frontend-only notifications -> make dispatching a no-op
     // (linkedom rejects Node's native CustomEvent instances)
     dom.document.dispatchEvent = () => true;
     // createElement('html') must return the robust parseHTML-backed container
     const realCreateElement = dom.document.createElement.bind(dom.document);
-    dom.document.createElement = (tag: string) => {
+    dom.document.createElement = ((tag: string) => {
         if (String(tag).toLowerCase() === 'html') {
             return new DOMContainer();
         }
         return realCreateElement(tag);
-    };
+    }) as typeof dom.document.createElement;
     Object.assign(globalThis, {
         document: dom.document,
         window: dom.window,
@@ -102,12 +104,12 @@ export function installGlobals(): void {
     // Minimal FileReader. The legacy engine assigns property handlers
     // (reader.onload / reader.onerror) which Node's EventTarget does not
     // invoke, so call them directly here.
-    if (!(globalThis as any).FileReader) {
-        (globalThis as any).FileReader = class FileReader {
-            result: any;
-            error: any;
-            onload: ((event: any) => void) | undefined;
-            onerror: ((event: any) => void) | undefined;
+    if (typeof globalThis.FileReader === 'undefined') {
+        class HeadlessFileReader {
+            result: unknown;
+            error: unknown;
+            onload: ((event: { target: unknown }) => void) | undefined;
+            onerror: ((event: { target: unknown }) => void) | undefined;
             readAsArrayBuffer(blob: Blob) {
                 blob.arrayBuffer()
                     .then(buffer => {
@@ -119,12 +121,13 @@ export function installGlobals(): void {
                         this.onerror?.({ target: this });
                     });
             }
-        };
+        }
+        Object.assign(globalThis, { FileReader: HeadlessFileReader });
     }
 
     // Image validation shim used by some connectors (e.g. MangaDex)
-    if (!(globalThis as any).createImageBitmap) {
-        (globalThis as any).createImageBitmap = async () => ({ width: 1, height: 1 });
+    if (typeof globalThis.createImageBitmap === 'undefined') {
+        Object.assign(globalThis, { createImageBitmap: async () => ({ width: 1, height: 1 }) });
     }
 
     // Lazy optional dependencies used by some connectors

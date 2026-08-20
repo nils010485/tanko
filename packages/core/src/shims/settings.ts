@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export interface SettingEntry {
-    value: any;
+    value: unknown;
     label?: string;
 }
 
@@ -17,10 +17,21 @@ function isSettingEntry(value: unknown): value is SettingEntry {
 }
 
 export class HeadlessSettings extends EventTarget {
-
-    [key: string]: any;
+    [key: string]: unknown;
 
     readonly file: string;
+
+    baseDirectory: SettingEntry;
+    bookmarkDirectory: SettingEntry;
+    useSubdirectory: SettingEntry;
+    chapterFormat: SettingEntry;
+    chapterTitleFormat: SettingEntry;
+    useSequentialMediaDownloads: SettingEntry;
+    ignoreErrorOnDownload: SettingEntry;
+    postChapterDownloadCommand: SettingEntry;
+    proxyRules: SettingEntry;
+    proxyAuth: SettingEntry;
+    hCaptchaAccessibilityUUID: SettingEntry;
 
     constructor(dataDirectory: string) {
         super();
@@ -50,12 +61,14 @@ export class HeadlessSettings extends EventTarget {
                     this[key].value = data[key];
                 }
             }
-        } catch { /* no persisted settings yet */ }
+        } catch {
+            /* no persisted settings yet */
+        }
         this.dispatchEvent(new CustomEvent('loaded', { detail: this }));
     }
 
     save(): void {
-        const data: Record<string, any> = {};
+        const data: Record<string, unknown> = {};
         for (const key of Object.keys(this)) {
             if (key.startsWith('_') || key === 'file') {
                 continue;

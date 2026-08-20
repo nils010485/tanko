@@ -13,7 +13,6 @@ const MANGA_LIST_TTL_SECONDS = 24 * 3600;
 const CHAPTERS_TTL_SECONDS = 30 * 60;
 
 export class CachedSourceAdapter implements SourceAdapter {
-
     constructor(
         private readonly inner: SourceAdapter,
         private readonly cache: CacheStore

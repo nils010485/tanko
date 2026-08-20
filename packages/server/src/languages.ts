@@ -45,7 +45,14 @@ export function parseLanguageList(raw: string | undefined | null): string[] {
     if (!raw) {
         return [];
     }
-    return [...new Set(raw.split(',').map(normalizeLanguage).filter((value): value is string => Boolean(value)))];
+    return [
+        ...new Set(
+            raw
+                .split(',')
+                .map(normalizeLanguage)
+                .filter((value): value is string => Boolean(value))
+        )
+    ];
 }
 
 /** ISO codes declared by a source via its tags ('multi-lingual' => undefined = unknown). */

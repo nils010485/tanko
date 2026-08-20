@@ -15,15 +15,7 @@ export function Cover({ title, thumbnail, coverUrl, className = '' }: { title: s
     const [brokenThumbnail, setBrokenThumbnail] = useState(false);
 
     if (coverUrl && !brokenCover) {
-        return (
-            <img
-                src={coverUrl}
-                alt=""
-                loading="lazy"
-                onError={() => setBrokenCover(true)}
-                className={`flex-none object-cover ${className}`}
-            />
-        );
+        return <img src={coverUrl} alt="" loading="lazy" onError={() => setBrokenCover(true)} className={`flex-none object-cover ${className}`} />;
     }
 
     if (thumbnail && !brokenThumbnail) {

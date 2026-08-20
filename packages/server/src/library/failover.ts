@@ -8,9 +8,9 @@
  * a suggestion for the dashboard.
  */
 import type { SourceRegistry } from '@tanko/core';
-import type { LibraryStore, MigrationTarget } from './store.js';
 import { confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
+import type { LibraryStore, MigrationTarget } from './store.js';
 
 /** Healthy sources first. */
 function byHealth(a: SourceInfo, b: SourceInfo): number {
@@ -21,23 +21,27 @@ function byHealth(a: SourceInfo, b: SourceInfo): number {
 function byKind(a: SourceInfo, b: SourceInfo): number {
     return (a.kind === 'native' ? -1 : 1) - (b.kind === 'native' ? -1 : 1);
 }
+
 import type { SourceInfo } from '../import/service.js';
 
 export class FailoverService {
-
-    constructor(private readonly opts: {
-        registry: SourceRegistry;
-        store: LibraryStore;
-        listSources: () => Promise<SourceInfo[]>;
-        getPreferredLanguages: () => string[];
-    }) {}
+    constructor(
+        private readonly opts: {
+            registry: SourceRegistry;
+            store: LibraryStore;
+            listSources: () => Promise<SourceInfo[]>;
+            getPreferredLanguages: () => string[];
+        }
+    ) {}
 
     /**
      * Look for an alternative source carrying the same series.
      * Returns the best candidate with its confidence tier.
      */
     async findAlternative(entry: { id: number; sourceId: string; title: string }): Promise<{
-        best: MigrationTarget | null; confidence: 'auto' | 'review' | 'none'; candidates: MigrationTarget[];
+        best: MigrationTarget | null;
+        confidence: 'auto' | 'review' | 'none';
+        candidates: MigrationTarget[];
     }> {
         const preferred = this.opts.getPreferredLanguages();
         const sources = (await this.opts.listSources())
@@ -57,7 +61,7 @@ export class FailoverService {
                 }
                 const results: Array<{ id: string; title: string; url?: string }> = [];
                 for (const query of queries) {
-                    results.push(...await adapter.searchMangas(query));
+                    results.push(...(await adapter.searchMangas(query)));
                     if (results.length > 0) {
                         break;
                     }
@@ -77,7 +81,9 @@ export class FailoverService {
                         best = candidate;
                     }
                 }
-            } catch { /* a broken alternative is simply skipped */ }
+            } catch {
+                /* a broken alternative is simply skipped */
+            }
         }
 
         candidates.sort((a, b) => (b.score || 0) - (a.score || 0));

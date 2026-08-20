@@ -5,7 +5,12 @@ import { ToastProvider } from './components/toast.js';
 import { I18nProvider } from './i18n/index.js';
 import './index.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const container = document.getElementById('root');
+if (!container) {
+    throw new Error('Root element #root not found');
+}
+
+ReactDOM.createRoot(container).render(
     <React.StrictMode>
         <I18nProvider>
             <ToastProvider>

@@ -11,10 +11,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
-import { listChapterEntries } from '../downloader/paths.js';
 import type { Database } from '../db.js';
-import type { EventBus } from '../ws.js';
+import { listChapterEntries } from '../downloader/paths.js';
 import { parseChapterNumber } from '../import/scanner.js';
+import type { EventBus } from '../ws.js';
 
 const COVERS_KEY = 'first-chapter-covers';
 const COVER_WIDTH = 400;
@@ -40,18 +40,19 @@ function naturalCompare(a: string, b: string): number {
 }
 
 export class CoverService {
-
     private running = false;
     private counters = { total: 0, done: 0, failed: 0, skipped: 0 };
     /** Bumped on clear(): an in-flight regeneration loop aborts when it changes. */
     private generation = 0;
 
-    constructor(private readonly opts: {
-        db: Database;
-        events: EventBus;
-        /** Resolves the on-disk series folder of an entry (LibraryStore.seriesDirectory). */
-        directoryOf?: (entryId: number) => string | null;
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            events: EventBus;
+            /** Resolves the on-disk series folder of an entry (LibraryStore.seriesDirectory). */
+            directoryOf?: (entryId: number) => string | null;
+        }
+    ) {
         this.opts.db.db.exec(`
             CREATE TABLE IF NOT EXISTS library_covers (
                 entry_id    INTEGER PRIMARY KEY REFERENCES library(id) ON DELETE CASCADE,
@@ -152,17 +153,14 @@ export class CoverService {
      * when no readable page exists (skipped).
      */
     async generateForEntry(entryId: number): Promise<boolean> {
-        const registered = this.opts.db.db.prepare(
-            "SELECT title, path FROM library_chapters WHERE entry_id = ? AND status = 'downloaded' AND path IS NOT NULL"
-        ).all(entryId) as Array<{ title: string; path: string }>;
+        const registered = this.opts.db.db
+            .prepare("SELECT title, path FROM library_chapters WHERE entry_id = ? AND status = 'downloaded' AND path IS NOT NULL")
+            .all(entryId) as Array<{ title: string; path: string }>;
         registered.sort((a, b) => byChapterNumber(a.title, b.title));
-        const candidates = [
-            ...registered.map(chapter => chapter.path),
-            ...this.diskChapters(entryId)
-        ];
+        const candidates = [...registered.map(chapter => chapter.path), ...this.diskChapters(entryId)];
         for (const chapterPath of candidates) {
             const page = await this.firstPage(chapterPath);
-            if (page && await this.storeCover(entryId, page)) {
+            if (page && (await this.storeCover(entryId, page))) {
                 return true;
             }
         }
@@ -193,21 +191,24 @@ export class CoverService {
             // cover-like 2:3 ratio instead of shrinking the whole strip.
             const strip = (meta.height ?? 0) > (meta.width ?? 1) * 3;
             const webp = await image
-                .resize(strip
-                    ? { width: COVER_WIDTH, height: COVER_STRIP_HEIGHT, fit: 'cover', position: 'top', withoutEnlargement: true }
-                    : { width: COVER_WIDTH, withoutEnlargement: true })
+                .resize(
+                    strip
+                        ? { width: COVER_WIDTH, height: COVER_STRIP_HEIGHT, fit: 'cover', position: 'top', withoutEnlargement: true }
+                        : { width: COVER_WIDTH, withoutEnlargement: true }
+                )
                 .webp({ quality: COVER_QUALITY })
                 .toBuffer();
-            this.opts.db.db.prepare(
-                'INSERT INTO library_covers (entry_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(entry_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
-            ).run(entryId, webp, new Date().toISOString());
+            this.opts.db.db
+                .prepare(
+                    'INSERT INTO library_covers (entry_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(entry_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+                )
+                .run(entryId, webp, new Date().toISOString());
             return true;
         } catch (error) {
             this.log(`cover conversion failed for entry ${entryId}: ${(error as Error).message}`, 'warn');
             return false;
         }
     }
-
 
     /**
      * First page of a downloaded chapter: either the first image inside the
@@ -229,19 +230,22 @@ export class CoverService {
                 .filter(entry => !entry.dir && IMAGE_EXTENSIONS.has(extension(entry.name)))
                 .map(entry => entry.name)
                 .sort(naturalCompare);
-            if (names.length === 0) {
+            const first = names[0];
+            if (!first) {
                 return null;
             }
-            return zip.files[names[0]!]!.async('nodebuffer');
+            return zip.files[first]?.async('nodebuffer');
         }
         if (stat.isDirectory()) {
-            const files = fs.readdirSync(chapterPath)
+            const files = fs
+                .readdirSync(chapterPath)
                 .filter(name => IMAGE_EXTENSIONS.has(extension(name)))
                 .sort(naturalCompare);
-            if (files.length === 0) {
+            const first = files[0];
+            if (!first) {
                 return null;
             }
-            return fs.promises.readFile(path.join(chapterPath, files[0]!));
+            return fs.promises.readFile(path.join(chapterPath, first));
         }
         return null;
     }
@@ -257,6 +261,5 @@ function extension(name: string): string {
 }
 /** Numeric-aware chapter ordering: parsed number first (unparsable last), then natural compare. */
 function byChapterNumber(a: string, b: string): number {
-    return (parseChapterNumber(a) ?? Number.MAX_SAFE_INTEGER) - (parseChapterNumber(b) ?? Number.MAX_SAFE_INTEGER)
-        || naturalCompare(a, b);
+    return (parseChapterNumber(a) ?? Number.MAX_SAFE_INTEGER) - (parseChapterNumber(b) ?? Number.MAX_SAFE_INTEGER) || naturalCompare(a, b);
 }

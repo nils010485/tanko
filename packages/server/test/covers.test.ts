@@ -1,15 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
-import { EventBus } from '../src/ws.js';
-import { LibraryStore } from '../src/library/store.js';
 import { CoverService } from '../src/library/covers.js';
+import { LibraryStore } from '../src/library/store.js';
 import { registerCoverRoutes } from '../src/routes/covers.js';
+import { EventBus } from '../src/ws.js';
 
 let tmpDir: string;
 let database: Database;
@@ -19,7 +19,9 @@ let app: FastifyInstance;
 
 /** Tiny solid-color page PNG. */
 async function page(color: { r: number; g: number; b: number }): Promise<Buffer> {
-    return sharp({ create: { width: 32, height: 48, channels: 3, background: color } }).png().toBuffer();
+    return sharp({ create: { width: 32, height: 48, channels: 3, background: color } })
+        .png()
+        .toBuffer();
 }
 
 /** Write a CBZ whose first page has `firstColor` and second page another color. */
@@ -32,16 +34,18 @@ async function writeCbz(file: string, firstColor: { r: number; g: number; b: num
 }
 
 function addEntry(title: string): number {
-    const row = database.db.prepare(
-        "INSERT INTO library (source_id, source_label, manga_id, title, auto_download, added_at) VALUES ('s', 'Source', ?, ?, 1, ?)"
-    ).run(title.toLowerCase().replace(/\s+/g, '-'), title, new Date().toISOString());
+    const row = database.db
+        .prepare("INSERT INTO library (source_id, source_label, manga_id, title, auto_download, added_at) VALUES ('s', 'Source', ?, ?, 1, ?)")
+        .run(title.toLowerCase().replace(/\s+/g, '-'), title, new Date().toISOString());
     return Number(row.lastInsertRowid);
 }
 
 function addChapter(entryId: number, title: string, chapterPath: string | null): void {
-    database.db.prepare(
-        "INSERT INTO library_chapters (entry_id, chapter_id, title, status, path, discovered_at, downloaded_at) VALUES (?, ?, ?, 'downloaded', ?, ?, ?)"
-    ).run(entryId, title, title, chapterPath, new Date().toISOString(), new Date().toISOString());
+    database.db
+        .prepare(
+            "INSERT INTO library_chapters (entry_id, chapter_id, title, status, path, discovered_at, downloaded_at) VALUES (?, ?, ?, 'downloaded', ?, ?, ?)"
+        )
+        .run(entryId, title, title, chapterPath, new Date().toISOString(), new Date().toISOString());
 }
 
 /** Wait until the background regeneration loop finishes. */
@@ -180,8 +184,12 @@ describe('CoverService', () => {
         const chapterDir = path.join(tmpDir, 'strip-1');
         fs.mkdirSync(chapterDir, { recursive: true });
         // 400x20000px: a width-only resize to 400 would exceed WebP's 16383px limit
-        fs.writeFileSync(path.join(chapterDir, '001.png'),
-            await sharp({ create: { width: 400, height: 20000, channels: 3, background: { r: 10, g: 10, b: 200 } } }).png().toBuffer());
+        fs.writeFileSync(
+            path.join(chapterDir, '001.png'),
+            await sharp({ create: { width: 400, height: 20000, channels: 3, background: { r: 10, g: 10, b: 200 } } })
+                .png()
+                .toBuffer()
+        );
         addChapter(entryStrip, 'Chapter 1', chapterDir);
 
         expect(await covers.generateForEntry(entryStrip)).toBe(true);

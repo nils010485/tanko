@@ -4,12 +4,11 @@
  *   POST /api/sources/update — sync connectors from upstream Hakuneko
  */
 import type { FastifyInstance } from 'fastify';
-import type { Database } from '../db.js';
 import type { ServerConfig } from '../config.js';
-import { syncConnectors, isSyncRunning, getUpdateStatus } from '../sources/updater.js';
+import type { Database } from '../db.js';
+import { getUpdateStatus, isSyncRunning, syncConnectors } from '../sources/updater.js';
 
 export function registerSourceUpdateRoutes(app: FastifyInstance, config: ServerConfig, database: Database): void {
-
     app.get('/api/sources/update', async () => getUpdateStatus(database));
 
     app.post('/api/sources/update', async (_request, reply) => {

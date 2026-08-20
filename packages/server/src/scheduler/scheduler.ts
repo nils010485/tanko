@@ -3,13 +3,14 @@
  * New chapters are flagged in the library and (optionally) auto-enqueued
  * into the download queue. Status is published on the WebSocket bus.
  */
-import { Cron } from 'croner';
+
 import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
+import { Cron } from 'croner';
 import type { Database } from '../db.js';
-import type { EventBus } from '../ws.js';
-import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { DownloadQueue } from '../downloader/queue.js';
-import { sendNotification, type NotificationSettings } from '../library/notify.js';
+import { type NotificationSettings, sendNotification } from '../library/notify.js';
+import type { ChapterRow, LibraryStore } from '../library/store.js';
+import type { EventBus } from '../ws.js';
 
 const SETTINGS_KEY = 'schedule';
 
@@ -28,7 +29,6 @@ const DEFAULTS: ScheduleSettings = {
 };
 
 export class Scheduler {
-
     private job: Cron | undefined;
     private settings: ScheduleSettings;
     private running = false;
@@ -37,14 +37,16 @@ export class Scheduler {
     private seriesChecked = 0;
     private newChaptersFound = 0;
 
-    constructor(private readonly opts: {
-        db: Database;
-        store: LibraryStore;
-        queue: DownloadQueue;
-        events: EventBus;
-        /** Optional source failover: invoked after repeated check failures. */
-        failover?: { maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto?: boolean): Promise<'migrated' | 'suggested' | 'none'> };
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            store: LibraryStore;
+            queue: DownloadQueue;
+            events: EventBus;
+            /** Optional source failover: invoked after repeated check failures. */
+            failover?: { maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto?: boolean): Promise<'migrated' | 'suggested' | 'none'> };
+        }
+    ) {
         this.settings = this._load();
         this._startJob();
     }
@@ -112,7 +114,7 @@ export class Scheduler {
                         this.opts.events.publish({
                             type: 'log',
                             level: outcome === 'migrated' ? 'info' : 'warn',
-                            message: this._failoverMessage(entry.title, outcome) + ` (${entry.downloadFailures} téléchargements en échec)`,
+                            message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`,
                             at: new Date().toISOString()
                         });
                     } catch (error) {
@@ -182,7 +184,11 @@ export class Scheduler {
                 at: new Date().toISOString()
             });
             if (this.settings.autoDownload && entry.autoDownload) {
-                this.opts.store.enqueueChapters(entry.id, fresh.map(chapter => chapter.chapter_id), this.opts.queue);
+                this.opts.store.enqueueChapters(
+                    entry.id,
+                    fresh.map(chapter => chapter.chapter_id),
+                    this.opts.queue
+                );
             }
         }
         this._publishEntryUpdated(entry.id);
@@ -240,9 +246,7 @@ export class Scheduler {
 
     /** Send the new-chapters webhook notification. */
     private async _notifyNewChapters(newBySeries: Array<{ title: string; chapters: string[] }>): Promise<void> {
-        const body = newBySeries
-            .map(item => `• ${item.title}: ${item.chapters.slice(0, 5).join(', ')}${item.chapters.length > 5 ? '…' : ''}`)
-            .join('\n');
+        const body = newBySeries.map(item => `• ${item.title}: ${item.chapters.slice(0, 5).join(', ')}${item.chapters.length > 5 ? '…' : ''}`).join('\n');
         await sendNotification(this.settings.notifications, 'New chapters available', body);
     }
 
@@ -257,7 +261,9 @@ export class Scheduler {
                     notifications: { ...DEFAULTS.notifications, ...(parsed.notifications || {}) }
                 };
             }
-        } catch { /* fall back to defaults */ }
+        } catch {
+            /* fall back to defaults */
+        }
         return { ...DEFAULTS, notifications: { ...DEFAULTS.notifications } };
     }
 

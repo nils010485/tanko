@@ -79,7 +79,6 @@ export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string)
 }
 
 export class HeadlessRequest {
-
     userAgent: string;
     jar: CookieJar;
 
@@ -91,22 +90,23 @@ export class HeadlessRequest {
     /**
      * Perform an HTTP(S) request with session cookies and header transforms.
      */
-    async fetch(request: any, timeout = 60000): Promise<Response> {
-        const url = request.url || String(request);
-        const { headers, extraCookie } = prepareHeaders(request, this.userAgent);
+    async fetch(request: LegacyRequest | string, timeout = 60000): Promise<Response> {
+        const legacyRequest = typeof request === 'string' ? { url: request, headers: new Headers() } : request;
+        const url = legacyRequest.url;
+        const { headers, extraCookie } = prepareHeaders(legacyRequest, this.userAgent);
 
         let cookieHeader = await this.jar.getCookieString(url).catch(() => '');
         if (extraCookie) {
-            cookieHeader = cookieHeader ? cookieHeader + '; ' + extraCookie : extraCookie;
+            cookieHeader = cookieHeader ? `${cookieHeader}; ${extraCookie}` : extraCookie;
         }
         if (cookieHeader) {
             headers.set('Cookie', cookieHeader);
         }
 
         const response = await fetch(url, {
-            method: request.method || 'GET',
+            method: legacyRequest.method || 'GET',
             headers,
-            body: request.method === 'POST' ? request._body : undefined,
+            body: legacyRequest.method === 'POST' ? legacyRequest._body : undefined,
             redirect: 'follow',
             signal: AbortSignal.timeout(timeout)
         });
@@ -121,8 +121,8 @@ export class HeadlessRequest {
      * Emulated BrowserWindow: fetch the page, evaluate inline scripts and the
      * given injection script in a sandboxed DOM.
      */
-    async fetchUI(request: any, injectionScript?: string, timeout = 60000): Promise<any> {
-        const url = request.url || String(request);
+    async fetchUI(request: LegacyRequest | string, injectionScript?: string, timeout = 60000): Promise<unknown> {
+        const url = typeof request === 'string' ? request : request.url;
         const response = await this.fetch(request, timeout);
         let html = await response.text();
         let finalUrl = response.url || url;
@@ -135,7 +135,9 @@ export class HeadlessRequest {
                     html = rendered.html;
                     finalUrl = rendered.finalUrl;
                 }
-            } catch { /* keep the HTTP html on browser failure */ }
+            } catch {
+                /* keep the HTTP html on browser failure */
+            }
         }
         if (!injectionScript) {
             return undefined;
@@ -146,7 +148,13 @@ export class HeadlessRequest {
     /**
      * Same emulation as fetchUI (preload scripts are ignored headless).
      */
-    async fetchBrowser(request: any, preloadScript: any, runtimeScript: string, preferences?: any, timeout = 60000): Promise<any> {
+    async fetchBrowser(
+        request: LegacyRequest | string,
+        _preloadScript: unknown,
+        runtimeScript: string,
+        _preferences?: unknown,
+        timeout = 60000
+    ): Promise<unknown> {
         return this.fetchUI(request, runtimeScript, timeout);
     }
 
@@ -154,7 +162,7 @@ export class HeadlessRequest {
         throw new Error('fetchJapscan is not supported in headless mode');
     }
 
-    _evaluateInPage(url: string, html: string, script: string, timeout?: number): Promise<any> {
+    _evaluateInPage(url: string, html: string, script: string, timeout?: number): Promise<unknown> {
         const timeoutMs = typeof timeout === 'number' && Number.isFinite(timeout) ? timeout : 60000;
         const inlineTimeout = Math.min(timeoutMs, 10000);
         const document = parseDocument(html);
@@ -162,53 +170,92 @@ export class HeadlessRequest {
 
         // page scripts schedule timers that may throw later — a raw setTimeout
         // callback escapes the inline try/catch and kills the whole process
-        const safeSetTimeout = (callback: (...args: any[]) => void, ms?: number, ...args: any[]) =>
+        const safeSetTimeout = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) =>
             setTimeout(() => {
                 try {
                     callback(...args);
-                } catch { /* hostile page script, ignore */ }
+                } catch {
+                    /* hostile page script, ignore */
+                }
             }, ms);
-        const safeSetInterval = (callback: (...args: any[]) => void, ms?: number, ...args: any[]) =>
+        const safeSetInterval = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) =>
             setInterval(() => {
                 try {
                     callback(...args);
-                } catch { /* hostile page script, ignore */ }
+                } catch {
+                    /* hostile page script, ignore */
+                }
             }, ms);
-        const sandbox: any = {
+        const sandbox: Record<string, unknown> = {
             console,
-            setTimeout: safeSetTimeout, clearTimeout, setInterval: safeSetInterval, clearInterval,
-            URL, URLSearchParams, TextDecoder, TextEncoder,
-            atob, btoa, JSON, Math, Date, RegExp, Promise,
-            Object, Array, String, Number, Boolean, Symbol, Map, Set, WeakMap,
-            Error, TypeError, RangeError, parseInt, parseFloat, isNaN,
-            decodeURI, decodeURIComponent, encodeURI, encodeURIComponent,
+            setTimeout: safeSetTimeout,
+            clearTimeout,
+            setInterval: safeSetInterval,
+            clearInterval,
+            URL,
+            URLSearchParams,
+            TextDecoder,
+            TextEncoder,
+            atob,
+            btoa,
+            JSON,
+            Math,
+            Date,
+            RegExp,
+            Promise,
+            Object,
+            Array,
+            String,
+            Number,
+            Boolean,
+            Symbol,
+            Map,
+            Set,
+            WeakMap,
+            Error,
+            TypeError,
+            RangeError,
+            parseInt,
+            parseFloat,
+            isNaN,
+            decodeURI,
+            decodeURIComponent,
+            encodeURI,
+            encodeURIComponent,
             crypto: globalThis.crypto,
-            fetch: (...args: any[]) => this.fetch(typeof args[0] === 'string' ? new Request(args[0], args[1]) : args[0]),
-            Headers, Request, Response, AbortController, AbortSignal,
-            CustomEvent, Event, EventTarget,
+            fetch: (input: Request | string, init?: RequestInit) => this.fetch(typeof input === 'string' ? new Request(input, init) : input),
+            Headers,
+            Request,
+            Response,
+            AbortController,
+            AbortSignal,
+            CustomEvent,
+            Event,
+            EventTarget,
             document,
             navigator: { userAgent: this.userAgent },
             location
         };
+        // window is the sandbox itself (window.document / window.location land here)
         sandbox.window = sandbox;
         sandbox.self = sandbox;
         sandbox.globalThis = sandbox;
         sandbox.top = sandbox;
         sandbox.parent = sandbox;
-        sandbox.window.document = document;
-        sandbox.window.location = location;
 
         const context = vm.createContext(sandbox);
 
         // Execute inline scripts so site-defined globals (e.g. ts_reader) exist.
         // External scripts (src=...) are skipped.
         for (const element of [...document.querySelectorAll('script')]) {
-            const source = (element as any).getAttribute('src');
-            const code = (element as any).textContent;
+            const source = element.getAttribute('src');
+            const code = element.textContent;
             if (!source && code && code.trim()) {
                 try {
                     vm.runInContext(code, context, { timeout: inlineTimeout });
-                } catch { /* page scripts may fail harmlessly (missing browser APIs) */ }
+                } catch {
+                    /* page scripts may fail harmlessly (missing browser APIs) */
+                }
             }
         }
 
@@ -218,12 +265,12 @@ export class HeadlessRequest {
         const expression = script.trim().replace(/;+\s*$/, '');
         let result: unknown;
         try {
-            result = vm.runInContext('(' + expression + ')', context, { timeout: timeoutMs });
+            result = vm.runInContext(`(${expression})`, context, { timeout: timeoutMs });
         } catch (error) {
             if (!(error instanceof SyntaxError)) {
                 throw error;
             }
-            result = vm.runInContext('(function(){' + expression + '})()', context, { timeout: timeoutMs });
+            result = vm.runInContext(`(function(){${expression}})()`, context, { timeout: timeoutMs });
         }
         // the snippet may resolve a promise that never settles (a page script
         // waiting on browser-only APIs) — race it so the caller is never stuck

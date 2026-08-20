@@ -3,13 +3,14 @@
  * data & storage, sources. Edits go through a single sticky save bar;
  * interface language and cover cache apply instantly.
  */
-import { useEffect, useState } from 'react';
-import { api, formatBytes } from '../lib/api.js';
-import { Button, Card, Input, SectionTitle, Select, SettingRow, Skeleton, Toggle } from '../components/ui.js';
+
+import type { ConnectorsUpdateStatus, QueueSettingsDto } from '@tanko/shared';
+import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
 import { useToast } from '../components/toast.js';
-import { useI18n, LANGUAGES, type TFunction } from '../i18n/index.js';
-import type { ConnectorsUpdateStatus, QueueSettingsDto } from '@tanko/shared';
+import { Button, Card, Input, SectionTitle, Select, SettingRow, Skeleton, Toggle } from '../components/ui.js';
+import { LANGUAGES, type TFunction, useI18n } from '../i18n/index.js';
+import { api, formatBytes } from '../lib/api.js';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -59,7 +60,7 @@ export default function Settings() {
     const toast = useToast();
     const { t, language, setLanguage, formatDate } = useI18n();
 
-    const load = async () => {
+    const load = useCallback(async () => {
         const data = await api.settings();
         setSettings(data.queue);
         setDraft(data.queue);
@@ -68,11 +69,11 @@ export default function Settings() {
         setSavedLanguages(data.preferredLanguages || []);
         setUseCovers(data.useFirstChapterCovers ?? false);
         setUpdateStatus(await api.sourcesUpdateStatus());
-    };
+    }, []);
 
     useEffect(() => {
         load().catch(() => undefined);
-    }, []);
+    }, [load]);
 
     /** One save for the whole view: queue settings + language filter. */
     const save = async () => {
@@ -153,7 +154,9 @@ export default function Settings() {
                 if (response.ok) {
                     return;
                 }
-            } catch { /* still restarting */ }
+            } catch {
+                /* still restarting */
+            }
             await sleep(2000);
         }
         setUpdateMessage(t('settings.unreachableAfterUpdate'));
@@ -177,8 +180,7 @@ export default function Settings() {
     /** Merge one field change into the draft queue settings. */
     const patchDraft = (patch: Partial<QueueSettingsDto>) => setDraft({ ...draft, ...patch });
 
-    const dirty = JSON.stringify(draft) !== JSON.stringify(settings)
-        || JSON.stringify(languages) !== JSON.stringify(savedLanguages);
+    const dirty = JSON.stringify(draft) !== JSON.stringify(settings) || JSON.stringify(languages) !== JSON.stringify(savedLanguages);
     const active = SECTIONS.find(item => item.id === section) ?? SECTIONS[0];
 
     return (
@@ -192,9 +194,11 @@ export default function Settings() {
                             key={item.id}
                             type="button"
                             onClick={() => setSection(item.id)}
-                            className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${section === item.id
-                                ? 'border-accent text-accent-soft'
-                                : 'border-transparent text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                            className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                                section === item.id
+                                    ? 'border-accent text-accent-soft'
+                                    : 'border-transparent text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                            }`}
                         >
                             {t(item.labelKey)}
                         </button>
@@ -277,12 +281,12 @@ export default function Settings() {
                                         <button
                                             key={item.code}
                                             type="button"
-                                            onClick={() => setLanguages(selected
-                                                ? languages.filter(code => code !== item.code)
-                                                : [...languages, item.code])}
-                                            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${selected
-                                                ? 'border-accent bg-accent/10 text-accent-soft'
-                                                : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500'}`}
+                                            onClick={() => setLanguages(selected ? languages.filter(code => code !== item.code) : [...languages, item.code])}
+                                            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                                                selected
+                                                    ? 'border-accent bg-accent/10 text-accent-soft'
+                                                    : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500'
+                                            }`}
                                         >
                                             {t(item.key)}
                                         </button>
@@ -303,7 +307,9 @@ export default function Settings() {
                                 />
                             </SettingRow>
                             <SettingRow label={t('settings.clearHistory')} hint={t('settings.clearHistoryHint')}>
-                                <Button small variant="danger" onClick={() => setConfirmClear(true)}>{t('settings.clearHistory')}</Button>
+                                <Button small variant="danger" onClick={() => setConfirmClear(true)}>
+                                    {t('settings.clearHistory')}
+                                </Button>
                             </SettingRow>
                             <div className="flex items-center justify-between gap-3 py-4">
                                 <div>
@@ -311,9 +317,13 @@ export default function Settings() {
                                         <span className="text-2xl font-bold text-accent-soft">{disk !== null ? formatBytes(disk) : '…'}</span>
                                         <span className="text-sm text-zinc-500">{t('settings.storageUsed')}</span>
                                     </div>
-                                    <div className="mt-1 text-xs text-zinc-500">{t('settings.currentFolder')} <code className="break-all text-zinc-400">{settings.dataDirectory}</code></div>
+                                    <div className="mt-1 text-xs text-zinc-500">
+                                        {t('settings.currentFolder')} <code className="break-all text-zinc-400">{settings.dataDirectory}</code>
+                                    </div>
                                 </div>
-                                <Button small variant="ghost" onClick={load}>{t('settings.refresh')}</Button>
+                                <Button small variant="ghost" onClick={load}>
+                                    {t('settings.refresh')}
+                                </Button>
                             </div>
                         </>
                     )}
@@ -326,7 +336,10 @@ export default function Settings() {
                                     <span className="text-sm text-zinc-500">{t('settings.sourcesAvailable')}</span>
                                 </div>
                                 <div className="mt-1 text-xs text-zinc-500">
-                                    {t('settings.lastUpdate')} {updateStatus?.last ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}` : t('settings.never')}
+                                    {t('settings.lastUpdate')}{' '}
+                                    {updateStatus?.last
+                                        ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}`
+                                        : t('settings.never')}
                                 </div>
                                 {updateMessage && <div className="mt-1 text-xs text-sky-300">{updateMessage}</div>}
                             </div>
@@ -345,8 +358,12 @@ export default function Settings() {
                         {t('settings.unsavedChanges')}
                     </span>
                     <div className="flex gap-2">
-                        <Button small variant="ghost" onClick={cancel}>{t('common.cancel')}</Button>
-                        <Button small onClick={save}>{t('common.save')}</Button>
+                        <Button small variant="ghost" onClick={cancel}>
+                            {t('common.cancel')}
+                        </Button>
+                        <Button small onClick={save}>
+                            {t('common.save')}
+                        </Button>
                     </div>
                 </div>
             )}

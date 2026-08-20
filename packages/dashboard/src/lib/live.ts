@@ -2,11 +2,13 @@
  * Live state from the WebSocket event bus + REST snapshots.
  * Keeps jobs / library / schedule / logs in sync with the server.
  */
-import { useCallback, useEffect, useState } from 'react';
-import type { WsEvent, DownloadJobDto, LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
+
+import type { DownloadJobDto, LibraryEntryDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 
 export interface LogLine {
+    id: number;
     level: 'info' | 'warn' | 'error';
     message: string;
     at: string;
@@ -43,26 +45,33 @@ export function useLiveState(): LiveState {
     const [libraryLoaded, setLibraryLoaded] = useState(false);
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
+    const logSeq = useRef(0);
 
     const refreshJobs = useCallback(async () => {
         try {
             setJobs((await api.downloads()).jobs);
             setJobsLoaded(true);
-        } catch { /* server may be briefly unavailable */ }
+        } catch {
+            /* server may be briefly unavailable */
+        }
     }, []);
 
     const refreshLibrary = useCallback(async () => {
         try {
             setLibrary(await api.library());
             setLibraryLoaded(true);
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }, []);
 
     const refreshSchedule = useCallback(async () => {
         try {
             const data = await api.schedule();
             setSchedule(data.status);
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }, []);
 
     useEffect(() => {
@@ -96,16 +105,27 @@ export function useLiveState(): LiveState {
                             break;
                         case 'library.updated':
                             // the event may be published without the cover decoration; keep the last known coverUrl
-                            setLibrary(current => upsert(current, message.entry.coverUrl ? message.entry : { ...message.entry, coverUrl: current.find(entry => entry.id === message.entry.id)?.coverUrl }));
+                            setLibrary(current =>
+                                upsert(
+                                    current,
+                                    message.entry.coverUrl
+                                        ? message.entry
+                                        : { ...message.entry, coverUrl: current.find(entry => entry.id === message.entry.id)?.coverUrl }
+                                )
+                            );
                             break;
                         case 'schedule.status':
                             setSchedule(message.status);
                             break;
                         case 'log':
-                            setLogs(current => [{ level: message.level, message: message.message, at: message.at }, ...current].slice(0, 300));
+                            setLogs(current =>
+                                [{ id: ++logSeq.current, level: message.level, message: message.message, at: message.at }, ...current].slice(0, 300)
+                            );
                             break;
                     }
-                } catch { /* non-JSON frame */ }
+                } catch {
+                    /* non-JSON frame */
+                }
             };
         };
 

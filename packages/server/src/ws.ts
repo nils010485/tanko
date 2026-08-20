@@ -3,14 +3,14 @@
  * Server modules emit typed events; every connected WS client receives them
  * as JSON. Also keeps a ring buffer of recent events for late joiners.
  */
-import { WebSocket } from 'ws';
+
 import type { WsEvent } from '@tanko/shared';
+import { WebSocket } from 'ws';
 
 const HISTORY_SIZE = 200;
 const REPLAY_SIZE = 50;
 
 export class EventBus {
-
     private readonly clients = new Set<WebSocket>();
     private readonly history: WsEvent[] = [];
 

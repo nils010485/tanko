@@ -7,7 +7,7 @@ import type {
     ChapterDto,
     ConnectorsUpdateInfo,
     ConnectorsUpdateStatus,
-    DownloadJobDto,
+    DownloadsPageDto,
     LibraryChapterDto,
     LibraryEntryDto,
     MangaDto,
@@ -17,8 +17,7 @@ import type {
     ScheduleSettingsDto,
     ScheduleStatusDto,
     SourceDto,
-    SourceHealthDto,
-    DownloadsPageDto
+    SourceHealthDto
 } from '@tanko/shared';
 
 /** Queue counters (GET /api/downloads/status, pause, resume). */
@@ -82,8 +81,14 @@ export interface ImportJobStatus {
         error?: string;
     } | null;
     counters?: {
-        total: number; matched: number; auto: number; review: number; none: number;
-        confirmed: number; synced: number; failed: number;
+        total: number;
+        matched: number;
+        auto: number;
+        review: number;
+        none: number;
+        confirmed: number;
+        synced: number;
+        failed: number;
     };
     series?: ImportJobSeries[];
 }
@@ -132,9 +137,11 @@ export const api = {
     sourceHealth: () => request<Record<string, SourceHealthDto>>('/api/sources/health'),
     hideBroken: () => request<{ hidden: number }>('/api/sources/hide-broken', { method: 'POST' }),
     checkSources: (sourceIds?: string[]) =>
-        request<{ started: boolean; targets: number | 'all' }>('/api/sources/health/check', { method: 'POST', body: JSON.stringify(sourceIds ? { sourceIds } : {}) }),
-    search: (sourceId: string, query: string) =>
-        request<MangaDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`),
+        request<{ started: boolean; targets: number | 'all' }>('/api/sources/health/check', {
+            method: 'POST',
+            body: JSON.stringify(sourceIds ? { sourceIds } : {})
+        }),
+    search: (sourceId: string, query: string) => request<MangaDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`),
     chapters: (sourceId: string, mangaId: string, title: string) =>
         request<ChapterDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/chapters?${qs({ mangaId, title })}`),
     pages: (sourceId: string, mangaId: string, chapterId: string, mangaTitle: string, chapterTitle: string) =>
@@ -150,8 +157,7 @@ export const api = {
         request<{ ok: boolean; deletedPath: string | null }>(`/api/library/${entryId}${disk ? '?disk=1' : ''}`, { method: 'DELETE' }),
     setHidden: (entryId: number, hidden: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ hidden }) }),
-    entryDiskPath: (entryId: number) =>
-        request<{ path: string | null }>(`/api/library/${entryId}/disk-path`),
+    entryDiskPath: (entryId: number) => request<{ path: string | null }>(`/api/library/${entryId}/disk-path`),
     setAutoDownload: (entryId: number, autoDownload: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ autoDownload }) }),
     entryChapters: (entryId: number) => request<LibraryChapterDto[]>(`/api/library/${entryId}/chapters`),
@@ -163,10 +169,12 @@ export const api = {
         request<{ ok: boolean }>(`/api/library/${entryId}/chapters/${encodeURIComponent(chapterId)}/rollback`, { method: 'POST' }),
     rematchFailed: () =>
         request<{ started: boolean; count: number; reason?: string }>('/api/library/rematch-failed', { method: 'POST', body: JSON.stringify({}) }),
-    rematchEntry: (entryId: number) =>
-        request<{ outcome: string; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch`, { method: 'POST' }),
+    rematchEntry: (entryId: number) => request<{ outcome: string; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch`, { method: 'POST' }),
     confirmRematch: (entryId: number, apply: boolean) =>
-        request<{ applied: boolean; kept?: number; total?: number; entry?: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch/confirm`, { method: 'POST', body: JSON.stringify({ apply }) }),
+        request<{ applied: boolean; kept?: number; total?: number; entry?: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch/confirm`, {
+            method: 'POST',
+            body: JSON.stringify({ apply })
+        }),
     rollbackMigration: (entryId: number) =>
         request<{ ok: boolean; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/migration/rollback`, { method: 'POST' }),
 
@@ -198,8 +206,13 @@ export const api = {
 
     // settings
     settings: () => request<AppSettingsResponseDto>('/api/settings'),
-    updateSettings: (patch: Partial<QueueSettingsDto> & { preferredLanguages?: string[] | string; uiLanguage?: 'en' | 'fr'; useFirstChapterCovers?: boolean }) =>
-        request<{ queue: QueueSettingsDto; preferredLanguages: string[]; uiLanguage: 'en' | 'fr'; useFirstChapterCovers: boolean }>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
+    updateSettings: (
+        patch: Partial<QueueSettingsDto> & { preferredLanguages?: string[] | string; uiLanguage?: 'en' | 'fr'; useFirstChapterCovers?: boolean }
+    ) =>
+        request<{ queue: QueueSettingsDto; preferredLanguages: string[]; uiLanguage: 'en' | 'fr'; useFirstChapterCovers: boolean }>('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify(patch)
+        }),
 
     // first-chapter cover cache
     coversStatus: () => request<CoverStatusDto>('/api/library/covers/status'),

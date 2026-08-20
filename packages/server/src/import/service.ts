@@ -9,10 +9,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ChapterInfo, SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { MigrationSuggestion } from '@tanko/shared';
 import type { Database } from '../db.js';
+import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore } from '../library/store.js';
 import { assertValidDirectory, parseChapterNumber, scanLibrary } from './scanner.js';
-import { confidenceFor, stripTags, titleSimilarity, type MatchConfidence } from './similarity.js';
-import { chapterAllowed, sourceUsable } from '../languages.js';
+import { confidenceFor, type MatchConfidence, stripTags, titleSimilarity } from './similarity.js';
 
 export type JobStatus = 'scanning' | 'matching' | 'ready' | 'syncing' | 'done' | 'error';
 export type AutoConfirmMode = 'auto' | 'all' | 'none';
@@ -123,25 +123,28 @@ const MATCH_CONCURRENCY = 4;
 const MAX_MATCH_SOURCES = 12;
 
 export class ImportService {
-
     private cancelRequested = new Set<number>();
     private running = new Set<number>();
     private readonly sql: DatabaseSync;
 
-    constructor(private readonly opts: {
-        db: Database;
-        registry: SourceRegistry;
-        store: LibraryStore;
-        listSources: () => Promise<SourceInfo[]>;
-        getPreferredLanguages: () => string[];
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            registry: SourceRegistry;
+            store: LibraryStore;
+            listSources: () => Promise<SourceInfo[]>;
+            getPreferredLanguages: () => string[];
+        }
+    ) {
         this.sql = this.opts.db.db;
         this._migrate();
         // a server restart interrupts whatever was in flight; it can be resumed explicitly
-        this.sql.prepare(
-            `UPDATE import_jobs SET status = 'ready', updated_at = ?
+        this.sql
+            .prepare(
+                `UPDATE import_jobs SET status = 'ready', updated_at = ?
              WHERE status IN ('scanning', 'matching', 'syncing')`
-        ).run(this.now());
+            )
+            .run(this.now());
         // a crash mid-match leaves rows in 'matching' — make them eligible again
         this.sql.exec(`UPDATE import_series SET status = 'pending' WHERE status = 'matching'`);
     }
@@ -155,13 +158,15 @@ export class ImportService {
         const resolved = assertValidDirectory(root);
         const now = this.now();
         // one active job at a time: a previous unfinished job is superseded
-        this.sql.prepare(
-            `UPDATE import_jobs SET status = 'error', error = 'remplacé par un nouvel import', updated_at = ?
+        this.sql
+            .prepare(
+                `UPDATE import_jobs SET status = 'error', error = 'remplacé par un nouvel import', updated_at = ?
              WHERE status IN ('scanning', 'matching', 'syncing', 'ready')`
-        ).run(now);
-        const result = this.sql.prepare(
-            'INSERT INTO import_jobs (root, status, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(resolved, 'scanning', JSON.stringify(options), now, now);
+            )
+            .run(now);
+        const result = this.sql
+            .prepare('INSERT INTO import_jobs (root, status, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+            .run(resolved, 'scanning', JSON.stringify(options), now, now);
         const jobId = Number(result.lastInsertRowid);
         void this._run(jobId).catch(error => this._failJob(jobId, error));
         return { jobId };
@@ -172,9 +177,9 @@ export class ImportService {
         if (!this._resumableJob(jobId)) {
             return;
         }
-        const pending = this.sql.prepare(
-            `SELECT COUNT(*) AS n FROM import_series WHERE job_id = ? AND status = 'pending'`
-        ).get(jobId) as unknown as { n: number };
+        const pending = this.sql.prepare(`SELECT COUNT(*) AS n FROM import_series WHERE job_id = ? AND status = 'pending'`).get(jobId) as unknown as {
+            n: number;
+        };
         this._setStatus(jobId, pending.n > 0 ? 'matching' : 'syncing');
         void this._run(jobId, true).catch(error => this._failJob(jobId, error));
     }
@@ -186,21 +191,24 @@ export class ImportService {
 
     /** Manually confirm (or correct) the match for one series. */
     choose(jobId: number, seriesPath: string, candidate: { sourceId: string; sourceLabel: string; mangaId: string; mangaTitle: string }): void {
-        this.sql.prepare(
-            `UPDATE import_series SET source_id = ?, source_label = ?, manga_id = ?, manga_title = ?,
+        this.sql
+            .prepare(
+                `UPDATE import_series SET source_id = ?, source_label = ?, manga_id = ?, manga_title = ?,
                     confirmed = 1, status = 'matched', confidence = COALESCE(confidence, 'review'), updated_at = ?
              WHERE job_id = ? AND path = ?`
-        ).run(candidate.sourceId, candidate.sourceLabel, candidate.mangaId, candidate.mangaTitle,
-            this.now(), jobId, seriesPath);
+            )
+            .run(candidate.sourceId, candidate.sourceLabel, candidate.mangaId, candidate.mangaTitle, this.now(), jobId, seriesPath);
     }
 
     /** Bulk-confirm everything that has a candidate ('auto' = high-confidence only, 'all' = review too). */
     confirm(jobId: number, mode: AutoConfirmMode): number {
         const tiers = mode === 'all' ? "('auto', 'review')" : "('auto')";
-        const result = this.sql.prepare(
-            `UPDATE import_series SET confirmed = 1, updated_at = ?
+        const result = this.sql
+            .prepare(
+                `UPDATE import_series SET confirmed = 1, updated_at = ?
              WHERE job_id = ? AND status = 'matched' AND manga_id IS NOT NULL AND confidence IN ${tiers}`
-        ).run(this.now(), jobId);
+            )
+            .run(this.now(), jobId);
         return Number(result.changes);
     }
 
@@ -219,9 +227,7 @@ export class ImportService {
         if (!job) {
             return { job: null };
         }
-        const series = this.sql.prepare(
-            'SELECT * FROM import_series WHERE job_id = ? ORDER BY name COLLATE NOCASE ASC'
-        ).all(job.id) as unknown as SeriesRow[];
+        const series = this.sql.prepare('SELECT * FROM import_series WHERE job_id = ? ORDER BY name COLLATE NOCASE ASC').all(job.id) as unknown as SeriesRow[];
         const counters = {
             total: series.length,
             matched: 0,
@@ -340,21 +346,20 @@ export class ImportService {
     private async _matchAll(jobId: number, options: ImportOptions): Promise<void> {
         const preferred = this.opts.getPreferredLanguages();
         let sources = await this.opts.listSources();
-        sources = sources.filter(source =>
-            !source.hidden &&
-            (options.sourceIds ? options.sourceIds.includes(source.id) : true) &&
-            sourceUsable(source.tags, preferred)
+        sources = sources.filter(
+            source => !source.hidden && (options.sourceIds ? options.sourceIds.includes(source.id) : true) && sourceUsable(source.tags, preferred)
         );
         // healthy sources first, native before legacy (fast endpoints), then
         // multi-lingual catalogs (MangaDex…) before single-language legacy ones
         const multilingual = (source: SourceInfo) => source.tags.some(tag => tag.toLowerCase() === 'multi-lingual');
         const healthRank = (source: SourceInfo) => (source.health === 'ok' ? -1 : 1);
         const kindRank = (source: SourceInfo) => (source.kind === 'native' ? -1 : 1);
-        sources.sort((a, b) =>
-            healthRank(a) - healthRank(b) ||
-            kindRank(a) - kindRank(b) ||
-            Number(multilingual(b)) - Number(multilingual(a)) ||
-            a.label.localeCompare(b.label)
+        sources.sort(
+            (a, b) =>
+                healthRank(a) - healthRank(b) ||
+                kindRank(a) - kindRank(b) ||
+                Number(multilingual(b)) - Number(multilingual(a)) ||
+                a.label.localeCompare(b.label)
         );
         // without an explicit list, avoid catalog-scanning hundreds of untested legacy sources
         if (!options.sourceIds) {
@@ -364,9 +369,10 @@ export class ImportService {
             throw new Error('Aucune source utilisable (langue/santé) pour le matching');
         }
 
-        const pending = () => this.sql.prepare(
-            `SELECT * FROM import_series WHERE job_id = ? AND status = 'pending' ORDER BY name LIMIT 1`
-        ).get(jobId) as unknown as SeriesRow | undefined;
+        const pending = () =>
+            this.sql.prepare(`SELECT * FROM import_series WHERE job_id = ? AND status = 'pending' ORDER BY name LIMIT 1`).get(jobId) as unknown as
+                | SeriesRow
+                | undefined;
 
         const concurrency = Math.max(1, options.concurrency ?? MATCH_CONCURRENCY);
         const worker = async () => {
@@ -379,17 +385,19 @@ export class ImportService {
                     return;
                 }
                 // claim it so another worker does not take the same row
-                this.sql.prepare(
-                    `UPDATE import_series SET status = 'matching', updated_at = ? WHERE job_id = ? AND path = ? AND status = 'pending'`
-                ).run(this.now(), jobId, series.path);
+                this.sql
+                    .prepare(`UPDATE import_series SET status = 'matching', updated_at = ? WHERE job_id = ? AND path = ? AND status = 'pending'`)
+                    .run(this.now(), jobId, series.path);
                 try {
                     await this._matchSeries(jobId, series, sources);
                 } catch (error) {
                     console.warn(`[import] match failed for "${series.name}":`, (error as Error).message);
-                    this.sql.prepare(
-                        `UPDATE import_series SET status = 'matched', confidence = 'none', error = ?, updated_at = ?
+                    this.sql
+                        .prepare(
+                            `UPDATE import_series SET status = 'matched', confidence = 'none', error = ?, updated_at = ?
                          WHERE job_id = ? AND path = ?`
-                    ).run((error as Error).message, this.now(), jobId, series.path);
+                        )
+                        .run((error as Error).message, this.now(), jobId, series.path);
                 }
             }
         };
@@ -414,7 +422,7 @@ export class ImportService {
                 }
                 const results: Array<{ id: string; title: string }> = [];
                 for (const query of queries) {
-                    results.push(...await adapter.searchMangas(query));
+                    results.push(...(await adapter.searchMangas(query)));
                     if (results.length > 0) {
                         break; // a looser query is only a fallback
                     }
@@ -433,7 +441,9 @@ export class ImportService {
                         best = candidate;
                     }
                 }
-            } catch { /* a broken source never blocks the others */ }
+            } catch {
+                /* a broken source never blocks the others */
+            }
             if (best && best.score >= 1) {
                 break; // exact match: no need to query the remaining sources
             }
@@ -442,26 +452,34 @@ export class ImportService {
         candidates.sort((a, b) => b.score - a.score);
         const confidence = confidenceFor(best?.score);
         const chosen = confidence === 'none' ? null : best;
-        this.sql.prepare(
-            `UPDATE import_series SET status = 'matched', confidence = ?, score = ?,
+        this.sql
+            .prepare(
+                `UPDATE import_series SET status = 'matched', confidence = ?, score = ?,
                     source_id = ?, source_label = ?, manga_id = ?, manga_title = ?,
                     candidates = ?, updated_at = ?
              WHERE job_id = ? AND path = ?`
-        ).run(
-            confidence, best?.score ?? null,
-            chosen?.sourceId ?? null, chosen?.sourceLabel ?? null,
-            chosen?.mangaId ?? null, chosen?.mangaTitle ?? null,
-            JSON.stringify(candidates.slice(0, 8)), this.now(), jobId, series.path
-        );
+            )
+            .run(
+                confidence,
+                best?.score ?? null,
+                chosen?.sourceId ?? null,
+                chosen?.sourceLabel ?? null,
+                chosen?.mangaId ?? null,
+                chosen?.mangaTitle ?? null,
+                JSON.stringify(candidates.slice(0, 8)),
+                this.now(),
+                jobId,
+                series.path
+            );
     }
 
     /** Sync every confirmed series: add to the library, mark local chapters as downloaded. */
     private async _syncAll(jobId: number): Promise<void> {
         const options: ImportOptions = JSON.parse(this._job(jobId)?.options || '{}');
         const preferred = this.opts.getPreferredLanguages();
-        const rows = this.sql.prepare(
-            `SELECT * FROM import_series WHERE job_id = ? AND confirmed = 1 AND status != 'synced' ORDER BY name`
-        ).all(jobId) as unknown as SeriesRow[];
+        const rows = this.sql
+            .prepare(`SELECT * FROM import_series WHERE job_id = ? AND confirmed = 1 AND status != 'synced' ORDER BY name`)
+            .all(jobId) as unknown as SeriesRow[];
 
         for (const series of rows) {
             if (this.cancelRequested.has(jobId)) {
@@ -470,17 +488,18 @@ export class ImportService {
             }
             try {
                 const result = await this._syncSeries(series, options.autoDownload === true, preferred);
-                this.sql.prepare(
-                    `UPDATE import_series SET status = 'synced', matched = ?, local_chapters = ?, source_chapters = ?,
+                this.sql
+                    .prepare(
+                        `UPDATE import_series SET status = 'synced', matched = ?, local_chapters = ?, source_chapters = ?,
                             match_mode = ?, entry_id = ?, error = NULL, updated_at = ?
                      WHERE job_id = ? AND path = ?`
-                ).run(result.matched, result.localChapters, result.sourceChapters, result.mode, result.entryId,
-                    this.now(), jobId, series.path);
+                    )
+                    .run(result.matched, result.localChapters, result.sourceChapters, result.mode, result.entryId, this.now(), jobId, series.path);
             } catch (error) {
                 console.warn(`[import] sync failed for "${series.name}":`, (error as Error).message);
-                this.sql.prepare(
-                    `UPDATE import_series SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND path = ?`
-                ).run((error as Error).message, this.now(), jobId, series.path);
+                this.sql
+                    .prepare(`UPDATE import_series SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND path = ?`)
+                    .run((error as Error).message, this.now(), jobId, series.path);
             }
         }
         this._setStatus(jobId, 'done');
@@ -492,21 +511,33 @@ export class ImportService {
      * seasons), _pairChapters falls back to positional alignment — flagged as
      * 'ordinal'.
      */
-    private async _syncSeries(series: SeriesRow, autoDownload: boolean, preferred: string[]): Promise<{
-        matched: number; localChapters: number; sourceChapters: number; mode: 'number' | 'ordinal'; entryId: number;
+    private async _syncSeries(
+        series: SeriesRow,
+        autoDownload: boolean,
+        preferred: string[]
+    ): Promise<{
+        matched: number;
+        localChapters: number;
+        sourceChapters: number;
+        mode: 'number' | 'ordinal';
+        entryId: number;
     }> {
-        const source = await this.opts.registry.get(series.source_id!);
+        const { source_id: sourceId, manga_id: mangaId, manga_title: mangaTitle } = series;
+        if (!sourceId || !mangaId || !mangaTitle) {
+            throw new Error(`Series "${series.name}" has no confirmed source match`);
+        }
+        const source = await this.opts.registry.get(sourceId);
         if (!source) {
-            throw new Error(`Source "${series.source_id}" introuvable`);
+            throw new Error(`Source "${sourceId}" introuvable`);
         }
         const local = this._localChapters(series);
         // fetch the source chapters BEFORE creating the library entry: a series
         // whose source is dead/emptied must not leave a ghost entry behind
-        const { chapters, byNumber: sourceByNumber } = await this._sourceChapters(series, source, preferred);
+        const { chapters, byNumber: sourceByNumber } = await this._sourceChapters({ id: mangaId, title: mangaTitle }, source, preferred);
         const { entry } = await this.opts.store.addEntry({
-            sourceId: series.source_id!,
-            mangaId: series.manga_id!,
-            title: series.manga_title!,
+            sourceId,
+            mangaId,
+            title: mangaTitle,
             autoDownload
         });
         const { pairs, mode } = this._pairChapters(local.byNumber, sourceByNumber);
@@ -533,10 +564,15 @@ export class ImportService {
     }
 
     /** Source chapters usable for this user (language filter), keyed by parsed chapter number (first wins). */
-    private async _sourceChapters(series: SeriesRow, source: SourceAdapter, preferred: string[]): Promise<{
-        chapters: ChapterInfo[]; byNumber: Map<number, ChapterInfo>;
+    private async _sourceChapters(
+        manga: { id: string; title: string },
+        source: SourceAdapter,
+        preferred: string[]
+    ): Promise<{
+        chapters: ChapterInfo[];
+        byNumber: Map<number, ChapterInfo>;
     }> {
-        const allChapters = await source.getChapters({ id: series.manga_id!, title: series.manga_title! });
+        const allChapters = await source.getChapters(manga);
         const chapters = allChapters.filter(chapter => chapterAllowed(chapter.language, preferred));
         const byNumber = new Map<number, ChapterInfo>();
         for (const chapter of chapters) {
@@ -549,8 +585,12 @@ export class ImportService {
     }
 
     /** Pair source chapters with local files by number; ordinal fallback for re-numbered seasons. */
-    private _pairChapters(localByNumber: Map<number, string>, sourceByNumber: Map<number, { id: string }>): {
-        pairs: Array<{ chapterId: string; localPath: string }>; mode: 'number' | 'ordinal';
+    private _pairChapters(
+        localByNumber: Map<number, string>,
+        sourceByNumber: Map<number, { id: string }>
+    ): {
+        pairs: Array<{ chapterId: string; localPath: string }>;
+        mode: 'number' | 'ordinal';
     } {
         let pairs: Array<{ chapterId: string; localPath: string }> = [];
         for (const [number, chapter] of sourceByNumber) {
@@ -605,14 +645,12 @@ export class ImportService {
     }
 
     private _setStatus(jobId: number, status: JobStatus): void {
-        this.sql.prepare('UPDATE import_jobs SET status = ?, updated_at = ? WHERE id = ?')
-            .run(status, this.now(), jobId);
+        this.sql.prepare('UPDATE import_jobs SET status = ?, updated_at = ? WHERE id = ?').run(status, this.now(), jobId);
     }
 
     private _failJob(jobId: number, error: unknown): void {
         console.error(`[import] job ${jobId} failed:`, (error as Error).message);
-        this.sql.prepare('UPDATE import_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?')
-            .run('error', (error as Error).message, this.now(), jobId);
+        this.sql.prepare('UPDATE import_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?').run('error', (error as Error).message, this.now(), jobId);
     }
 
     private _migrate(): void {

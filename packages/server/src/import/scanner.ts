@@ -123,7 +123,7 @@ export function scanLibrary(rootPath: string, options: ScanOptions = {}): ScanRe
     };
 
     /** Returns true when the directory looks like a chapter folder (mostly images). */
-    const isImageChapterFolder = (entries: fs.Dirent[], dir: string): boolean => {
+    const isImageChapterFolder = (entries: fs.Dirent[], _dir: string): boolean => {
         const isImage = (file: string) => IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase());
         const files = entries.filter(entry => entry.isFile());
         if (files.length === 0) {

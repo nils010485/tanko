@@ -1,12 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
-import { EventBus } from '../src/ws.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
 import { readUiLanguage, registerSettingsRoutes } from '../src/routes/settings.js';
+import { EventBus } from '../src/ws.js';
 
 let tmpDir: string;
 let database: Database;

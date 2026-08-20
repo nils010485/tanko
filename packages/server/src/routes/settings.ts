@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
-import type { CoverService } from '../library/covers.js';
 import { parseLanguageList } from '../languages.js';
+import type { CoverService } from '../library/covers.js';
 
 const QUEUE_SETTINGS_KEY = 'queue-settings';
 const LANGUAGES_KEY = 'preferred-languages';
@@ -16,7 +16,7 @@ export type UiLanguage = 'en' | 'fr';
 function readJsonSetting<T>(db: Database, key: string, fallback: T): T {
     try {
         const raw = db.kvGet(key);
-        return raw === undefined ? fallback : JSON.parse(raw) as T;
+        return raw === undefined ? fallback : (JSON.parse(raw) as T);
     } catch {
         return fallback;
     }
@@ -54,7 +54,9 @@ export function directorySize(directory: string): number {
             } else if (entry.isFile()) {
                 try {
                     total += fs.statSync(full).size;
-                } catch { /* skip unreadable files */ }
+                } catch {
+                    /* skip unreadable files */
+                }
             }
         }
     };
@@ -67,7 +69,13 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
 
     app.get('/api/settings', async () => {
         const settings = queue.getSettings();
-        return { queue: settings, diskUsedBytes: directorySize(settings.dataDirectory), preferredLanguages: getLanguages(), uiLanguage: readUiLanguage(db), useFirstChapterCovers: covers?.isEnabled() ?? false };
+        return {
+            queue: settings,
+            diskUsedBytes: directorySize(settings.dataDirectory),
+            preferredLanguages: getLanguages(),
+            uiLanguage: readUiLanguage(db),
+            useFirstChapterCovers: covers?.isEnabled() ?? false
+        };
     });
 
     app.patch<{ Body: Partial<QueueSettings> & { preferredLanguages?: string[] | string; uiLanguage?: string; useFirstChapterCovers?: boolean } }>(
@@ -83,8 +91,10 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             if (body.uiLanguage !== undefined && body.uiLanguage !== 'en' && body.uiLanguage !== 'fr') {
                 return reply.code(400).send({ error: 'uiLanguage must be "en" or "fr"' });
             }
-            if (body.historyRetentionDays !== undefined
-                && (typeof body.historyRetentionDays !== 'number' || !Number.isFinite(body.historyRetentionDays) || body.historyRetentionDays < 0)) {
+            if (
+                body.historyRetentionDays !== undefined &&
+                (typeof body.historyRetentionDays !== 'number' || !Number.isFinite(body.historyRetentionDays) || body.historyRetentionDays < 0)
+            ) {
                 return reply.code(400).send({ error: 'historyRetentionDays must be a number of days (0 keeps everything)' });
             }
             if (body.useFirstChapterCovers !== undefined && typeof body.useFirstChapterCovers !== 'boolean') {

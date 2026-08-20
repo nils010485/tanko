@@ -119,7 +119,10 @@ export function titleSimilarity(needleRaw: string, candidateRaw: string): number
         }
     }
 
-    for (const [tagged, other] of [[needleRaw, candidateRaw], [candidateRaw, needleRaw]] as const) {
+    for (const [tagged, other] of [
+        [needleRaw, candidateRaw],
+        [candidateRaw, needleRaw]
+    ] as const) {
         const tags = structuralTags(tagged);
         if (tags.size === 0) {
             continue;

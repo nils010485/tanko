@@ -5,7 +5,7 @@ import type { AutoConfirmMode, ImportService } from '../import/service.js';
 const AUTO_CONFIRM_MODES = new Set<AutoConfirmMode>(['auto', 'all', 'none']);
 
 /** Shared body for resume/sync: run the action, 404 with the thrown message when the job is unknown. */
-async function runJobAction(reply: FastifyReply, importer: ImportService, id: string, action: (jobId: number) => Promise<void>) {
+async function runJobAction(reply: FastifyReply, _importer: ImportService, id: string, action: (jobId: number) => Promise<void>) {
     try {
         await action(Number(id));
         return { ok: true };
@@ -15,7 +15,6 @@ async function runJobAction(reply: FastifyReply, importer: ImportService, id: st
 }
 
 export function registerImportRoutes(app: FastifyInstance, importer: ImportService): void {
-
     // Scan a data folder and detect series/chapters (preview, no mutation)
     app.post<{ Body: { path: string } }>('/api/import/scan', async (request, reply) => {
         const targetPath = request.body?.path;
@@ -74,7 +73,8 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
 
     // Resume an interrupted or ready job (pending series are re-matched, confirmed ones synced)
     app.post<{ Params: { id: string } }>('/api/import/jobs/:id/resume', (request, reply) =>
-        runJobAction(reply, importer, request.params.id, id => importer.resume(id)));
+        runJobAction(reply, importer, request.params.id, id => importer.resume(id))
+    );
 
     app.post<{ Params: { id: string } }>('/api/import/jobs/:id/cancel', async request => {
         importer.cancel(Number(request.params.id));
@@ -108,5 +108,6 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
 
     // Sync all confirmed series into the library (background)
     app.post<{ Params: { id: string } }>('/api/import/jobs/:id/sync', (request, reply) =>
-        runJobAction(reply, importer, request.params.id, id => importer.sync(id)));
+        runJobAction(reply, importer, request.params.id, id => importer.sync(id))
+    );
 }

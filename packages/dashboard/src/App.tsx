@@ -3,22 +3,22 @@
  * The active tab is synced with the URL hash (#/library, …) so it survives
  * reloads and can be shared.
  */
-import { useEffect, useState, type ComponentType } from 'react';
+import { type ComponentType, useEffect, useState } from 'react';
+
 declare const __APP_VERSION__: string;
+
+import { IconActivity, IconClock, IconDownload, IconImport, IconLibrary, IconMenu, type IconProps, IconSearch, IconSettings } from './components/icons.js';
+import { Badge } from './components/ui.js';
+import { useI18n } from './i18n/index.js';
 import { useLiveState } from './lib/live.js';
 import { useHashRoute } from './lib/router.js';
+import Activity from './views/Activity.js';
 import Discover from './views/Discover.js';
-import Library from './views/Library.js';
 import Downloads from './views/Downloads.js';
+import Import from './views/Import.js';
+import Library from './views/Library.js';
 import Schedule from './views/Schedule.js';
 import Settings from './views/Settings.js';
-import Activity from './views/Activity.js';
-import Import from './views/Import.js';
-import { Badge } from './components/ui.js';
-import {
-    IconActivity, IconClock, IconDownload, IconImport, IconLibrary, IconMenu, IconSearch, IconSettings, type IconProps
-} from './components/icons.js';
-import { useI18n } from './i18n/index.js';
 
 type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'schedule' | 'settings' | 'activity';
 
@@ -32,8 +32,10 @@ const TABS: Array<{ id: Tab; icon: ComponentType<IconProps> }> = [
     { id: 'settings', icon: IconSettings }
 ];
 
+const TAB_IDS = TABS.map(item => item.id);
+
 export default function App() {
-    const [tab, setTab] = useHashRoute<Tab>('library', TABS.map(item => item.id));
+    const [tab, setTab] = useHashRoute<Tab>('library', TAB_IDS);
     const [navOpen, setNavOpen] = useState(false);
     const live = useLiveState();
     const { t } = useI18n();
@@ -45,6 +47,16 @@ export default function App() {
     useEffect(() => {
         document.title = `Tanko — ${activeLabel}`;
     }, [activeLabel]);
+
+    // close the mobile navigation with Escape
+    useEffect(() => {
+        if (!navOpen) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setNavOpen(false);
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [navOpen]);
 
     const navigate = (next: Tab) => {
         setTab(next);
@@ -61,10 +73,15 @@ export default function App() {
     return (
         <div className="flex min-h-screen">
             {/* Backdrop for the mobile navigation */}
-            {navOpen && <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setNavOpen(false)} />}
+            {navOpen && (
+                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the navigation also closes with Escape (document listener above)
+                <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setNavOpen(false)} />
+            )}
 
             {/* Sidebar */}
-            <aside className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-none flex-col border-r border-line bg-zinc-950 transition-transform lg:static lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <aside
+                className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-none flex-col border-r border-line bg-zinc-950 transition-transform lg:static lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            >
                 <div className="px-5 pb-4 pt-6">
                     <div className="text-xl font-bold tracking-tight">
                         Tan<span className="text-accent-soft">ko</span>
@@ -77,6 +94,7 @@ export default function App() {
                         return (
                             <button
                                 key={item.id}
+                                type="button"
                                 onClick={() => navigate(item.id)}
                                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${tab === item.id ? 'bg-accent/10 font-medium text-accent-soft' : 'text-muted hover:bg-surface hover:text-zinc-200'}`}
                             >
@@ -98,6 +116,7 @@ export default function App() {
                 {/* Mobile top bar */}
                 <header className="flex items-center gap-3 border-b border-line px-4 py-3 lg:hidden">
                     <button
+                        type="button"
                         onClick={() => setNavOpen(true)}
                         aria-label={t('app.openMenu')}
                         className="rounded-lg p-1.5 text-muted hover:bg-surface hover:text-fg"

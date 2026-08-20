@@ -3,7 +3,7 @@
  * the server settings (SQLite) so it survives reloads and browsers; English
  * is the default until the user picks otherwise.
  */
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { en } from './en.js';
 import { fr } from './fr.js';
@@ -44,7 +44,7 @@ export function useI18n(): I18nApi {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-    const [language, setLanguageState] = useState<UiLanguage>(() => localStorage.getItem(STORAGE_KEY) === 'fr' ? 'fr' : 'en');
+    const [language, setLanguageState] = useState<UiLanguage>(() => (localStorage.getItem(STORAGE_KEY) === 'fr' ? 'fr' : 'en'));
     const userChose = useRef(false);
 
     // hydrate once at boot from the persisted server setting (a user choice always wins)
@@ -65,27 +65,33 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         api.updateSettings({ uiLanguage: next }).catch(() => undefined);
     };
 
-    const t = useMemo<TFunction>(() => (key, params) => {
-        let text: string = dictionaries[language][key] ?? en[key] ?? String(key);
-        if (params) {
-            for (const [name, value] of Object.entries(params)) {
-                text = text.split(`{${name}}`).join(String(value));
+    const t = useMemo<TFunction>(
+        () => (key, params) => {
+            let text: string = dictionaries[language][key] ?? en[key] ?? String(key);
+            if (params) {
+                for (const [name, value] of Object.entries(params)) {
+                    text = text.split(`{${name}}`).join(String(value));
+                }
             }
-        }
-        return text;
-    }, [language]);
+            return text;
+        },
+        [language]
+    );
 
-    const formatDate = useMemo(() => (iso?: string) => {
-        if (!iso) {
-            return '—';
-        }
-        return new Date(iso).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB', {
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }, [language]);
+    const formatDate = useMemo(
+        () => (iso?: string) => {
+            if (!iso) {
+                return '—';
+            }
+            return new Date(iso).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+        [language]
+    );
 
     return <I18nContext.Provider value={{ language, setLanguage, t, formatDate }}>{children}</I18nContext.Provider>;
 }

@@ -8,22 +8,32 @@
  *              with an ajax fallback (action=manga_get_chapters)
  *  - pages  : `img.wp-manga-chapter-img` on the chapter page
  */
-import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError, errorMessage } from '../types.js';
-import { randomUserAgent } from '../../shims/request.js';
+
 import { parseDocument } from '../../shims/dom.js';
+import { randomUserAgent } from '../../shims/request.js';
+import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 
 const UA = randomUserAgent();
+
+/** Madara ajax search/ajax-chapter item (wp-manga-search-manga, manga_get_chapters). */
+interface MadaraAjaxItem {
+    url?: string;
+    label?: string;
+    title?: string;
+    name?: string;
+    value?: string;
+    thumbnail?: string;
+}
 
 export interface MadaraOptions {
     id: string;
     label: string;
-    base: string;          // e.g. https://toonily.com
+    base: string; // e.g. https://toonily.com
     tags?: string[];
 }
 
 export class MadaraConnector implements SourceAdapter {
-
     readonly kind = 'native' as const;
     readonly id: string;
     readonly label: string;
@@ -42,10 +52,10 @@ export class MadaraConnector implements SourceAdapter {
         this._ajaxHeaders = {
             'User-Agent': UA,
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Accept': '*/*',
+            Accept: '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
             'X-Requested-With': 'XMLHttpRequest',
-            'Referer': this.base + '/'
+            Referer: `${this.base}/`
         };
     }
 
@@ -57,12 +67,12 @@ export class MadaraConnector implements SourceAdapter {
         const body = new URLSearchParams({ action: 'wp-manga-search-manga', title: query });
         const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
         const json = await response.json().catch(() => null);
-        if (!json || json.success !== true || !Array.isArray(json.data)) {
+        if (json?.success !== true || !Array.isArray(json.data)) {
             throw new SourceError(`Unexpected search response from ${this.label}`, this.id);
         }
-        return json.data
-            .filter((item: any) => item.url)
-            .map((item: any) => ({
+        return (json.data as MadaraAjaxItem[])
+            .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
+            .map(item => ({
                 id: this._mangaIdFromUrl(item.url),
                 title: this._decode(item.label || item.title || item.value || item.url),
                 url: item.url,
@@ -85,15 +95,15 @@ export class MadaraConnector implements SourceAdapter {
         return chapters;
     }
 
-    async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
+    async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         const chapterUrl = chapter.url || chapter.id;
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
 
         const images = [...document.querySelectorAll('img.wp-manga-chapter-img')]
-            .map((img: any) => img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'))
-            .filter((src: any) => src && !src.startsWith('data:'))
-            .map((src: any) => new URL(src.trim(), chapterUrl).href)
+            .map(img => img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'))
+            .filter((src): src is string => !!src && !src.startsWith('data:'))
+            .map(src => new URL(src.trim(), chapterUrl).href)
             // drop site-injected ads/banners (e.g. Toonily discord assets)
             .filter((src: string) => !/\/wp-content\/assets\//i.test(src));
 
@@ -105,7 +115,7 @@ export class MadaraConnector implements SourceAdapter {
 
     // ------------------------------------------------------------------
 
-    private _parseChapterNodes(nodes: any[]): ChapterInfo[] {
+    private _parseChapterNodes(nodes: Element[]): ChapterInfo[] {
         const chapters: ChapterInfo[] = [];
         for (const node of nodes) {
             const anchor = node.querySelector('a');
@@ -129,15 +139,17 @@ export class MadaraConnector implements SourceAdapter {
             const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
             const json = await response.json().catch(() => null);
             if (json && Array.isArray(json.data)) {
-                return json.data
-                    .map((item: any) => ({
-                        id: item.url,
+                return (json.data as MadaraAjaxItem[])
+                    .map(item => ({
+                        id: item.url ?? '',
                         title: item.title || item.name || '',
                         url: item.url
                     }))
                     .reverse();
             }
-        } catch { /* fall through */ }
+        } catch {
+            /* fall through */
+        }
         return [];
     }
 
@@ -191,9 +203,9 @@ export class MadaraConnector implements SourceAdapter {
         const response = await this._request(url, {
             headers: {
                 'User-Agent': UA,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': this.base + '/'
+                Referer: `${this.base}/`
             }
         });
         return response.text();

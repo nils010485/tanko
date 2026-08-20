@@ -5,10 +5,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { LegacyConnector } from './legacy-types.js';
 import { installGlobals } from './shims/globals.js';
+import { HeadlessRequest } from './shims/request.js';
 import { HeadlessSettings } from './shims/settings.js';
 import { HeadlessStorage } from './shims/storage.js';
-import { HeadlessRequest } from './shims/request.js';
 
 export interface EngineContext {
     Settings: HeadlessSettings;
@@ -23,14 +24,14 @@ export interface EngineContext {
 }
 
 export interface LoadResult {
-    connectors: any[];
+    connectors: LegacyConnector[];
     failures: number;
 }
 
 /** Directory containing the vendored legacy engine (src/web/mjs of hakuneko). */
 export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
 
-const connectorRegistry = new Map<string, any>();
+const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;
 /** Active vendor directory: synced copy in the data directory if present, else the built-in one. */
 let activeVendorPath = VENDOR_PATH;
@@ -76,9 +77,9 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     if (!fetchWrapped) {
         fetchWrapped = true;
         const nativeFetch = globalThis.fetch;
-        globalThis.fetch = (async (input: any, init?: any) => {
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = requestUrl(input);
-            if (url && url.startsWith('connector://')) {
+            if (url?.startsWith('connector://')) {
                 const uri = new URL(url);
                 const connector = connectorRegistry.get(uri.hostname);
                 if (!connector) {
@@ -104,7 +105,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             createComicInfoXML: () => '' // ComicInfo.xml is generated inside HeadlessStorage
         }
     };
-    (globalThis as any).Engine = engine;
+    globalThis.Engine = engine;
     return engine;
 }
 
@@ -119,15 +120,14 @@ export async function loadConnectors(): Promise<LoadResult> {
     }
 
     const directory = path.join(getVendorDirectory(), 'connectors');
-    const files = fs.readdirSync(directory)
-        .filter(file => file.endsWith('.mjs') && !file.startsWith('.'));
+    const files = fs.readdirSync(directory).filter(file => file.endsWith('.mjs') && !file.startsWith('.'));
 
-    const connectors: any[] = [];
+    const connectors: LegacyConnector[] = [];
     let failures = 0;
     for (const file of files) {
         try {
             const module = await import(pathToFileURL(path.join(directory, file)).href);
-            const connector = new module.default();
+            const connector = new module.default() as LegacyConnector;
             if (!connectorRegistry.has(connector.id)) {
                 connectorRegistry.set(connector.id, connector);
                 connectors.push(connector);
@@ -145,6 +145,6 @@ function byLabel(a: { label: string }, b: { label: string }): number {
     return a.label.toLowerCase() < b.label.toLowerCase() ? -1 : 1;
 }
 
-export function getConnector(id: string): any | undefined {
+export function getConnector(id: string): LegacyConnector | undefined {
     return connectorRegistry.get(id);
 }

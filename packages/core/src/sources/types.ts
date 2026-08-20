@@ -55,7 +55,11 @@ export interface SourceAdapter {
 }
 
 export class SourceError extends Error {
-    constructor(message: string, readonly sourceId?: string, readonly cause?: unknown) {
+    constructor(
+        message: string,
+        readonly sourceId?: string,
+        readonly cause?: unknown
+    ) {
         super(message);
         this.name = 'SourceError';
     }

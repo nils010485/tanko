@@ -52,3 +52,18 @@ select:focus-visible {
     outline: 2px solid rgba(249, 115, 22, 0.6);
     outline-offset: 1px;
 }
+
+/* library: hide per-card actions until hover/focus (unless pinned visible) */
+.library-actions-hover .card-actions {
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.library-actions-hover article:hover .card-actions,
+.library-actions-hover article:focus-within .card-actions {
+    opacity: 1;
+}
+@media (hover: none) {
+    .library-actions-hover .card-actions {
+        opacity: 1;
+    }
+}

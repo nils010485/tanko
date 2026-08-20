@@ -55,20 +55,16 @@ export function registerImageRoutes(app: FastifyInstance): void {
 
         const cached = cacheGet(raw);
         if (cached) {
-            return reply
-                .header('Content-Type', cached.contentType)
-                .header('Cache-Control', 'public, max-age=86400')
-                .header('X-Cache', 'hit')
-                .send(cached.body);
+            return reply.header('Content-Type', cached.contentType).header('Cache-Control', 'public, max-age=86400').header('X-Cache', 'hit').send(cached.body);
         }
 
-        let response;
+        let response: Response;
         try {
             response = await fetch(target, {
                 headers: {
                     'User-Agent': USER_AGENT,
                     // many hosts reject image requests without a matching Referer
-                    Referer: target.origin + '/',
+                    Referer: `${target.origin}/`,
                     Accept: 'image/avif,image/webp,image/*,*/*;q=0.8'
                 },
                 signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -89,9 +85,6 @@ export function registerImageRoutes(app: FastifyInstance): void {
         }
 
         cacheSet(raw, { contentType, body });
-        return reply
-            .header('Content-Type', contentType)
-            .header('Cache-Control', 'public, max-age=86400')
-            .send(body);
+        return reply.header('Content-Type', contentType).header('Cache-Control', 'public, max-age=86400').send(body);
     });
 }

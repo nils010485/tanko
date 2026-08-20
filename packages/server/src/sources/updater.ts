@@ -3,10 +3,11 @@
  * upstream GitHub repository into the data directory, so the list of sources
  * can be refreshed from the dashboard without rebuilding the image.
  */
+
+import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getVendorDirectory } from '@tanko/core';
 import type { ConnectorsUpdateInfo, ConnectorsUpdateStatus } from '@tanko/shared';
@@ -54,11 +55,7 @@ function validateTree(connectorsDir: string, engineDir: string): void {
     }
 }
 
-export async function syncConnectors(options: {
-    dataDirectory: string;
-    db: Database;
-    clone?: CloneUpstream;
-}): Promise<ConnectorsUpdateInfo> {
+export async function syncConnectors(options: { dataDirectory: string; db: Database; clone?: CloneUpstream }): Promise<ConnectorsUpdateInfo> {
     if (running) {
         throw new Error('Une mise à jour des sources est déjà en cours');
     }
@@ -68,8 +65,7 @@ export async function syncConnectors(options: {
     const backupDir = `${vendorDir}.bak`;
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-connectors-'));
     try {
-        const previousCount = countConnectors(path.join(vendorDir, 'connectors'))
-            || countConnectors(path.join(getVendorDirectory(), 'connectors'));
+        const previousCount = countConnectors(path.join(vendorDir, 'connectors')) || countConnectors(path.join(getVendorDirectory(), 'connectors'));
         const commit = await clone(tempDir);
         validateTree(path.join(tempDir, UPSTREAM_PATH, 'connectors'), path.join(tempDir, UPSTREAM_PATH, 'engine'));
 

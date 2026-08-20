@@ -1,11 +1,11 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { LibraryEntryDto } from '@tanko/shared';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { DownloadQueue } from '../downloader/queue.js';
+import type { CoverService } from '../library/covers.js';
+import type { FailoverService } from '../library/failover.js';
 import type { LibraryStore } from '../library/store.js';
 import type { Scheduler, ScheduleSettings } from '../scheduler/scheduler.js';
-import type { DownloadQueue } from '../downloader/queue.js';
 import type { EventBus } from '../ws.js';
-import type { FailoverService } from '../library/failover.js';
-import type { CoverService } from '../library/covers.js';
 
 /** Load an entry or reply 404; undefined means the reply has already been sent. */
 function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: number): LibraryEntryDto | undefined {
@@ -27,7 +27,6 @@ export function registerLibraryRoutes(
     failover?: FailoverService,
     covers?: CoverService
 ): void {
-
     /** Re-read an entry and broadcast it to the dashboard (no-op when it vanished). */
     const publishEntry = (entryId: number): LibraryEntryDto | undefined => {
         const entry = store.getEntry(entryId);
@@ -47,11 +46,12 @@ export function registerLibraryRoutes(
             return entries;
         }
         const covered = covers.coveredEntryIds();
-        return entries.map(entry => covered.has(entry.id) ? { ...entry, coverUrl: `/api/library/${entry.id}/cover` } : entry);
+        return entries.map(entry => (covered.has(entry.id) ? { ...entry, coverUrl: `/api/library/${entry.id}/cover` } : entry));
     };
 
     app.get<{ Querystring: { hidden?: string } }>('/api/library', async request =>
-        listDecorated(request.query.hidden === '1' || request.query.hidden === 'true' ? true : undefined));
+        listDecorated(request.query.hidden === '1' || request.query.hidden === 'true' ? true : undefined)
+    );
 
     app.post<{ Body: { sourceId: string; mangaId: string; title: string; url?: string; thumbnail?: string; autoDownload?: boolean } }>(
         '/api/library',
@@ -111,7 +111,7 @@ export function registerLibraryRoutes(
 
     // Re-match every entry whose source keeps failing (bulk failover, cached catalogs)
     let rematchAllRunning = false;
-    app.post('/api/library/rematch-failed', async (request, reply) => {
+    app.post('/api/library/rematch-failed', async (_request, reply) => {
         if (!failover) {
             return reply.code(501).send({ error: 'Failover non disponible' });
         }
@@ -139,7 +139,12 @@ export function registerLibraryRoutes(
                             at: new Date().toISOString()
                         });
                     } catch (error) {
-                        events.publish({ type: 'log', level: 'warn', message: `Re-match « ${entry.title} » : ${(error as Error).message}`, at: new Date().toISOString() });
+                        events.publish({
+                            type: 'log',
+                            level: 'warn',
+                            message: `Re-match « ${entry.title} » : ${(error as Error).message}`,
+                            at: new Date().toISOString()
+                        });
                     }
                     await new Promise(resolve => setTimeout(resolve, 250));
                 }

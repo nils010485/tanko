@@ -7,13 +7,13 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
+import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { Database } from '../db.js';
-import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { chapterPaths, countLocalChapters, outputExists } from '../downloader/paths.js';
-import { chapterAllowed } from '../languages.js';
+import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
+import { chapterAllowed } from '../languages.js';
 
 /** Shared INSERT statements for chapter rows (6-column snapshot, 6-column forced 'new', full 8-column). */
 const SQL_INSERT_CHAPTER = `INSERT OR IGNORE INTO library_chapters (entry_id, chapter_id, title, language, status, discovered_at)
@@ -61,14 +61,15 @@ export interface MigrationTarget {
 }
 
 export class LibraryStore {
-
-    constructor(private readonly opts: {
-        db: Database;
-        registry: SourceRegistry;
-        queueSettings: QueueSettings;
-        /** Preferred chapter languages (ISO codes); empty = keep everything. */
-        getPreferredLanguages?: () => string[];
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            registry: SourceRegistry;
+            queueSettings: QueueSettings;
+            /** Preferred chapter languages (ISO codes); empty = keep everything. */
+            getPreferredLanguages?: () => string[];
+        }
+    ) {
         this._migrate();
     }
 
@@ -99,8 +100,19 @@ export class LibraryStore {
              ON CONFLICT(source_id, manga_id) DO UPDATE SET title = excluded.title, url = excluded.url,
                  thumbnail = COALESCE(excluded.thumbnail, library.thumbnail)
              RETURNING id`,
-            entry.sourceId, source.label, entry.mangaId, entry.title, entry.url || null, entry.thumbnail || null, entry.autoDownload === false ? 0 : 1, now, now
+            entry.sourceId,
+            source.label,
+            entry.mangaId,
+            entry.title,
+            entry.url || null,
+            entry.thumbnail || null,
+            entry.autoDownload === false ? 0 : 1,
+            now,
+            now
         );
+        if (!result) {
+            throw new Error(`Failed to create the library entry for "${entry.title}"`);
+        }
 
         // snapshot current chapters
         let snapshot = 0;
@@ -113,13 +125,17 @@ export class LibraryStore {
                     continue;
                 }
                 const status = this._isDownloaded(source.label, entry.title, chapter.title) ? 'downloaded' : 'new';
-                insert.run(result!.id, chapter.id, chapter.title, chapter.language || null, status, now);
+                insert.run(result.id, chapter.id, chapter.title, chapter.language || null, status, now);
                 snapshot++;
             }
         } catch (error) {
             console.warn(`[library] initial snapshot failed for "${entry.title}":`, (error as Error).message);
         }
-        return { entry: this.getEntry(result!.id)!, snapshot };
+        const created = this.getEntry(result.id);
+        if (!created) {
+            throw new Error(`Entry "${entry.title}" vanished right after its insert`);
+        }
+        return { entry: created, snapshot };
     }
 
     /** Remove the entry from Tanko; with `disk`, also delete the series folder. */
@@ -236,8 +252,7 @@ export class LibraryStore {
     }
 
     setMigrationSuggestion(entryId: number, suggestion: MigrationTarget | null): void {
-        this.opts.db.db.prepare('UPDATE library SET migration_suggestion = ? WHERE id = ?')
-            .run(suggestion ? JSON.stringify(suggestion) : null, entryId);
+        this.opts.db.db.prepare('UPDATE library SET migration_suggestion = ? WHERE id = ?').run(suggestion ? JSON.stringify(suggestion) : null, entryId);
     }
 
     /**
@@ -277,16 +292,23 @@ export class LibraryStore {
     }
 
     /** Replace the entry's chapter list from the new source, carrying downloaded files over. */
-    private async _rebuildChapters(entryId: number, target: MigrationTarget, source: SourceAdapter, downloadedByNumber: Map<number, ChapterRow>): Promise<{ kept: number; total: number }> {
+    private async _rebuildChapters(
+        entryId: number,
+        target: MigrationTarget,
+        source: SourceAdapter,
+        downloadedByNumber: Map<number, ChapterRow>
+    ): Promise<{ kept: number; total: number }> {
         const chapters = await source.getChapters({ id: target.mangaId, title: target.mangaTitle });
         const preferred = this.opts.getPreferredLanguages?.() || [];
         const now = new Date().toISOString();
 
         this.opts.db.db.prepare('DELETE FROM library_chapters WHERE entry_id = ?').run(entryId);
-        this.opts.db.db.prepare(
-            `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
+        this.opts.db.db
+            .prepare(
+                `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
                     migration_suggestion = NULL, check_failures = 0, last_checked_at = ? WHERE id = ?`
-        ).run(target.sourceId, source.label, target.mangaId, target.mangaTitle, target.url || null, now, entryId);
+            )
+            .run(target.sourceId, source.label, target.mangaId, target.mangaTitle, target.url || null, now, entryId);
 
         const insert = this.opts.db.db.prepare(SQL_INSERT_CHAPTER_FULL);
         let kept = 0;
@@ -311,23 +333,30 @@ export class LibraryStore {
 
     /** Undo the latest source migration (restores entry fields + chapter rows). */
     rollbackMigration(entryId: number): boolean {
-        const snapshot = this._get<{ id: number; data: string }>(
-            'SELECT * FROM entry_snapshots WHERE entry_id = ? ORDER BY id DESC LIMIT 1',
-            entryId
-        );
+        const snapshot = this._get<{ id: number; data: string }>('SELECT * FROM entry_snapshots WHERE entry_id = ? ORDER BY id DESC LIMIT 1', entryId);
         if (!snapshot) {
             return false;
         }
         const data = JSON.parse(snapshot.data) as { entry: EntryRow; chapters: ChapterRow[] };
-        this.opts.db.db.prepare(
-            `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
+        this.opts.db.db
+            .prepare(
+                `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
                     migration_suggestion = NULL, check_failures = 0 WHERE id = ?`
-        ).run(data.entry.source_id, data.entry.source_label, data.entry.manga_id, data.entry.title, data.entry.url, entryId);
+            )
+            .run(data.entry.source_id, data.entry.source_label, data.entry.manga_id, data.entry.title, data.entry.url, entryId);
         this.opts.db.db.prepare('DELETE FROM library_chapters WHERE entry_id = ?').run(entryId);
         const insert = this.opts.db.db.prepare(SQL_INSERT_CHAPTER_FULL);
         for (const chapter of data.chapters) {
-            insert.run(entryId, chapter.chapter_id, chapter.title, chapter.language, chapter.status, chapter.path,
-                chapter.discovered_at, chapter.downloaded_at);
+            insert.run(
+                entryId,
+                chapter.chapter_id,
+                chapter.title,
+                chapter.language,
+                chapter.status,
+                chapter.path,
+                chapter.discovered_at,
+                chapter.downloaded_at
+            );
         }
         this.opts.db.db.prepare('DELETE FROM entry_snapshots WHERE id = ?').run(snapshot.id);
         return true;
@@ -386,14 +415,9 @@ export class LibraryStore {
         if (!entry) {
             return 0;
         }
-        const chapters = this._all<ChapterRow>(
-            'SELECT * FROM library_chapters WHERE entry_id = ? AND status = ? ORDER BY discovered_at ASC',
-            entryId, 'new'
-        );
+        const chapters = this._all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ? AND status = ? ORDER BY discovered_at ASC', entryId, 'new');
         const markQueued = () => {
-            this.opts.db.db.prepare(
-                'UPDATE library_chapters SET status = ? WHERE entry_id = ? AND status = ?'
-            ).run('queued', entryId, 'new');
+            this.opts.db.db.prepare('UPDATE library_chapters SET status = ? WHERE entry_id = ? AND status = ?').run('queued', entryId, 'new');
         };
         return this._enqueueSelected(entry, chapters, queue, markQueued);
     }
@@ -407,12 +431,13 @@ export class LibraryStore {
         const placeholders = chapterIds.map(() => '?').join(', ');
         const chapters = this._all<ChapterRow>(
             `SELECT * FROM library_chapters WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status = 'new'`,
-            entryId, ...chapterIds
+            entryId,
+            ...chapterIds
         );
         const markQueued = () => {
-            this.opts.db.db.prepare(
-                `UPDATE library_chapters SET status = 'queued' WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status = 'new'`
-            ).run(entryId, ...chapterIds);
+            this.opts.db.db
+                .prepare(`UPDATE library_chapters SET status = 'queued' WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status = 'new'`)
+                .run(entryId, ...chapterIds);
         };
         return this._enqueueSelected(entry, chapters, queue, markQueued);
     }
@@ -421,11 +446,12 @@ export class LibraryStore {
     markChapter(entryId: number, chapterId: string, status: 'downloaded' | 'failed' | 'new', filePath?: string, origin = 'download'): void {
         const previous = this._get<{ title: string; status: string; path: string | null }>(
             'SELECT title, status, path FROM library_chapters WHERE entry_id = ? AND chapter_id = ?',
-            entryId, chapterId
+            entryId,
+            chapterId
         );
-        this.opts.db.db.prepare(
-            'UPDATE library_chapters SET status = ?, path = ?, downloaded_at = ? WHERE entry_id = ? AND chapter_id = ?'
-        ).run(status, filePath || null, status === 'downloaded' ? new Date().toISOString() : null, entryId, chapterId);
+        this.opts.db.db
+            .prepare('UPDATE library_chapters SET status = ?, path = ?, downloaded_at = ? WHERE entry_id = ? AND chapter_id = ?')
+            .run(status, filePath || null, status === 'downloaded' ? new Date().toISOString() : null, entryId, chapterId);
         if (previous && (previous.status !== status || previous.path !== (filePath || null))) {
             this._recordChapterHistory(entryId, chapterId, previous.title, origin, previous.status, previous.path, status, filePath || null);
         }
@@ -434,7 +460,11 @@ export class LibraryStore {
     /** Full change history of an entry's chapters (newest first). */
     chapterHistory(entryId: number, chapterId?: string): Array<Record<string, unknown>> {
         if (chapterId) {
-            return this._all<Record<string, unknown>>('SELECT * FROM chapter_history WHERE entry_id = ? AND chapter_id = ? ORDER BY id DESC', entryId, chapterId);
+            return this._all<Record<string, unknown>>(
+                'SELECT * FROM chapter_history WHERE entry_id = ? AND chapter_id = ? ORDER BY id DESC',
+                entryId,
+                chapterId
+            );
         }
         return this._all<Record<string, unknown>>('SELECT * FROM chapter_history WHERE entry_id = ? ORDER BY id DESC LIMIT 200', entryId);
     }
@@ -445,7 +475,8 @@ export class LibraryStore {
             `SELECT old_path FROM chapter_history
              WHERE entry_id = ? AND chapter_id = ? AND old_status = 'downloaded' AND old_path IS NOT NULL
              ORDER BY id DESC LIMIT 1`,
-            entryId, chapterId
+            entryId,
+            chapterId
         );
         if (!last?.old_path || !fs.existsSync(last.old_path)) {
             return false;
@@ -502,7 +533,10 @@ export class LibraryStore {
         return chapters.length;
     }
 
-    private _toQueueItem(entry: EntryRow, chapter: ChapterRow): { sourceId: string; mangaId: string; mangaTitle: string; chapterId: string; chapterTitle: string; entryId: number } {
+    private _toQueueItem(
+        entry: EntryRow,
+        chapter: ChapterRow
+    ): { sourceId: string; mangaId: string; mangaTitle: string; chapterId: string; chapterTitle: string; entryId: number } {
         return {
             sourceId: entry.source_id,
             mangaId: entry.manga_id,
@@ -513,12 +547,22 @@ export class LibraryStore {
         };
     }
 
-    private _recordChapterHistory(entryId: number, chapterId: string, title: string, event: string,
-        oldStatus: string | null, oldPath: string | null, newStatus: string, newPath: string | null): void {
-        this.opts.db.db.prepare(
-            `INSERT INTO chapter_history (entry_id, chapter_id, title, event, old_status, old_path, new_status, new_path, at)
+    private _recordChapterHistory(
+        entryId: number,
+        chapterId: string,
+        title: string,
+        event: string,
+        oldStatus: string | null,
+        oldPath: string | null,
+        newStatus: string,
+        newPath: string | null
+    ): void {
+        this.opts.db.db
+            .prepare(
+                `INSERT INTO chapter_history (entry_id, chapter_id, title, event, old_status, old_path, new_status, new_path, at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(entryId, chapterId, title, event, oldStatus, oldPath, newStatus, newPath, new Date().toISOString());
+            )
+            .run(entryId, chapterId, title, event, oldStatus, oldPath, newStatus, newPath, new Date().toISOString());
     }
 
     private _snapshotEntry(entryId: number, reason: string): void {
@@ -527,9 +571,9 @@ export class LibraryStore {
             return;
         }
         const chapters = this._all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId);
-        this.opts.db.db.prepare(
-            'INSERT INTO entry_snapshots (entry_id, reason, data, at) VALUES (?, ?, ?, ?)'
-        ).run(entryId, reason, JSON.stringify({ entry, chapters }), new Date().toISOString());
+        this.opts.db.db
+            .prepare('INSERT INTO entry_snapshots (entry_id, reason, data, at) VALUES (?, ?, ?, ?)')
+            .run(entryId, reason, JSON.stringify({ entry, chapters }), new Date().toISOString());
     }
 
     private _migrate(): void {
@@ -612,8 +656,8 @@ export class LibraryStore {
                     SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh
              FROM library_chapters WHERE entry_id = ?`,
             row.id
-        )!;
-        const snapshot = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id)!;
+        ) ?? { total: null, downloaded: null, fresh: null };
+        const snapshot = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) ?? { n: 0 };
         let suggestion: LibraryEntryDto['migrationSuggestion'];
         try {
             suggestion = row.migration_suggestion ? JSON.parse(row.migration_suggestion) : undefined;

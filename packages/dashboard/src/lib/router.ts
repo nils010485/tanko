@@ -2,14 +2,13 @@
  * Tiny hash router: the active tab survives reloads and is shareable
  * (e.g. #/library). No dependency needed for a flat tab structure.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useHashRoute<T extends string>(fallback: T, valid: readonly T[]): [T, (tab: T) => void] {
-    const validRoutes = new Set<string>(valid);
-    const read = (): T => {
+    const read = useCallback((): T => {
         const hash = window.location.hash.replace(/^#\/?/, '');
-        return validRoutes.has(hash) ? (hash as T) : fallback;
-    };
+        return valid.includes(hash as T) ? (hash as T) : fallback;
+    }, [fallback, valid]);
 
     const [route, setRoute] = useState<T>(read);
 
@@ -17,7 +16,7 @@ export function useHashRoute<T extends string>(fallback: T, valid: readonly T[])
         const onChange = () => setRoute(read());
         window.addEventListener('hashchange', onChange);
         return () => window.removeEventListener('hashchange', onChange);
-    }, []);
+    }, [read]);
 
     const navigate = (tab: T) => {
         if (tab === route) return;

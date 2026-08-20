@@ -2,7 +2,7 @@
  * Minimal toast system: <ToastProvider> at the root, useToast() anywhere.
  * Toasts auto-dismiss and stack in the bottom-right corner.
  */
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from 'react';
 
 type ToastTone = 'success' | 'error' | 'info';
 
@@ -60,10 +60,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     <div
                         key={toast.id}
                         role="status"
-                        onClick={() => setToasts(current => current.filter(item => item.id !== toast.id))}
-                        className={`pointer-events-auto cursor-pointer break-words rounded-lg border bg-zinc-900/95 px-3.5 py-2.5 text-sm shadow-lg shadow-black/40 backdrop-blur transition-all ${TONES[toast.tone]}`}
+                        className={`pointer-events-auto rounded-lg border bg-zinc-900/95 shadow-lg shadow-black/40 backdrop-blur ${TONES[toast.tone]}`}
                     >
-                        {toast.message}
+                        <button
+                            type="button"
+                            onClick={() => setToasts(current => current.filter(item => item.id !== toast.id))}
+                            className="block w-full cursor-pointer break-words px-3.5 py-2.5 text-left text-sm transition-all"
+                        >
+                            {toast.message}
+                        </button>
                     </div>
                 ))}
             </div>

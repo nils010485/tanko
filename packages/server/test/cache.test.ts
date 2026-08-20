@@ -1,11 +1,11 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Database } from '../src/db.js';
-import { SqliteCacheStore } from '../src/cache/sqlite-store.js';
-import { CachedSourceAdapter } from '../src/cache/cached-adapter.js';
 import type { SourceAdapter } from '@tanko/core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CachedSourceAdapter } from '../src/cache/cached-adapter.js';
+import { SqliteCacheStore } from '../src/cache/sqlite-store.js';
+import { Database } from '../src/db.js';
 
 let tmpDir: string;
 let database: Database;

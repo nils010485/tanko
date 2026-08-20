@@ -17,6 +17,11 @@
     "build": "npm run build -w @tanko/shared -w @tanko/core -w @tanko/server -w @tanko/dashboard",
     "dev": "npm run dev -w @tanko/server",
     "start": "node packages/server/dist/index.js",
-    "test": "npm run test -w @tanko/server --if-present"
+    "test": "npm run test -w @tanko/server --if-present",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.9"
   }
 }

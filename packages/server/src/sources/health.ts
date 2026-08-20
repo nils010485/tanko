@@ -2,8 +2,9 @@
  * Source health-check service: probes sources for reachability and persists
  * the results so the dashboard can filter sources that actually work.
  */
-import type { SourceHealthDto } from '@tanko/shared';
+
 import type { SourceAdapter } from '@tanko/core';
+import type { SourceHealthDto } from '@tanko/shared';
 import type { Database } from '../db.js';
 import type { EventBus } from '../ws.js';
 
@@ -19,15 +20,16 @@ interface HealthRow {
 }
 
 export class SourceHealthService {
-
     private readonly checking = new Set<string>();
 
-    constructor(private readonly opts: {
-        db: Database;
-        events: EventBus;
-        getAdapter: (id: string) => Promise<SourceAdapter | undefined>;
-        listAdapterIds: () => Promise<string[]>;
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            events: EventBus;
+            getAdapter: (id: string) => Promise<SourceAdapter | undefined>;
+            listAdapterIds: () => Promise<string[]>;
+        }
+    ) {
         this._migrate();
     }
 
@@ -72,11 +74,13 @@ export class SourceHealthService {
         try {
             const result = await adapter.checkHealth();
             const now = new Date().toISOString();
-            this.opts.db.db.prepare(
-                `INSERT INTO source_health (source_id, ok, latency_ms, error, checked_at)
+            this.opts.db.db
+                .prepare(
+                    `INSERT INTO source_health (source_id, ok, latency_ms, error, checked_at)
                  VALUES (?, ?, ?, ?, ?)
                  ON CONFLICT(source_id) DO UPDATE SET ok = excluded.ok, latency_ms = excluded.latency_ms, error = excluded.error, checked_at = excluded.checked_at`
-            ).run(sourceId, result.ok ? 1 : 0, result.latencyMs, result.error || null, now);
+                )
+                .run(sourceId, result.ok ? 1 : 0, result.latencyMs, result.error || null, now);
             return {
                 sourceId,
                 status: result.ok ? 'ok' : 'error',
@@ -143,11 +147,13 @@ export class SourceHealthService {
 
     /** Hide every source whose last health check failed. Returns the count. */
     hideBroken(): number {
-        const result = this.opts.db.db.prepare(
-            `INSERT INTO source_flags (source_id, hidden)
+        const result = this.opts.db.db
+            .prepare(
+                `INSERT INTO source_flags (source_id, hidden)
              SELECT source_id, 1 FROM source_health WHERE ok = 0
              ON CONFLICT(source_id) DO UPDATE SET hidden = 1`
-        ).run();
+            )
+            .run();
         return Number(result.changes);
     }
 

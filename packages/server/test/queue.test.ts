@@ -1,17 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
-import { EventBus } from '../src/ws.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
+import { EventBus } from '../src/ws.js';
 
 // A tiny 1x1 PNG served by a local HTTP server stands in for a real source.
-const PNG = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64'
-);
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 let server: http.Server;
 let baseUrl: string;
@@ -85,13 +82,15 @@ afterAll(async () => {
 
 describe('DownloadQueue', () => {
     it('downloads a chapter and marks it completed', async () => {
-        const { added } = queue.enqueue([{
-            sourceId: 'test-source',
-            mangaId: 'manga-1',
-            mangaTitle: 'Test Manga',
-            chapterId: 'chapter-1',
-            chapterTitle: 'Chapter 1'
-        }]);
+        const { added } = queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Test Manga',
+                chapterId: 'chapter-1',
+                chapterTitle: 'Chapter 1'
+            }
+        ]);
         expect(added).toBe(1);
 
         const row = await waitForJob(1, ['completed']);
@@ -104,25 +103,29 @@ describe('DownloadQueue', () => {
     });
 
     it('deduplicates identical chapters', () => {
-        const result = queue.enqueue([{
-            sourceId: 'test-source',
-            mangaId: 'manga-1',
-            mangaTitle: 'Test Manga',
-            chapterId: 'chapter-1',
-            chapterTitle: 'Chapter 1'
-        }]);
+        const result = queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Test Manga',
+                chapterId: 'chapter-1',
+                chapterTitle: 'Chapter 1'
+            }
+        ]);
         expect(result.added).toBe(0);
         expect(result.skipped).toBe(1);
     });
 
     it('fails cleanly for an unknown source', async () => {
-        queue.enqueue([{
-            sourceId: 'missing-source',
-            mangaId: 'manga-x',
-            mangaTitle: 'Ghost',
-            chapterId: 'chapter-x',
-            chapterTitle: 'Chapter X'
-        }]);
+        queue.enqueue([
+            {
+                sourceId: 'missing-source',
+                mangaId: 'manga-x',
+                mangaTitle: 'Ghost',
+                chapterId: 'chapter-x',
+                chapterTitle: 'Chapter X'
+            }
+        ]);
         const rows = database.db.prepare('SELECT * FROM download_jobs WHERE source_id = ?').all('missing-source') as any[];
         const row = await waitForJob(rows[0].id, ['failed']);
         expect(row.error).toContain('not found');
@@ -132,13 +135,15 @@ describe('DownloadQueue', () => {
         queue.pause();
         const before = database.db.prepare('SELECT status FROM download_jobs WHERE source_id = ?').get('missing-source') as any;
         expect(before.status).toBe('failed');
-        const result = queue.enqueue([{
-            sourceId: 'missing-source',
-            mangaId: 'manga-x',
-            mangaTitle: 'Ghost',
-            chapterId: 'chapter-x',
-            chapterTitle: 'Chapter X'
-        }]);
+        const result = queue.enqueue([
+            {
+                sourceId: 'missing-source',
+                mangaId: 'manga-x',
+                mangaTitle: 'Ghost',
+                chapterId: 'chapter-x',
+                chapterTitle: 'Chapter X'
+            }
+        ]);
         expect(result.retried).toBe(1);
         const after = database.db.prepare('SELECT status FROM download_jobs WHERE source_id = ?').get('missing-source') as any;
         expect(after.status).toBe('queued');
@@ -147,13 +152,15 @@ describe('DownloadQueue', () => {
 
     it('cancels a queued job', async () => {
         queue.pause();
-        queue.enqueue([{
-            sourceId: 'test-source',
-            mangaId: 'manga-1',
-            mangaTitle: 'Test Manga',
-            chapterId: 'chapter-cancel',
-            chapterTitle: 'Chapter Cancel'
-        }]);
+        queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Test Manga',
+                chapterId: 'chapter-cancel',
+                chapterTitle: 'Chapter Cancel'
+            }
+        ]);
         const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-cancel') as any[];
         expect(queue.cancel(rows[0].id)).toBe(true);
         const row = await waitForJob(rows[0].id, ['cancelled']);
@@ -167,26 +174,30 @@ describe('DownloadQueue', () => {
         fs.mkdirSync(directory, { recursive: true });
         fs.writeFileSync(path.join(directory, '01.png'), PNG);
 
-        queue.enqueue([{
-            sourceId: 'test-source',
-            mangaId: 'manga-1',
-            mangaTitle: 'Test Manga',
-            chapterId: 'chapter-existing',
-            chapterTitle: 'Chapter Existing'
-        }]);
+        queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Test Manga',
+                chapterId: 'chapter-existing',
+                chapterTitle: 'Chapter Existing'
+            }
+        ]);
         const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-existing') as any[];
-        const row = await waitForJob(rows[0].id, ['completed']);
+        await waitForJob(rows[0].id, ['completed']);
         // the shortcut must NOT have downloaded: only the pre-created file remains
         expect(fs.readdirSync(directory)).toEqual(['01.png']);
     });
 
     it('prunes finished jobs older than the retention, keeps recent and active ones', () => {
         const old = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-        database.db.prepare(
-            `INSERT INTO download_jobs
+        database.db
+            .prepare(
+                `INSERT INTO download_jobs
                 (source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
              VALUES ('old-source', 'old-manga', 'old-chapter', 'Old', 'Old Ch', 'completed', 1, 1, 1, ?, ?)`
-        ).run(old, old);
+            )
+            .run(old, old);
         const settings = queue.updateSettings({ historyRetentionDays: 30 });
         expect(settings.historyRetentionDays).toBe(30);
         const pruned = database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = ?').get('old-source') as any;
@@ -198,18 +209,18 @@ describe('DownloadQueue', () => {
 
     it('clearHistory removes finished jobs only', async () => {
         queue.pause();
-        queue.enqueue([{
-            sourceId: 'test-source',
-            mangaId: 'manga-clear',
-            mangaTitle: 'Clear Manga',
-            chapterId: 'chapter-queued',
-            chapterTitle: 'Chapter Queued'
-        }]);
+        queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-clear',
+                mangaTitle: 'Clear Manga',
+                chapterId: 'chapter-queued',
+                chapterTitle: 'Chapter Queued'
+            }
+        ]);
         const removed = queue.clearHistory();
         expect(removed).toBeGreaterThan(0);
-        const finished = database.db.prepare(
-            "SELECT COUNT(*) AS n FROM download_jobs WHERE status IN ('completed', 'failed', 'cancelled')"
-        ).get() as any;
+        const finished = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status IN ('completed', 'failed', 'cancelled')").get() as any;
         expect(finished.n).toBe(0);
         const queued = database.db.prepare('SELECT status FROM download_jobs WHERE chapter_id = ?').get('chapter-queued') as any;
         expect(queued.status).toBe('queued');

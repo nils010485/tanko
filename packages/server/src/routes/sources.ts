@@ -1,7 +1,6 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
-import { SourceError, SourceRegistry, type MangaInfo, type SourceAdapter } from '@tanko/core';
-
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
     if (error instanceof SourceError) {
@@ -12,7 +11,6 @@ function handleSourceError(reply: FastifyReply, error: unknown) {
     return reply.code(502).send({ error: `La source n'a pas répondu correctement : ${message}`, details: 'source' });
 }
 
-
 /** Resolve a source or reply 404; null means the reply has already been sent. */
 async function requireSource(reply: FastifyReply, sourceRegistry: SourceRegistry, sourceId: string): Promise<SourceAdapter | null> {
     const source = await sourceRegistry.get(sourceId);
@@ -22,7 +20,6 @@ async function requireSource(reply: FastifyReply, sourceRegistry: SourceRegistry
     }
     return source;
 }
-
 
 /** Shared route body for /search, /chapters and /pages: 404 on unknown source, 502 mapping on source errors. */
 async function withSource(
@@ -41,7 +38,6 @@ async function withSource(
         return handleSourceError(reply, error);
     }
 }
-
 
 // Best-effort cover enrichment for MangaDex: the legacy catalog only carries
 // id+title, so we batch-resolve cover_art from the public API to show thumbnails.
@@ -73,9 +69,10 @@ async function enrichMangaDexCovers(mangas: MangaInfo[]): Promise<void> {
         for (const manga of mangas) {
             if (covers.has(manga.id)) manga.thumbnail = covers.get(manga.id);
         }
-    } catch { /* covers are best-effort */ }
+    } catch {
+        /* covers are best-effort */
+    }
 }
-
 
 /** Minimal shape of the caching decorator around a legacy connector (engine RequestOptions). */
 interface ConnectorHolder {
@@ -101,8 +98,8 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
     return fetch(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0',
-            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-            'Referer': source?.url ? source.url + '/' : url
+            Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+            Referer: source?.url ? `${source.url}/` : url
         },
         redirect: 'follow',
         signal: AbortSignal.timeout(60000)
@@ -110,7 +107,6 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
 }
 
 export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: SourceRegistry): void {
-
     // List all available sources (native + legacy), enriched with health + hidden flags
     app.get('/api/sources', async (): Promise<SourceDto[]> => {
         const sources = await sourceRegistry.list();
@@ -151,38 +147,39 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
             if (sourceId === 'mangadex') {
                 await enrichMangaDexCovers(sliced);
             }
-            return sliced.map((manga): MangaDto => ({
-                sourceId,
-                id: manga.id,
-                title: manga.title,
-                url: manga.url,
-                thumbnail: manga.thumbnail
-            }));
+            return sliced.map(
+                (manga): MangaDto => ({
+                    sourceId,
+                    id: manga.id,
+                    title: manga.title,
+                    url: manga.url,
+                    thumbnail: manga.thumbnail
+                })
+            );
         });
     });
 
     // List chapters of a manga on a given source
-    app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; title?: string } }>(
-        '/api/sources/:sourceId/chapters',
-        async (request, reply) => {
-            const { sourceId } = request.params;
-            const mangaId = request.query.mangaId;
-            const title = request.query.title || mangaId || '';
-            if (!mangaId) {
-                return reply.code(400).send({ error: 'Query parameter "mangaId" is required' });
-            }
-            return withSource(reply, sourceRegistry, sourceId, async source => {
-                const chapters = await source.getChapters({ id: mangaId, title });
-                return chapters.map((chapter): ChapterDto => ({
+    app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; title?: string } }>('/api/sources/:sourceId/chapters', async (request, reply) => {
+        const { sourceId } = request.params;
+        const mangaId = request.query.mangaId;
+        const title = request.query.title || mangaId || '';
+        if (!mangaId) {
+            return reply.code(400).send({ error: 'Query parameter "mangaId" is required' });
+        }
+        return withSource(reply, sourceRegistry, sourceId, async source => {
+            const chapters = await source.getChapters({ id: mangaId, title });
+            return chapters.map(
+                (chapter): ChapterDto => ({
                     sourceId,
-                    mangaId: mangaId!,
+                    mangaId,
                     id: chapter.id,
                     title: chapter.title,
                     language: chapter.language
-                }));
-            });
-        }
-    );
+                })
+            );
+        });
+    });
 
     // Page image URLs of a chapter (for the quality preview in the dashboard)
     app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; chapterId?: string; mangaTitle?: string; chapterTitle?: string } }>(
@@ -194,10 +191,7 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
                 return reply.code(400).send({ error: 'Query parameters "mangaId" and "chapterId" are required' });
             }
             return withSource(reply, sourceRegistry, sourceId, async source => {
-                const pages = await source.getPages(
-                    { id: mangaId, title: mangaTitle || mangaId },
-                    { id: chapterId, title: chapterTitle || chapterId }
-                );
+                const pages = await source.getPages({ id: mangaId, title: mangaTitle || mangaId }, { id: chapterId, title: chapterTitle || chapterId });
                 return { pages };
             });
         }

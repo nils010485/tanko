@@ -16,15 +16,15 @@ export async function sendNotification(settings: NotificationSettings, title: st
         const isDiscord = /discord(app)?\.com\/api\/webhooks/i.test(settings.webhookUrl);
         const init: RequestInit = isDiscord
             ? {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: `**${title}**\n${body}` })
-            }
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ content: `**${title}**\n${body}` })
+              }
             : {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Title': title },
-                body: `${title}\n${body}`
-            };
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: title },
+                  body: `${title}\n${body}`
+              };
         const response = await fetch(settings.webhookUrl, { ...init, signal: AbortSignal.timeout(15000) });
         return response.ok;
     } catch (error) {

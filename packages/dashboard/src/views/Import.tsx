@@ -3,12 +3,11 @@
  * sync). All state lives server-side (SQLite) so the view can be closed and
  * reopened at any time — it simply polls the current job.
  */
-import { useEffect, useRef, useState } from 'react';
-import { api, type ImportJobSeries, type ImportJobStatus } from '../lib/api.js';
-import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle } from '../components/ui.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconCheck, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
-import { useI18n, type TFunction } from '../i18n/index.js';
-
+import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle } from '../components/ui.js';
+import { type TFunction, useI18n } from '../i18n/index.js';
+import { api, type ImportJobSeries, type ImportJobStatus } from '../lib/api.js';
 
 const ACTIVE_STATUSES = new Set(['scanning', 'matching', 'syncing']);
 
@@ -22,17 +21,21 @@ export default function Import({ onImported }: { onImported: () => void }) {
     const [busy, setBusy] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const refresh = async () => {
+    const refresh = useCallback(async () => {
         try {
             setState(await api.importJobStatus());
-        } catch { /* keep the last known state */ }
-    };
+        } catch {
+            /* keep the last known state */
+        }
+    }, []);
 
     useEffect(() => {
         void refresh();
         pollRef.current = setInterval(refresh, 2000);
-        return () => { if (pollRef.current) clearInterval(pollRef.current); };
-    }, []);
+        return () => {
+            if (pollRef.current) clearInterval(pollRef.current);
+        };
+    }, [refresh]);
 
     const job = state?.job || null;
     const counters = state?.counters;
@@ -53,22 +56,37 @@ export default function Import({ onImported }: { onImported: () => void }) {
         }
     };
 
-    const start = run(() => api.importJobStart({
-        path: folderPath.trim(),
-        autoConfirm,
-        autoDownload
-    }));
-    const resume = run(() => api.importJobResume(job!.id));
-    const cancel = run(() => api.importJobCancel(job!.id));
-    const confirmAuto = run(() => api.importJobConfirm(job!.id, 'auto'));
-    const confirmAll = run(() => api.importJobConfirm(job!.id, 'all'));
-    const sync = run(async () => { await api.importJobSync(job!.id); onImported(); });
+    const start = run(() =>
+        api.importJobStart({
+            path: folderPath.trim(),
+            autoConfirm,
+            autoDownload
+        })
+    );
+    // every job action is a no-op when there is no job (buttons are hidden then)
+    const runJobAction = (action: (jobId: number) => Promise<unknown>) =>
+        run(async () => {
+            if (job) {
+                await action(job.id);
+            }
+        });
+    const resume = runJobAction(id => api.importJobResume(id));
+    const cancel = runJobAction(id => api.importJobCancel(id));
+    const confirmAuto = runJobAction(id => api.importJobConfirm(id, 'auto'));
+    const confirmAll = runJobAction(id => api.importJobConfirm(id, 'all'));
+    const sync = runJobAction(async id => {
+        await api.importJobSync(id);
+        onImported();
+    });
 
     const choose = (item: ImportJobSeries, candidateKey: string) =>
         run(async () => {
+            if (!job) {
+                return;
+            }
             const candidate = item.candidates.find(entry => `${entry.sourceId}:${entry.mangaId}` === candidateKey);
             if (candidate) {
-                await api.importJobChoose(job!.id, { path: item.path, ...candidate });
+                await api.importJobChoose(job.id, { path: item.path, ...candidate });
             }
         })();
 
@@ -89,18 +107,22 @@ export default function Import({ onImported }: { onImported: () => void }) {
             <Card className="p-4">
                 <div className="flex flex-wrap items-end gap-3">
                     <div className="min-w-64 flex-1">
-                        <label className="mb-1 block text-xs text-zinc-500">{t('import.folderLabel')}</label>
-                        <Input value={folderPath} onChange={value => setFolderPath(value)}
-                            placeholder="/biblio" />
+                        <label htmlFor="import-folder" className="mb-1 block text-xs text-zinc-500">
+                            {t('import.folderLabel')}
+                        </label>
+                        <Input id="import-folder" value={folderPath} onChange={value => setFolderPath(value)} placeholder="/biblio" />
                     </div>
                     <label className="flex items-center gap-2 text-xs text-zinc-400">
-                        <input type="checkbox" checked={autoConfirm === 'auto'} disabled={active}
-                            onChange={event => setAutoConfirm(event.target.checked ? 'auto' : 'none')} />
+                        <input
+                            type="checkbox"
+                            checked={autoConfirm === 'auto'}
+                            disabled={active}
+                            onChange={event => setAutoConfirm(event.target.checked ? 'auto' : 'none')}
+                        />
                         {t('import.autoConfirmLabel')}
                     </label>
                     <label className="flex items-center gap-2 text-xs text-zinc-400">
-                        <input type="checkbox" checked={autoDownload} disabled={active}
-                            onChange={event => setAutoDownload(event.target.checked)} />
+                        <input type="checkbox" checked={autoDownload} disabled={active} onChange={event => setAutoDownload(event.target.checked)} />
                         {t('import.autoDownloadLabel')}
                     </label>
                     <Button onClick={start} disabled={!folderPath.trim() || active} loading={busy && active}>
@@ -115,13 +137,19 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="min-w-0 text-sm">
                             <span className="font-medium">{t(phaseLabel[job.status])}</span>
-                            <span className="ml-2 break-all text-xs text-zinc-500">{job.root} · job #{job.id}</span>
+                            <span className="ml-2 break-all text-xs text-zinc-500">
+                                {job.root} · job #{job.id}
+                            </span>
                         </div>
                         {active && (
-                            <Button small variant="ghost" onClick={cancel}><IconX size={13} /> {t('import.interrupt')}</Button>
+                            <Button small variant="ghost" onClick={cancel}>
+                                <IconX size={13} /> {t('import.interrupt')}
+                            </Button>
                         )}
                         {(job.status === 'ready' || job.status === 'error') && !busy && (
-                            <Button small variant="ghost" onClick={resume}><IconRefresh size={13} /> {t('import.resume')}</Button>
+                            <Button small variant="ghost" onClick={resume}>
+                                <IconRefresh size={13} /> {t('import.resume')}
+                            </Button>
                         )}
                     </div>
                     {job.error && <div className="mt-2 text-sm text-red-400">{job.error}</div>}
@@ -129,12 +157,17 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     {counters && counters.total > 0 && (
                         <div className="mt-3 space-y-2">
                             <ProgressBar
-                                value={job.status === 'syncing' || job.status === 'done'
-                                    ? (100 * (counters.synced + counters.failed)) / Math.max(1, counters.confirmed)
-                                    : (100 * counters.matched) / counters.total} />
+                                value={
+                                    job.status === 'syncing' || job.status === 'done'
+                                        ? (100 * (counters.synced + counters.failed)) / Math.max(1, counters.confirmed)
+                                        : (100 * counters.matched) / counters.total
+                                }
+                            />
                             <div className="flex flex-wrap gap-2 text-xs">
                                 <Badge>{t('import.seriesCount', { n: counters.total })}</Badge>
-                                {job.status !== 'syncing' && job.status !== 'done' && <Badge tone="blue">{t('import.analyzedCount', { a: counters.matched, b: counters.total })}</Badge>}
+                                {job.status !== 'syncing' && job.status !== 'done' && (
+                                    <Badge tone="blue">{t('import.analyzedCount', { a: counters.matched, b: counters.total })}</Badge>
+                                )}
                                 <Badge tone="green">{t('import.confidentCount', { n: counters.auto })}</Badge>
                                 <Badge tone="orange">{t('import.reviewCount', { n: counters.review })}</Badge>
                                 <Badge tone="red">{t('import.notFoundCount', { n: counters.none })}</Badge>
@@ -186,7 +219,8 @@ export default function Import({ onImported }: { onImported: () => void }) {
                                     {item.confirmed && item.status !== 'synced' && <Badge tone="blue">{t('import.confirmedBadge')}</Badge>}
                                     {item.status === 'synced' && (
                                         <Badge tone="green">
-                                            {t('import.syncedBadge', { a: item.matched ?? 0, b: item.localChapters ?? 0 })}{item.matchMode === 'ordinal' ? ` ${t('import.ordinal')}` : ''}
+                                            {t('import.syncedBadge', { a: item.matched ?? 0, b: item.localChapters ?? 0 })}
+                                            {item.matchMode === 'ordinal' ? ` ${t('import.ordinal')}` : ''}
                                         </Badge>
                                     )}
                                     {item.status === 'failed' && <Badge tone="red">{t('import.failedBadge')}</Badge>}
@@ -194,7 +228,6 @@ export default function Import({ onImported }: { onImported: () => void }) {
                             </div>
 
                             {item.error && <div className="mt-2 text-xs text-red-400">{item.error}</div>}
-
 
                             {!item.mangaTitle && item.candidates.length > 0 && job && job.status !== 'syncing' && (
                                 <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-sm">
@@ -204,7 +237,9 @@ export default function Import({ onImported }: { onImported: () => void }) {
                                         value=""
                                         onChange={event => choose(item, event.target.value)}
                                     >
-                                        <option value="" disabled>—</option>
+                                        <option value="" disabled>
+                                            —
+                                        </option>
                                         {item.candidates.map(candidate => (
                                             <option key={`${candidate.sourceId}:${candidate.mangaId}`} value={`${candidate.sourceId}:${candidate.mangaId}`}>
                                                 {candidate.mangaTitle} ({candidate.sourceLabel}, {Math.round(candidate.score * 100)}%)

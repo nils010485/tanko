@@ -3,33 +3,33 @@
  * Boots: engine -> database -> event bus -> Fastify (REST + WS + dashboard).
  */
 import fs from 'node:fs';
-import Fastify from 'fastify';
-import fastifyWebsocket, { type WebSocket } from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
+import fastifyWebsocket, { type WebSocket } from '@fastify/websocket';
 import { createEngine, loadConnectors, SourceRegistry } from '@tanko/core';
 import type { DownloadStatus } from '@tanko/shared';
+import Fastify from 'fastify';
+import { CachedSourceAdapter } from './cache/cached-adapter.js';
+import { SqliteCacheStore } from './cache/sqlite-store.js';
 import { loadConfig } from './config.js';
 import { Database } from './db.js';
-import { EventBus } from './ws.js';
-import { registerHealthRoutes } from './routes/health.js';
-import { registerSourceRoutes } from './routes/sources.js';
-import { registerDownloadRoutes } from './routes/downloads.js';
-import { registerLibraryRoutes } from './routes/library.js';
-import { FailoverService } from './library/failover.js';
-import { CoverService } from './library/covers.js';
-import { registerCoverRoutes } from './routes/covers.js';
-import { registerSettingsRoutes, loadPersistedQueueSettings, createLanguagePreference } from './routes/settings.js';
-import { registerSourceHealthRoutes } from './routes/source-health.js';
-import { registerSourceUpdateRoutes } from './routes/sources-update.js';
-import { registerImageRoutes } from './routes/images.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
+import { ImportService } from './import/service.js';
+import { CoverService } from './library/covers.js';
+import { FailoverService } from './library/failover.js';
 import { LibraryStore } from './library/store.js';
+import { registerCoverRoutes } from './routes/covers.js';
+import { registerDownloadRoutes } from './routes/downloads.js';
+import { registerHealthRoutes } from './routes/health.js';
+import { registerImageRoutes } from './routes/images.js';
+import { registerImportRoutes } from './routes/import.js';
+import { registerLibraryRoutes } from './routes/library.js';
+import { createLanguagePreference, loadPersistedQueueSettings, registerSettingsRoutes } from './routes/settings.js';
+import { registerSourceHealthRoutes } from './routes/source-health.js';
+import { registerSourceRoutes } from './routes/sources.js';
+import { registerSourceUpdateRoutes } from './routes/sources-update.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { SourceHealthService } from './sources/health.js';
-import { registerImportRoutes } from './routes/import.js';
-import { ImportService } from './import/service.js';
-import { SqliteCacheStore } from './cache/sqlite-store.js';
-import { CachedSourceAdapter } from './cache/cached-adapter.js';
+import { EventBus } from './ws.js';
 
 const config = loadConfig();
 
@@ -165,10 +165,12 @@ if (config.importPath) {
         console.log(`[import] ${config.importPath} déjà importé (job #${previous.job.id}) — saut de l'auto-import`);
     } else {
         console.log(`[import] auto-import of ${config.importPath} (confirm=${config.importAutoConfirm}, autoDownload=${config.importAutoDownload})`);
-        importer.start(config.importPath, {
-            autoConfirm: config.importAutoConfirm,
-            autoDownload: config.importAutoDownload
-        }).catch(error => console.error('[import] auto-import failed:', error));
+        importer
+            .start(config.importPath, {
+                autoConfirm: config.importAutoConfirm,
+                autoDownload: config.importAutoDownload
+            })
+            .catch(error => console.error('[import] auto-import failed:', error));
     }
 }
 

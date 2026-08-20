@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import path from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { chapterFileNames, chapterPaths, detectMime, pageFileName, sanitizeName } from '../src/downloader/paths.js';
 
 describe('sanitizeName', () => {
@@ -66,11 +66,11 @@ describe('pageFileName', () => {
 
 describe('detectMime', () => {
     it('detects jpeg from magic bytes', () => {
-        expect(detectMime(new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0]), 'image/')).toBe('image/jpeg');
+        expect(detectMime(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), 'image/')).toBe('image/jpeg');
     });
 
     it('detects png from magic bytes', () => {
-        expect(detectMime(new Uint8Array([0x89, 0x50, 0x4E, 0x47]), 'image/')).toBe('image/png');
+        expect(detectMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), 'image/')).toBe('image/png');
     });
 
     it('detects webp from magic bytes', () => {

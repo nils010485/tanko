@@ -5,16 +5,44 @@
  * this adapter talks to https://api.mangadex.org directly and shadows the
  * legacy connector (same id, registered first in the registry).
  */
-import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError, errorMessage } from '../types.js';
+
 import { randomUserAgent } from '../../shims/request.js';
+import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 
 const API = 'https://api.mangadex.org';
 const UA = randomUserAgent();
 const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
 
-export class MangaDexConnector implements SourceAdapter {
+/** Subset of the MangaDex v5 JSON:API shapes Tanko reads. */
+interface MangadexLocalizedString {
+    [language: string]: string | undefined;
+}
+interface MangadexMangaAttributes {
+    title?: MangadexLocalizedString;
+    altTitles?: MangadexLocalizedString[];
+}
+interface MangadexChapterAttributes {
+    chapter?: string;
+    title?: string;
+    volume?: string;
+    translatedLanguage?: string;
+    externalUrl?: string;
+}
+interface MangadexEntity<A> {
+    id: string;
+    attributes?: A;
+    relationships?: Array<{ type: string; attributes?: { fileName?: string } }>;
+}
+interface MangadexListResponse<A> {
+    data?: Array<MangadexEntity<A>>;
+}
+interface MangadexAtHomeResponse {
+    baseUrl?: string;
+    chapter?: { hash?: string; data?: string[]; dataSaver?: string[] };
+}
 
+export class MangaDexConnector implements SourceAdapter {
     readonly kind = 'native' as const;
     readonly id = 'mangadex';
     readonly label = 'MangaDex';
@@ -33,7 +61,7 @@ export class MangaDexConnector implements SourceAdapter {
         url.searchParams.set('limit', '10');
         url.searchParams.set('order[relevance]', 'desc');
         url.searchParams.append('includes[]', 'cover_art');
-        const json = await this._fetch(url);
+        const json = await this._fetch<MangadexListResponse<MangadexMangaAttributes>>(url);
         // one entry per usable title: scanlation names often live in altTitles
         // ("Damn Reincarnation" vs official "My Blasted Reincarnated Life")
         const results: MangaInfo[] = [];
@@ -62,8 +90,8 @@ export class MangaDexConnector implements SourceAdapter {
             url.searchParams.set('offset', String(offset));
             url.searchParams.set('order[chapter]', 'asc');
             url.searchParams.set('includeFutureUpdates', '0');
-            const json = await this._fetch(url);
-            const data: any[] = json.data || [];
+            const json = await this._fetch<MangadexListResponse<MangadexChapterAttributes>>(url);
+            const data = json.data || [];
             for (const item of data) {
                 const attributes = item.attributes || {};
                 if (attributes.externalUrl) {
@@ -94,7 +122,7 @@ export class MangaDexConnector implements SourceAdapter {
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         // at-home server URLs are short-lived: resolve right before downloading
-        const json = await this._fetch(new URL(`/at-home/server/${chapter.id}`, API));
+        const json = await this._fetch<MangadexAtHomeResponse>(new URL(`/at-home/server/${chapter.id}`, API));
         const baseUrl = json.baseUrl;
         const chapterData = json.chapter || {};
         const hash = chapterData.hash;
@@ -131,7 +159,7 @@ export class MangaDexConnector implements SourceAdapter {
     }
 
     /** English title first, then romanized, then any title/alt-title. */
-    private _pickTitle(attributes: any): string {
+    private _pickTitle(attributes: MangadexMangaAttributes): string {
         const title = attributes.title || {};
         if (title.en) {
             return title.en;
@@ -149,7 +177,7 @@ export class MangaDexConnector implements SourceAdapter {
     }
 
     /** English and romanized alt-titles (where scanlation names usually live). */
-    private _altTitles(attributes: any): string[] {
+    private _altTitles(attributes: MangadexMangaAttributes): string[] {
         const titles: string[] = [];
         for (const alt of attributes.altTitles || []) {
             for (const key of ['en', 'ja-ro', 'ko-ro', 'zh-ro']) {
@@ -161,14 +189,14 @@ export class MangaDexConnector implements SourceAdapter {
         return titles;
     }
 
-    private _coverUrl(manga: any): string | undefined {
-        const relation = (manga.relationships || []).find((item: any) => item.type === 'cover_art');
+    private _coverUrl(manga: MangadexEntity<MangadexMangaAttributes>): string | undefined {
+        const relation = (manga.relationships || []).find(item => item.type === 'cover_art');
         const fileName = relation?.attributes?.fileName;
         return fileName ? `https://uploads.mangadex.org/covers/${manga.id}/${fileName}.256.jpg` : undefined;
     }
 
     /** "Vol.03 Ch.0012 - Title" — the number parser extracts volume/chapter markers. */
-    private _chapterTitle(attributes: any): string {
+    private _chapterTitle(attributes: MangadexChapterAttributes): string {
         let title = '';
         if (attributes.volume) {
             title += `Vol.${attributes.volume}`;
@@ -191,11 +219,11 @@ export class MangaDexConnector implements SourceAdapter {
         this.lastRequestAt = Date.now();
     }
 
-    private async _fetch(url: URL, attempt = 0): Promise<any> {
+    private async _fetch<T>(url: URL, attempt = 0): Promise<T> {
         await this._throttle();
         try {
             const response = await fetch(url, {
-                headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+                headers: { 'User-Agent': UA, Accept: 'application/json' },
                 signal: AbortSignal.timeout(30000)
             });
             if (response.status === 429 || response.status >= 500) {

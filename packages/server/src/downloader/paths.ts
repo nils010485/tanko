@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export function sanitizeName(name: string): string {
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping C0/C1 control characters is the whole point of this sanitizer
     let result = String(name).replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
     if (process.platform.startsWith('win')) {
         result = result.replace(/[\\/:*?"<>|]/g, '');
@@ -57,8 +58,8 @@ export function chapterFileNames(chapterTitle: string): string[] {
         names.push(raw);
     }
     const match = normalized.match(/^Chapter\s+(\d+(?:\.\d+)?)/i) || normalized.match(/^(\d+(?:\.\d+)?)/);
-    if (match) {
-        const number = match[1]!;
+    const number = match?.[1];
+    if (number) {
         // padded and unpadded spellings: a library written by another tool
         // may use « Chapter 1 » where the source says « Ch.001 »
         const variants = [`Chapter ${number}`, `Chapter ${Number(number)}`, `Ch.${number}`, `Ch.${Number(number)}`];
@@ -71,16 +72,23 @@ export function chapterFileNames(chapterTitle: string): string[] {
     return names;
 }
 
-export function chapterPaths(baseDirectory: string, sourceLabel: string, mangaTitle: string, chapterTitle: string, layout: DirectoryLayout = 'source'): ChapterPaths {
-    const seriesDir = layout === 'series'
-        ? path.join(baseDirectory, sanitizeName(mangaTitle))
-        : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle));
+export function chapterPaths(
+    baseDirectory: string,
+    sourceLabel: string,
+    mangaTitle: string,
+    chapterTitle: string,
+    layout: DirectoryLayout = 'source'
+): ChapterPaths {
+    const seriesDir =
+        layout === 'series'
+            ? path.join(baseDirectory, sanitizeName(mangaTitle))
+            : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle));
     const names = chapterFileNames(chapterTitle);
-    const chapterName = names[0]!;
+    const chapterName = names[0] ?? sanitizeName(chapterTitle);
     let existing: string | undefined;
     for (const name of names) {
-        if (fs.existsSync(path.join(seriesDir, name + '.cbz'))) {
-            existing = path.join(seriesDir, name + '.cbz');
+        if (fs.existsSync(path.join(seriesDir, `${name}.cbz`))) {
+            existing = path.join(seriesDir, `${name}.cbz`);
             break;
         }
         if (fs.existsSync(path.join(seriesDir, name)) && fs.readdirSync(path.join(seriesDir, name)).some(entry => !entry.startsWith('.'))) {
@@ -90,7 +98,7 @@ export function chapterPaths(baseDirectory: string, sourceLabel: string, mangaTi
     }
     return {
         directory: path.join(seriesDir, chapterName),
-        cbzFile: path.join(seriesDir, chapterName + '.cbz'),
+        cbzFile: path.join(seriesDir, `${chapterName}.cbz`),
         existing
     };
 }
@@ -123,19 +131,18 @@ interface MimeSignature {
 
 /** Magic-byte signatures, in detection order (first match wins). */
 const SIGNATURES: MimeSignature[] = [
-    { mime: 'image/webp', offset: 8, minLength: 11, bytes: [0x57, 0x45, 0x42, 0x50] },                                     // WEBP
-    { mime: 'image/jpeg', offset: 0, minLength: 3, bytes: [0xFF, 0xD8, 0xFF] },
-    { mime: 'image/png', offset: 1, minLength: 3, bytes: [0x50, 0x4E, 0x47] },                                             // PNG
-    { mime: 'image/gif', offset: 0, minLength: 3, bytes: [0x47, 0x49, 0x46] },                                             // GIF
-    { mime: 'image/bmp', offset: 0, minLength: 2, bytes: [0x42, 0x4D] },                                                   // BM
-    { mime: 'image/avif', offset: 4, minLength: 12, bytes: [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66] }              // ftypavif
+    { mime: 'image/webp', offset: 8, minLength: 11, bytes: [0x57, 0x45, 0x42, 0x50] }, // WEBP
+    { mime: 'image/jpeg', offset: 0, minLength: 3, bytes: [0xff, 0xd8, 0xff] },
+    { mime: 'image/png', offset: 1, minLength: 3, bytes: [0x50, 0x4e, 0x47] }, // PNG
+    { mime: 'image/gif', offset: 0, minLength: 3, bytes: [0x47, 0x49, 0x46] }, // GIF
+    { mime: 'image/bmp', offset: 0, minLength: 2, bytes: [0x42, 0x4d] }, // BM
+    { mime: 'image/avif', offset: 4, minLength: 12, bytes: [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66] } // ftypavif
 ];
 
 /** Detect the real mime type from the file signature (like legacy Storage._applyRealMime). */
 export function detectMime(data: Uint8Array, fallback: string): string {
     for (const signature of SIGNATURES) {
-        const matches = data.length > signature.minLength
-            && signature.bytes.every((byte, index) => data[signature.offset + index] === byte);
+        const matches = data.length > signature.minLength && signature.bytes.every((byte, index) => data[signature.offset + index] === byte);
         if (matches) {
             return signature.mime;
         }
@@ -170,8 +177,7 @@ export function listChapterEntries(seriesDirectory: string): string[] {
         return [];
     }
     return entries
-        .filter(entry => !entry.name.startsWith('.')
-            && ((entry.isFile() && entry.name.toLowerCase().endsWith('.cbz')) || entry.isDirectory()))
+        .filter(entry => !entry.name.startsWith('.') && ((entry.isFile() && entry.name.toLowerCase().endsWith('.cbz')) || entry.isDirectory()))
         .map(entry => entry.name);
 }
 

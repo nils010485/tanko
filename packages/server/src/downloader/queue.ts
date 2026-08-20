@@ -8,15 +8,15 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import JSZip from 'jszip';
-import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
-import { LegacySourceAdapter, createComicInfoXML, randomUserAgent } from '@tanko/core';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
+import { createComicInfoXML, LegacySourceAdapter, randomUserAgent } from '@tanko/core';
+import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
+import JSZip from 'jszip';
 import type { Database } from '../db.js';
 import type { EventBus } from '../ws.js';
-import { DomainGate } from './rate-limiter.js';
-import { chapterPaths, detectMime, outputExists, pageFileName, type DirectoryLayout } from './paths.js';
 import type { ChapterPaths } from './paths.js';
+import { chapterPaths, type DirectoryLayout, detectMime, outputExists, pageFileName } from './paths.js';
+import { DomainGate } from './rate-limiter.js';
 
 export interface QueueSettings {
     /** Base directory for downloads. */
@@ -72,7 +72,6 @@ interface JobRow {
 }
 
 export class DownloadQueue {
-
     private readonly gate: DomainGate;
     private readonly cancelFlags = new Map<number, boolean>();
     private paused = false;
@@ -80,14 +79,16 @@ export class DownloadQueue {
     private timer: ReturnType<typeof setInterval> | undefined;
     private pruneTimer: ReturnType<typeof setInterval> | undefined;
 
-    constructor(private readonly opts: {
-        db: Database;
-        registry: SourceRegistry;
-        events: EventBus;
-        settings: QueueSettings;
-        /** Invoked when a job reaches a terminal state (completed/failed/cancelled). */
-        onJobFinished?: (job: DownloadJobDto) => void;
-    }) {
+    constructor(
+        private readonly opts: {
+            db: Database;
+            registry: SourceRegistry;
+            events: EventBus;
+            settings: QueueSettings;
+            /** Invoked when a job reaches a terminal state (completed/failed/cancelled). */
+            onJobFinished?: (job: DownloadJobDto) => void;
+        }
+    ) {
         this.gate = new DomainGate(opts.settings.throttleMs);
         this._migrate();
         this._recover();
@@ -100,22 +101,24 @@ export class DownloadQueue {
     // public API
     // ------------------------------------------------------------------
 
-    enqueue(chapters: Array<{
-        sourceId: string;
-        mangaId: string;
-        mangaTitle: string;
-        chapterId: string;
-        chapterTitle: string;
-        entryId?: number;
-    }>): { added: number; skipped: number; retried: number } {
+    enqueue(
+        chapters: Array<{
+            sourceId: string;
+            mangaId: string;
+            mangaTitle: string;
+            chapterId: string;
+            chapterTitle: string;
+            entryId?: number;
+        }>
+    ): { added: number; skipped: number; retried: number } {
         let added = 0;
         let skipped = 0;
         let retried = 0;
         const now = new Date().toISOString();
         for (const chapter of chapters) {
-            const existing = this.opts.db.db.prepare(
-                'SELECT id, status FROM download_jobs WHERE source_id = ? AND manga_id = ? AND chapter_id = ?'
-            ).get(chapter.sourceId, chapter.mangaId, chapter.chapterId) as { id: number; status: DownloadStatus } | undefined;
+            const existing = this.opts.db.db
+                .prepare('SELECT id, status FROM download_jobs WHERE source_id = ? AND manga_id = ? AND chapter_id = ?')
+                .get(chapter.sourceId, chapter.mangaId, chapter.chapterId) as { id: number; status: DownloadStatus } | undefined;
 
             if (existing && ACTIVE_STATUSES.has(existing.status)) {
                 skipped++;
@@ -123,17 +126,19 @@ export class DownloadQueue {
             }
             if (existing) {
                 // failed/cancelled job -> requeue
-                this.opts.db.db.prepare(
-                    'UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, updated_at = ? WHERE id = ?'
-                ).run('queued', now, existing.id);
+                this.opts.db.db
+                    .prepare('UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, updated_at = ? WHERE id = ?')
+                    .run('queued', now, existing.id);
                 retried++;
                 continue;
             }
-            this.opts.db.db.prepare(
-                `INSERT INTO download_jobs
+            this.opts.db.db
+                .prepare(
+                    `INSERT INTO download_jobs
                     (entry_id, source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, ?, ?)`
-            ).run(chapter.entryId ?? null, chapter.sourceId, chapter.mangaId, chapter.chapterId, chapter.mangaTitle, chapter.chapterTitle, now, now);
+                )
+                .run(chapter.entryId ?? null, chapter.sourceId, chapter.mangaId, chapter.chapterId, chapter.mangaTitle, chapter.chapterTitle, now, now);
             added++;
         }
         this._schedule();
@@ -141,7 +146,11 @@ export class DownloadQueue {
     }
 
     /** One page of jobs (active first) + total matching rows + per-status counts. */
-    list(options: { limit?: number; offset?: number; status?: string; query?: string } = {}): { jobs: DownloadJobDto[]; total: number; counts: Record<string, number> } {
+    list(options: { limit?: number; offset?: number; status?: string; query?: string } = {}): {
+        jobs: DownloadJobDto[];
+        total: number;
+        counts: Record<string, number>;
+    } {
         const limit = Math.min(Math.max(options.limit ?? 200, 1), 500);
         const offset = Math.max(options.offset ?? 0, 0);
         const where: string[] = [];
@@ -157,18 +166,25 @@ export class DownloadQueue {
         }
         const clause = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
         const counts: Record<string, number> = {};
-        for (const row of this.opts.db.db.prepare('SELECT status, COUNT(*) AS n FROM download_jobs GROUP BY status').all() as Array<{ status: string; n: number }>) {
+        for (const row of this.opts.db.db.prepare('SELECT status, COUNT(*) AS n FROM download_jobs GROUP BY status').all() as Array<{
+            status: string;
+            n: number;
+        }>) {
             counts[row.status] = row.n;
         }
         const total = Number((this.opts.db.db.prepare(`SELECT COUNT(*) AS n FROM download_jobs${clause}`).get(...params) as { n: number }).n);
-        const rows = this.opts.db.db.prepare(
-            `SELECT * FROM download_jobs${clause} ORDER BY CASE status WHEN 'downloading' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC LIMIT ? OFFSET ?`
-        ).all(...params, limit, offset) as unknown as JobRow[];
+        const rows = this.opts.db.db
+            .prepare(
+                `SELECT * FROM download_jobs${clause} ORDER BY CASE status WHEN 'downloading' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC LIMIT ? OFFSET ?`
+            )
+            .all(...params, limit, offset) as unknown as JobRow[];
         return { jobs: rows.map(row => this._toDto(row)), total, counts };
     }
 
     cancel(jobId: number): boolean {
-        const row = this.opts.db.db.prepare('SELECT id, status FROM download_jobs WHERE id = ?').get(jobId) as { id: number; status: DownloadStatus } | undefined;
+        const row = this.opts.db.db.prepare('SELECT id, status FROM download_jobs WHERE id = ?').get(jobId) as
+            | { id: number; status: DownloadStatus }
+            | undefined;
         if (!row) {
             return false;
         }
@@ -193,7 +209,7 @@ export class DownloadQueue {
     }
 
     status(): { paused: boolean; active: number; queued: number } {
-        const row = this.opts.db.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE status = \'queued\'').get() as { n: number };
+        const row = this.opts.db.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'queued'").get() as { n: number };
         return { paused: this.paused, active: this.active, queued: row.n };
     }
 
@@ -232,9 +248,7 @@ export class DownloadQueue {
 
     /** Delete every finished job (completed/failed/cancelled); returns the number removed. */
     clearHistory(): number {
-        return Number(this.opts.db.db.prepare(
-            `DELETE FROM download_jobs WHERE ${FINISHED_JOBS}`
-        ).run().changes);
+        return Number(this.opts.db.db.prepare(`DELETE FROM download_jobs WHERE ${FINISHED_JOBS}`).run().changes);
     }
 
     stop(): void {
@@ -278,9 +292,9 @@ export class DownloadQueue {
 
     /** After a crash/restart, jobs stuck in queued/downloading go back to queued. */
     private _recover(): void {
-        this.opts.db.db.prepare(
-            'UPDATE download_jobs SET status = ?, updated_at = ? WHERE status IN (\'queued\', \'downloading\')'
-        ).run('queued', new Date().toISOString());
+        this.opts.db.db
+            .prepare("UPDATE download_jobs SET status = ?, updated_at = ? WHERE status IN ('queued', 'downloading')")
+            .run('queued', new Date().toISOString());
     }
 
     /** Effective retention in days (setting absent → default). */
@@ -296,9 +310,7 @@ export class DownloadQueue {
         }
         // updated_at is ISO-8601, so a lexicographic cutoff works
         const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        this.opts.db.db.prepare(
-            `DELETE FROM download_jobs WHERE ${FINISHED_JOBS} AND updated_at < ?`
-        ).run(cutoff);
+        this.opts.db.db.prepare(`DELETE FROM download_jobs WHERE ${FINISHED_JOBS} AND updated_at < ?`).run(cutoff);
     }
 
     private _schedule(): void {
@@ -306,9 +318,7 @@ export class DownloadQueue {
             return;
         }
         while (this.active < this.opts.settings.concurrency) {
-            const row = this.opts.db.db.prepare(
-                'SELECT * FROM download_jobs WHERE status = \'queued\' ORDER BY id ASC LIMIT 1'
-            ).get() as JobRow | undefined;
+            const row = this.opts.db.db.prepare("SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY id ASC LIMIT 1").get() as JobRow | undefined;
             if (!row) {
                 break;
             }
@@ -328,10 +338,7 @@ export class DownloadQueue {
                 throw new Error(`Source "${row.source_id}" not found`);
             }
 
-            const pages = await source.getPages(
-                { id: row.manga_id, title: row.manga_title },
-                { id: row.chapter_id, title: row.chapter_title }
-            );
+            const pages = await source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title });
             if (!pages.length) {
                 throw new Error('Page list is empty');
             }
@@ -342,7 +349,13 @@ export class DownloadQueue {
 
             // already downloaded -> mark completed without re-downloading
             if (outputExists(paths, isCbz ? 'cbz' : 'img')) {
-                this._update(row.id, { status: 'completed', progress: 100, pages_total: pages.length, pages_done: pages.length, path: paths.existing ?? output });
+                this._update(row.id, {
+                    status: 'completed',
+                    progress: 100,
+                    pages_total: pages.length,
+                    pages_done: pages.length,
+                    path: paths.existing ?? output
+                });
                 return;
             }
 
@@ -413,7 +426,9 @@ export class DownloadQueue {
         } catch (error) {
             try {
                 fs.unlinkSync(paths.cbzFile);
-            } catch { /* already gone */ }
+            } catch {
+                /* already gone */
+            }
             throw new Error(`CBZ invalide après écriture : ${(error as Error).message}`);
         }
     }
@@ -464,15 +479,15 @@ export class DownloadQueue {
         } else {
             let referer: string;
             if (url.startsWith('http') && source.url) {
-                referer = source.url + '/';
+                referer = `${source.url}/`;
             } else {
                 referer = source.url || url;
             }
             response = await fetch(url, {
                 headers: {
                     'User-Agent': USER_AGENT,
-                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                    'Referer': referer
+                    Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+                    Referer: referer
                 },
                 redirect: 'follow',
                 signal: AbortSignal.timeout(120000)

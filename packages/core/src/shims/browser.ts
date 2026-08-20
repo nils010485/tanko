@@ -10,12 +10,7 @@
 import { existsSync } from 'node:fs';
 import type { Browser } from 'puppeteer-core';
 
-const CHROMIUM_CANDIDATES = [
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable'
-];
+const CHROMIUM_CANDIDATES = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
 
 export function detectChromium(): string | undefined {
     return CHROMIUM_CANDIDATES.find(path => existsSync(path));
@@ -30,8 +25,7 @@ export function isAntiBotShell(html: string): boolean {
     if (!html) {
         return true;
     }
-    return /<title[^>]*>\s*(loading|just a moment|checking|attention|verify|one more step|ddos|cf-)/i.test(html)
-        || html.length < 1000;
+    return /<title[^>]*>\s*(loading|just a moment|checking|attention|verify|one more step|ddos|cf-)/i.test(html) || html.length < 1000;
 }
 
 interface PageResult {
@@ -83,9 +77,11 @@ export async function getPageHTML(url: string, options: { userAgent?: string; re
     const browser = await getBrowser();
     const page = await browser.newPage();
     // hide the automation fingerprint so Cloudflare/anti-bot see a normal browser
-    await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined });
-    }).catch(() => undefined);
+    await page
+        .evaluateOnNewDocument(() => {
+            Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined });
+        })
+        .catch(() => undefined);
     try {
         if (options.userAgent) {
             await page.setUserAgent(options.userAgent);

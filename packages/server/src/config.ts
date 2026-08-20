@@ -26,7 +26,7 @@ export function loadConfig(): ServerConfig {
         dataDirectory,
         dashboardDirectory: path.resolve(import.meta.dirname, '../../dashboard/dist'),
         importPath: process.env.IMPORT_PATH || undefined,
-        importAutoConfirm: (autoConfirm === 'all' || autoConfirm === 'none' ? autoConfirm : 'auto'),
+        importAutoConfirm: autoConfirm === 'all' || autoConfirm === 'none' ? autoConfirm : 'auto',
         importAutoDownload: process.env.IMPORT_AUTO_DOWNLOAD === '1'
     };
 }

@@ -6,11 +6,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { useI18n } from '../i18n/index.js';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-    return (
-        <div className={`rounded-xl border border-line bg-surface/60 ${className}`}>
-            {children}
-        </div>
-    );
+    return <div className={`rounded-xl border border-line bg-surface/60 ${className}`}>{children}</div>;
 }
 
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
@@ -62,6 +58,7 @@ export function Button({ children, onClick, variant = 'primary', disabled = fals
         <button
             type={type}
             title={title}
+            // biome-ignore lint/a11y/noAutofocus: deliberate focus target in modal dialogs (e.g. ConfirmDialog)
             autoFocus={autoFocus}
             disabled={disabled || loading}
             onClick={onClick}
@@ -113,10 +110,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
                 onClick={() => onChange(!checked)}
                 className={`relative h-5 w-9 flex-none rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-zinc-700'}`}
             >
-                <span
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all"
-                    style={{ left: checked ? '1.15rem' : '0.125rem' }}
-                />
+                <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all" style={{ left: checked ? '1.15rem' : '0.125rem' }} />
             </button>
             {label && <span className="whitespace-nowrap text-sm text-zinc-300">{label}</span>}
         </label>
@@ -130,16 +124,19 @@ export function Input({
     onChange,
     placeholder,
     type = 'text',
+    id,
     className = ''
 }: {
     value: string;
     onChange: (value: string) => void;
     placeholder?: string;
     type?: string;
+    id?: string;
     className?: string;
 }) {
     return (
         <input
+            id={id}
             type={type}
             value={value}
             placeholder={placeholder}
@@ -161,13 +158,11 @@ export function Select({
     className?: string;
 }) {
     return (
-        <select
-            value={value}
-            onChange={event => onChange(event.target.value)}
-            className={`${fieldClasses} ${className}`}
-        >
+        <select value={value} onChange={event => onChange(event.target.value)} className={`${fieldClasses} ${className}`}>
             {options.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
             ))}
         </select>
     );
@@ -202,7 +197,11 @@ export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: (
     return (
         <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">
             <span className="min-w-0 flex-1">{message}</span>
-            {onRetry && <Button small variant="ghost" onClick={onRetry}>{t('ui.retry')}</Button>}
+            {onRetry && (
+                <Button small variant="ghost" onClick={onRetry}>
+                    {t('ui.retry')}
+                </Button>
+            )}
         </div>
     );
 }
@@ -212,10 +211,5 @@ export function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export function Spinner({ size = 16 }: { size?: number }) {
-    return (
-        <span
-            className="inline-block flex-none animate-spin rounded-full border-2 border-zinc-600 border-t-accent"
-            style={{ width: size, height: size }}
-        />
-    );
+    return <span className="inline-block flex-none animate-spin rounded-full border-2 border-zinc-600 border-t-accent" style={{ width: size, height: size }} />;
 }

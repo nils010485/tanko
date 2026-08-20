@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import type { SourceHealthService } from '../sources/health.js';
 
 export function registerSourceHealthRoutes(app: FastifyInstance, health: SourceHealthService): void {
-
     // All health records (sourceId -> status)
     app.get('/api/sources/health', async () => health.getAll());
 

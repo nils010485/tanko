@@ -1,9 +1,9 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
-import { syncConnectors, CONNECTORS_UPDATE_KEY, type CloneUpstream } from '../src/sources/updater.js';
+import { type CloneUpstream, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
 
 let dataDir: string;
 let database: Database;
@@ -78,22 +78,24 @@ describe('syncConnectors', () => {
 
     it('rejects a second concurrent sync', async () => {
         let release!: () => void;
-        const gate = new Promise<void>(resolve => { release = resolve; });
+        const gate = new Promise<void>(resolve => {
+            release = resolve;
+        });
         const slow: CloneUpstream = async destination => {
             const commit = await upstreamFixture(1001)(destination);
             await gate;
             return commit;
         };
         const first = syncConnectors({ dataDirectory: dataDir, db: database, clone: slow });
-        await expect(syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(1001) }))
-            .rejects.toThrow('Une mise à jour des sources est déjà en cours');
+        await expect(syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(1001) })).rejects.toThrow(
+            'Une mise à jour des sources est déjà en cours'
+        );
         release();
         expect((await first).connectorCount).toBe(1001);
     });
 
     it('rejects a suspect upstream with too few connectors', async () => {
-        await expect(syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(10) }))
-            .rejects.toThrow('Arborescence suspecte');
+        await expect(syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(10) })).rejects.toThrow('Arborescence suspecte');
         expect(fs.existsSync(path.join(dataDir, 'vendor'))).toBe(false);
     });
 });
