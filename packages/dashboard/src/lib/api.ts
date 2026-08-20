@@ -151,8 +151,15 @@ export const api = {
     updateSources: () => request<{ info: ConnectorsUpdateInfo; restart: boolean }>('/api/sources/update', { method: 'POST' }),
 
     // library
-    addToLibrary: (entry: { sourceId: string; mangaId: string; title: string; url?: string; thumbnail?: string; autoDownload?: boolean }) =>
-        request<{ entry: LibraryEntryDto; snapshot: number }>('/api/library', { method: 'POST', body: JSON.stringify(entry) }),
+    addToLibrary: (entry: {
+        sourceId: string;
+        mangaId: string;
+        title: string;
+        url?: string;
+        thumbnail?: string;
+        autoDownload?: boolean;
+        backlog?: 'ignore' | 'grab';
+    }) => request<{ entry: LibraryEntryDto; snapshot: number; queued?: number }>('/api/library', { method: 'POST', body: JSON.stringify(entry) }),
     library: (hidden = false) => request<LibraryEntryDto[]>(`/api/library${hidden ? '?hidden=1' : ''}`),
     removeFromLibrary: (entryId: number, disk = false) =>
         request<{ ok: boolean; deletedPath: string | null }>(`/api/library/${entryId}${disk ? '?disk=1' : ''}`, { method: 'DELETE' }),

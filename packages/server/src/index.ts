@@ -78,11 +78,10 @@ const listSourceInfos = async () => {
         hidden: hidden.has(source.id)
     }));
 };
-/** Library chapter status for each finished download-job status (absent = leave the chapter untouched). */
-const CHAPTER_STATUS: Partial<Record<DownloadStatus, 'downloaded' | 'failed' | 'new'>> = {
+/** Library chapter status for each finished download-job status (absent = handled separately). */
+const CHAPTER_STATUS: Partial<Record<DownloadStatus, 'downloaded' | 'failed'>> = {
     completed: 'downloaded',
-    failed: 'failed',
-    cancelled: 'new'
+    failed: 'failed'
 };
 const queue = new DownloadQueue({
     db: database,
@@ -93,10 +92,15 @@ const queue = new DownloadQueue({
         if (job.entryId == null) {
             return;
         }
-        const chapterStatus = CHAPTER_STATUS[job.status];
-        if (chapterStatus) {
-            // job.path is only ever set on completion, so failed/cancelled chapters keep a null path
-            library.markChapter(job.entryId, job.chapterId, chapterStatus, job.path);
+        if (job.status === 'cancelled') {
+            // a cancel restores the pre-queue status ('missing' stays out of the new-chapter badge)
+            library.revertCancelledChapter(job.entryId, job.chapterId);
+        } else {
+            const chapterStatus = CHAPTER_STATUS[job.status];
+            if (chapterStatus) {
+                // job.path is only ever set on completion, so failed chapters keep a null path
+                library.markChapter(job.entryId, job.chapterId, chapterStatus, job.path);
+            }
         }
         if (job.status === 'failed') {
             library.recordDownloadFailure(job.entryId);
@@ -142,7 +146,7 @@ registerHealthRoutes(app);
 registerSourceRoutes(app, sourceRegistry);
 registerSourceHealthRoutes(app, healthService);
 registerSourceUpdateRoutes(app, config, database);
-registerDownloadRoutes(app, queue, sourceRegistry);
+registerDownloadRoutes(app, queue, sourceRegistry, library);
 registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers);
 registerSettingsRoutes(app, queue, database, covers);
 registerCoverRoutes(app, covers);

@@ -45,7 +45,7 @@ export interface ChapterRow {
     chapter_id: string;
     title: string;
     language: string | null;
-    status: 'new' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     path: string | null;
     discovered_at: string;
     downloaded_at: string | null;
@@ -88,6 +88,9 @@ export class LibraryStore {
         url?: string;
         thumbnail?: string;
         autoDownload?: boolean;
+        /** 'ignore' snapshots the existing catalog as 'missing' (monitor-only);
+         *  'grab' (default) keeps it 'new' so it can be queued right away. */
+        backlog?: 'ignore' | 'grab';
     }): Promise<{ entry: LibraryEntryDto; snapshot: number }> {
         const source = await this.opts.registry.get(entry.sourceId);
         if (!source) {
@@ -124,7 +127,7 @@ export class LibraryStore {
                 if (!chapterAllowed(chapter.language, preferred)) {
                     continue;
                 }
-                const status = this._isDownloaded(source.label, entry.title, chapter.title) ? 'downloaded' : 'new';
+                const status = this._isDownloaded(source.label, entry.title, chapter.title) ? 'downloaded' : entry.backlog === 'ignore' ? 'missing' : 'new';
                 insert.run(result.id, chapter.id, chapter.title, chapter.language || null, status, now);
                 snapshot++;
             }
@@ -468,7 +471,9 @@ export class LibraryStore {
         }
         const chapters = this._all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ? AND status = ? ORDER BY discovered_at ASC', entryId, 'new');
         const markQueued = () => {
-            this.opts.db.db.prepare('UPDATE library_chapters SET status = ? WHERE entry_id = ? AND status = ?').run('queued', entryId, 'new');
+            this.opts.db.db
+                .prepare('UPDATE library_chapters SET status = ?, prev_status = status WHERE entry_id = ? AND status = ?')
+                .run('queued', entryId, 'new');
         };
         return this._enqueueSelected(entry, chapters, queue, markQueued);
     }
@@ -487,10 +492,44 @@ export class LibraryStore {
         );
         const markQueued = () => {
             this.opts.db.db
-                .prepare(`UPDATE library_chapters SET status = 'queued' WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status = 'new'`)
+                .prepare(
+                    `UPDATE library_chapters SET status = 'queued', prev_status = status WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status = 'new'`
+                )
                 .run(entryId, ...chapterIds);
         };
         return this._enqueueSelected(entry, chapters, queue, markQueued);
+    }
+
+    /** Find the library entry tracking a given manga on a source (null when untracked). */
+    findEntryByManga(sourceId: string, mangaId: string): EntryRow | null {
+        return this._get<EntryRow>('SELECT * FROM library WHERE source_id = ? AND manga_id = ?', sourceId, mangaId) ?? null;
+    }
+
+    /** Flag tracked chapters as queued after an ad-hoc enqueue (covers failed retries
+     *  and the backlog marked 'missing' by a monitor-only follow). */
+    markChaptersQueued(entryId: number, chapterIds: string[]): number {
+        if (chapterIds.length === 0) {
+            return 0;
+        }
+        const placeholders = chapterIds.map(() => '?').join(', ');
+        const result = this.opts.db.db
+            .prepare(
+                `UPDATE library_chapters SET status = 'queued', prev_status = status WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status IN ('new', 'missing', 'failed')`
+            )
+            .run(entryId, ...chapterIds);
+        return Number(result.changes);
+    }
+
+    /** A cancelled download reverts a still-queued chapter to its pre-queue
+     *  status (e.g. 'missing' for a monitor-only backlog) so it does not
+     *  surface as 'new'; rows that moved on in the meantime are left alone. */
+    revertCancelledChapter(entryId: number, chapterId: string): void {
+        this.opts.db.db
+            .prepare(
+                `UPDATE library_chapters SET status = COALESCE(prev_status, 'new'), prev_status = NULL
+                 WHERE entry_id = ? AND chapter_id = ? AND status = 'queued'`
+            )
+            .run(entryId, chapterId);
     }
 
     /** Called by the download queue / import / failover when a chapter changes. */
@@ -681,17 +720,19 @@ export class LibraryStore {
 
         // existing databases: add columns when missing
         const columns = this.opts.db.db.prepare('PRAGMA table_info(library)').all() as Array<{ name: string }>;
-        this._addColumn(columns, 'thumbnail', 'thumbnail TEXT');
-        this._addColumn(columns, 'check_failures', 'check_failures INTEGER NOT NULL DEFAULT 0');
-        this._addColumn(columns, 'migration_suggestion', 'migration_suggestion TEXT');
-        this._addColumn(columns, 'hidden', 'hidden INTEGER NOT NULL DEFAULT 0');
-        this._addColumn(columns, 'download_failures', 'download_failures INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'thumbnail', 'thumbnail TEXT');
+        this._addColumn('library', columns, 'check_failures', 'check_failures INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'migration_suggestion', 'migration_suggestion TEXT');
+        this._addColumn('library', columns, 'hidden', 'hidden INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'download_failures', 'download_failures INTEGER NOT NULL DEFAULT 0');
+        const chapterColumns = this.opts.db.db.prepare('PRAGMA table_info(library_chapters)').all() as Array<{ name: string }>;
+        this._addColumn('library_chapters', chapterColumns, 'prev_status', 'prev_status TEXT');
     }
 
-    /** ALTER TABLE helper: adds `ddl` (must reference `name`) when the column is missing. */
-    private _addColumn(columns: Array<{ name: string }>, name: string, ddl: string): void {
+    /** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
+    private _addColumn(table: string, columns: Array<{ name: string }>, name: string, ddl: string): void {
         if (!columns.some(column => column.name === name)) {
-            this.opts.db.db.exec(`ALTER TABLE library ADD COLUMN ${ddl}`);
+            this.opts.db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
         }
     }
 

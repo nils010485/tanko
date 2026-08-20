@@ -1,24 +1,28 @@
 /**
  * Discover view: searchable source picker with health statuses, broken-source
- * hiding, manga search and library add.
+ * hiding, manga search and follow (monitor-only or with the whole backlog).
  */
 
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChapterList } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import {
     IconAlert,
+    IconBookmark,
     IconCheck,
     IconChevronDown,
     IconDownload,
     IconEye,
     IconEyeOff,
+    IconLibrary,
     IconPlus,
     IconRefresh,
     IconSearch,
     IconStar,
     IconX
 } from '../components/icons.js';
+import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, Input, SectionTitle, Spinner } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -46,7 +50,7 @@ function sourceRank(source: SourceDto): number {
     return 3;
 }
 
-export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () => void }) {
+export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedToLibrary: () => void; onOpenSeries?: (id: number) => void }) {
     const [sources, setSources] = useState<SourceDto[]>([]);
     const [showHidden, setShowHidden] = useState(false);
     const [comboOpen, setComboOpen] = useState(false);
@@ -65,8 +69,10 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
     const [previewTitle, setPreviewTitle] = useState('');
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState('');
-    const [adding, setAdding] = useState(false);
-    const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+    const [addingKey, setAddingKey] = useState<string | null>(null);
+    const [added, setAdded] = useState<Map<string, number>>(new Map());
+    const [followTarget, setFollowTarget] = useState<MangaDto | null>(null);
+    const [followCount, setFollowCount] = useState<number | null>(null);
     const comboRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
     const { t } = useI18n();
@@ -102,12 +108,13 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
 
-    // close the chapters / page-preview modals with Escape
+    // close the chapters / page-preview / follow dialogs with Escape
     const closeModals = useCallback(() => {
         setSelected(null);
         setPreview(null);
+        setFollowTarget(null);
     }, []);
-    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading);
+    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null);
 
     const visibleSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);
@@ -119,6 +126,7 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
     const currentSource = sources.find(source => source.id === sourceId);
     const hiddenCount = sources.filter(source => source.hidden).length;
     const brokenCount = sources.filter(source => source.health === 'error' && !source.hidden).length;
+    const selectedKey = selected ? `${sourceId}:${selected.id}` : null;
 
     const hideBroken = async () => {
         await api.hideBroken();
@@ -190,18 +198,73 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
         }
     };
 
-    const addToLibrary = async (manga: MangaDto) => {
-        setAdding(true);
+    /** Open the follow dialog; the chapter count (when known) sizes the "grab" option.
+     *  The ref guards against a slow count resolving after the user switched targets. */
+    const followCountFor = useRef<string | null>(null);
+    const openFollowChoice = (manga: MangaDto) => {
+        const key = `${sourceId}:${manga.id}`;
+        followCountFor.current = key;
+        setFollowTarget(manga);
+        if (selected?.id === manga.id && chapters) {
+            setFollowCount(chapters.length);
+            return;
+        }
+        setFollowCount(null);
+        api.chapters(sourceId, manga.id, manga.title)
+            .then(list => {
+                if (followCountFor.current === key) {
+                    setFollowCount(list.length);
+                }
+            })
+            .catch(() => {
+                if (followCountFor.current === key) {
+                    setFollowCount(null);
+                }
+            });
+    };
+
+    const followManga = async (manga: MangaDto, backlog: 'ignore' | 'grab') => {
+        const key = `${sourceId}:${manga.id}`;
+        setAddingKey(key);
         try {
             const mangaUrl = manga.url || (typeof manga.id === 'string' && manga.id.startsWith('http') ? manga.id : undefined);
-            await api.addToLibrary({ sourceId, mangaId: manga.id, title: manga.title, url: mangaUrl, thumbnail: manga.thumbnail, autoDownload: true });
-            setAddedIds(current => new Set(current).add(`${sourceId}:${manga.id}`));
-            toast.success(t('discover.addedToLibrary', { title: manga.title }));
+            const result = await api.addToLibrary({
+                sourceId,
+                mangaId: manga.id,
+                title: manga.title,
+                url: mangaUrl,
+                thumbnail: manga.thumbnail,
+                autoDownload: true,
+                backlog
+            });
+            setAdded(current => new Map(current).set(key, result.entry.id));
+            toast.success(
+                backlog === 'grab'
+                    ? t('discover.addedGrabbing', { title: manga.title, n: result.queued ?? 0 })
+                    : t('discover.addedMonitoring', { title: manga.title })
+            );
             onAddedToLibrary();
+            setFollowTarget(null);
         } catch (error) {
             toast.error((error as Error).message);
         } finally {
-            setAdding(false);
+            setAddingKey(null);
+        }
+    };
+
+    /** Queue chapters ad-hoc (single or batch) with feedback; a tracked series
+     *  gets its chapter statuses updated server-side. */
+    const enqueueChapters = async (manga: MangaDto, list: ChapterDto[]) => {
+        try {
+            const result = await api.enqueue({
+                sourceId,
+                mangaId: manga.id,
+                mangaTitle: manga.title,
+                chapters: list.map(chapter => ({ id: chapter.id, title: chapter.title }))
+            });
+            toast.success(t('discover.chaptersQueued', { n: result.added + result.retried }));
+        } catch (error) {
+            toast.error((error as Error).message);
         }
     };
 
@@ -354,7 +417,7 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {results.map(manga => {
                         const key = `${sourceId}:${manga.id}`;
-                        const isAdded = addedIds.has(key);
+                        const isAdded = added.has(key);
                         return (
                             <Card key={key} className="flex gap-3 p-3">
                                 <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} className="h-24 w-16 rounded-md" />
@@ -367,7 +430,12 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
                                         <Button small variant="ghost" onClick={() => openChapters(manga)}>
                                             {t('discover.chapters')}
                                         </Button>
-                                        <Button small disabled={isAdded} loading={adding && !isAdded} onClick={() => addToLibrary(manga)}>
+                                        <Button
+                                            small
+                                            disabled={isAdded || addingKey !== null}
+                                            loading={addingKey === key}
+                                            onClick={() => openFollowChoice(manga)}
+                                        >
                                             {isAdded ? <IconCheck size={13} /> : <IconPlus size={13} />}
                                             {isAdded ? t('discover.followed') : t('discover.follow')}
                                         </Button>
@@ -413,93 +481,109 @@ export default function Discover({ onAddedToLibrary }: { onAddedToLibrary: () =>
                                     {chaptersError ? <span className="text-red-400">{chaptersError}</span> : t('discover.noChapter')}
                                 </div>
                             ) : (
-                                chapters.slice(0, 200).map(chapter => (
-                                    <div key={chapter.id} className="flex items-center justify-between gap-2 rounded-md bg-zinc-900/60 px-3 py-1.5">
-                                        <span className="min-w-0 flex-1 truncate text-zinc-300">{chapter.title}</span>
-                                        <div className="flex flex-none items-center gap-1">
-                                            <Button small variant="ghost" title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>
-                                                <IconEye size={14} />
-                                            </Button>
-                                            <Button
-                                                small
-                                                variant="ghost"
-                                                onClick={() =>
-                                                    api.enqueue({
-                                                        sourceId,
-                                                        mangaId: selected.id,
-                                                        mangaTitle: selected.title,
-                                                        chapters: [{ id: chapter.id, title: chapter.title }]
-                                                    })
-                                                }
-                                            >
-                                                <span className="flex items-center gap-1">
-                                                    <IconDownload size={12} /> DL
-                                                </span>
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))
+                                <ChapterList
+                                    items={chapters.map(chapter => ({
+                                        key: chapter.id,
+
+                                        title: chapter.title,
+                                        node: (
+                                            <div className="flex flex-none items-center gap-1">
+                                                <Button small variant="ghost" title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>
+                                                    <IconEye size={14} />
+                                                </Button>
+                                                <Button small variant="ghost" onClick={() => enqueueChapters(selected, [chapter])}>
+                                                    <span className="flex items-center gap-1">
+                                                        <IconDownload size={12} /> DL
+                                                    </span>
+                                                </Button>
+                                            </div>
+                                        )
+                                    }))}
+                                    resetKey={selected.id}
+                                />
                             )}
                         </div>
 
-                        <div className="border-t border-zinc-800 p-3">
-                            <Button
-                                small
-                                onClick={() => addToLibrary(selected)}
-                                disabled={addedIds.has(`${sourceId}:${selected.id}`)}
-                                loading={adding && !addedIds.has(`${sourceId}:${selected.id}`)}
-                            >
-                                {addedIds.has(`${sourceId}:${selected.id}`) ? <IconCheck size={13} /> : <IconPlus size={13} />}
-                                {addedIds.has(`${sourceId}:${selected.id}`) ? t('discover.inLibrary') : t('discover.followSeries')}
+                        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 p-3">
+                            {selectedKey !== null && (
+                                <Button
+                                    small
+                                    onClick={() => openFollowChoice(selected)}
+                                    disabled={added.has(selectedKey) || addingKey !== null}
+                                    loading={addingKey === selectedKey}
+                                >
+                                    {added.has(selectedKey) ? <IconCheck size={13} /> : <IconPlus size={13} />}
+                                    {added.has(selectedKey) ? t('discover.inLibrary') : t('discover.followSeries')}
+                                </Button>
+                            )}
+                            <Button small variant="ghost" onClick={() => enqueueChapters(selected, chapters ?? [])} disabled={(chapters ?? []).length === 0}>
+                                <IconDownload size={13} /> {t('discover.downloadAll')}
+                                {(chapters ?? []).length > 0 ? ` (${chapters?.length})` : ''}
                             </Button>
+                            {selectedKey !== null && added.has(selectedKey) && (
+                                <Button small variant="ghost" onClick={() => onOpenSeries?.(added.get(selectedKey) ?? 0)}>
+                                    <IconLibrary size={13} /> {t('discover.openSeries')}
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
-            {previewLoading || (preview !== null && previewTitle) ? null : null}
-            {(previewLoading || preview !== null) && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the modal also closes with Escape (document listener above)
+            <PagePreview
+                open={previewLoading || preview !== null}
+                title={previewTitle}
+                pages={preview}
+                loading={previewLoading}
+                error={previewError}
+                sourceId={sourceId}
+                onClose={() => setPreview(null)}
+            />
+            {followTarget !== null && (
+                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (document listener above)
                 <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
                     onClick={e => {
-                        if (e.target === e.currentTarget) setPreview(null);
+                        if (e.target === e.currentTarget) setFollowTarget(null);
                     }}
                 >
-                    <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-                        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-                            <div className="min-w-0 truncate text-sm font-semibold" title={previewTitle}>
-                                {t('discover.previewTitle', { title: previewTitle })}
-                                {preview && <span className="ml-1 font-normal text-zinc-500">({t('discover.pagesCount', { n: preview.length })})</span>}
-                            </div>
+                    <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50">
+                        <div className="text-sm font-semibold text-fg">{t('discover.followChoiceTitle', { title: followTarget.title })}</div>
+                        <div className="mt-4 space-y-2">
                             <button
                                 type="button"
-                                className="flex-none rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-                                onClick={() => setPreview(null)}
-                                title={t('common.close')}
+                                disabled={addingKey !== null}
+                                onClick={() => followManga(followTarget, 'ignore')}
+                                className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900 disabled:opacity-50"
                             >
-                                <IconX size={16} />
+                                <span className="mt-0.5 text-zinc-400">
+                                    <IconBookmark size={16} />
+                                </span>
+                                <span>
+                                    <span className="block text-sm font-medium text-fg">{t('discover.followMonitor')}</span>
+                                    <span className="mt-0.5 block text-xs text-muted">{t('discover.followMonitorHint')}</span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                disabled={addingKey !== null}
+                                onClick={() => followManga(followTarget, 'grab')}
+                                className="flex w-full items-start gap-3 rounded-lg border border-accent/30 bg-accent/5 p-3 text-left transition-colors hover:border-accent/60 hover:bg-accent/10 disabled:opacity-50"
+                            >
+                                <span className="mt-0.5 text-accent-soft">
+                                    <IconDownload size={16} />
+                                </span>
+                                <span>
+                                    <span className="block text-sm font-medium text-fg">{t('discover.followGrab')}</span>
+                                    <span className="mt-0.5 block text-xs text-muted">
+                                        {followCount !== null ? t('discover.followGrabHint', { n: followCount }) : t('discover.followGrabHintUnknown')}
+                                    </span>
+                                </span>
                             </button>
                         </div>
-                        <div className="flex-1 space-y-2 overflow-y-auto bg-zinc-900/40 p-3">
-                            {previewLoading ? (
-                                <div className="flex items-center justify-center gap-2 py-10 text-zinc-500">
-                                    <Spinner /> {t('discover.loadingPages')}
-                                </div>
-                            ) : previewError ? (
-                                <div className="py-10 text-center text-sm text-red-400">{previewError}</div>
-                            ) : (preview || []).length === 0 ? (
-                                <div className="py-10 text-center text-sm text-zinc-500">{t('discover.noPages')}</div>
-                            ) : (
-                                (preview || []).map((url, i) => (
-                                    <img
-                                        key={url}
-                                        src={`/api/sources/${encodeURIComponent(sourceId)}/page-image?url=${encodeURIComponent(url)}`}
-                                        alt={`page ${i + 1}`}
-                                        loading="lazy"
-                                        className="mx-auto w-full max-w-xl rounded-md border border-zinc-800"
-                                    />
-                                ))
-                            )}
+                        <div className="mt-4 flex justify-end">
+                            <Button small variant="ghost" onClick={() => setFollowTarget(null)}>
+                                {t('common.cancel')}
+                            </Button>
                         </div>
                     </div>
                 </div>

@@ -8,11 +8,13 @@
 
 import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { chapterTone } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import {
     IconBookmark,
     IconBookmarkFilled,
+    IconCheck,
     IconDots,
     IconDownload,
     IconEyeOff,
@@ -32,6 +34,7 @@ import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, ProgressBar, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
+import { chapterDownloadable, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
 
 type ViewMode = 'grid' | 'grid-compact' | 'list';
 type SortKey = 'recent' | 'title' | 'progress' | 'new' | 'gap';
@@ -70,20 +73,6 @@ function isStale(entry: LibraryEntryDto): boolean {
 function progressTone(entry: LibraryEntryDto): 'orange' | 'green' {
     return entry.newCount > 0 ? 'orange' : 'green';
 }
-
-function chapterTone(status: LibraryChapterDto['status']): 'green' | 'red' | 'orange' | 'blue' {
-    switch (status) {
-        case 'downloaded':
-            return 'green';
-        case 'failed':
-            return 'red';
-        case 'new':
-            return 'orange';
-        default:
-            return 'blue';
-    }
-}
-
 /** Column classes per grid view (kept literal for Tailwind's scanner). */
 const GRID_CLASSES: Record<Exclude<ViewMode, 'list'>, string> = {
     grid: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5',
@@ -125,7 +114,21 @@ function loadPrefs(): DisplayPrefs {
     }
 }
 
-export default function Library({ library, loaded, refreshLibrary }: { library: LibraryEntryDto[]; loaded: boolean; refreshLibrary: () => Promise<void> }) {
+export default function Library({
+    library,
+    loaded,
+    refreshLibrary,
+    focusFilter,
+    onFocusFilterDone,
+    onOpenSeries
+}: {
+    library: LibraryEntryDto[];
+    loaded: boolean;
+    refreshLibrary: () => Promise<void>;
+    focusFilter?: string | null;
+    onFocusFilterDone?: () => void;
+    onOpenSeries?: (id: number) => void;
+}) {
     const [busy, setBusy] = useState<Record<string, boolean>>({});
     const [expanded, setExpanded] = useState<number | null>(null);
     const [chapters, setChapters] = useState<LibraryChapterDto[] | null>(null);
@@ -136,6 +139,10 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
     const [showHidden, setShowHidden] = useState(false);
     const [rematchAllBusy, setRematchAllBusy] = useState(false);
     const [rescanBusy, setRescanBusy] = useState(false);
+    const [dlAllBusy, setDlAllBusy] = useState(false);
+    const [selecting, setSelecting] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [bulkBusy, setBulkBusy] = useState<'check' | 'download' | null>(null);
     const [pendingRescan, setPendingRescan] = useState<DeadSeriesDto[] | null>(null);
     const [hiddenList, setHiddenList] = useState<LibraryEntryDto[]>([]);
     const [sort, setSort] = useState<SortKey>('recent');
@@ -213,9 +220,6 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         setBusyFlag(`check-${entry.id}`, true);
         try {
             const result = await api.checkEntry(entry.id);
-            if (result.newChapters > 0 && entry.autoDownload) {
-                await api.downloadNew(entry.id);
-            }
             toast.info(
                 result.newChapters > 0 ? t('library.newChapters', { n: result.newChapters, title: entry.title }) : t('library.upToDate', { title: entry.title })
             );
@@ -236,6 +240,86 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
             toast.error((error as Error).message);
         } finally {
             setBusyFlag(`dl-${entry.id}`, false);
+        }
+    };
+
+    /** Queue every already-detected new chapter across visible series (no source re-check). */
+    const downloadAllNew = async () => {
+        setDlAllBusy(true);
+        try {
+            const result = await api.downloadAllNew();
+            toast.success(t('library.downloadAllNewDone', { queued: result.queued, entries: result.entries }));
+            await refreshLibrary();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setDlAllBusy(false);
+        }
+    };
+
+    const toggleSelect = (id: number) =>
+        setSelectedIds(current => {
+            const next = new Set(current);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+
+    const exitSelection = () => {
+        setSelecting(false);
+        setSelectedIds(new Set());
+    };
+
+    /** Sequential bulk check over the selected series (errors are skipped). */
+    const bulkCheck = async () => {
+        const targets = source.filter(entry => selectedIds.has(entry.id));
+        if (targets.length === 0) return;
+        setBulkBusy('check');
+        let fresh = 0;
+        try {
+            for (const entry of targets) {
+                try {
+                    const result = await api.checkEntry(entry.id);
+                    fresh += result.newChapters;
+                } catch {
+                    /* keep checking the rest */
+                }
+            }
+            toast.info(t('library.bulkCheckDone', { n: targets.length, new: fresh }));
+            await refreshLibrary();
+            exitSelection();
+        } finally {
+            setBulkBusy(null);
+        }
+    };
+
+    /** Sequential bulk download of new chapters over the selected series. */
+    const bulkDownload = async () => {
+        const targets = source.filter(entry => selectedIds.has(entry.id));
+        if (targets.length === 0) return;
+        setBulkBusy('download');
+        let queued = 0;
+        let affected = 0;
+        try {
+            for (const entry of targets) {
+                try {
+                    const result = await api.downloadNew(entry.id);
+                    queued += result.queued;
+                    if (result.queued > 0) {
+                        affected += 1;
+                    }
+                } catch {
+                    /* keep downloading the rest */
+                }
+            }
+            toast.success(t('library.bulkQueuedDone', { n: queued, entries: affected }));
+            await refreshLibrary();
+            exitSelection();
+        } finally {
+            setBulkBusy(null);
         }
     };
 
@@ -357,13 +441,7 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         setBusyFlag(`rematch-${entry.id}`, true);
         try {
             const result = await api.rematchEntry(entry.id);
-            toast.info(
-                result.outcome === 'migrated'
-                    ? t('library.migratedTo', { title: entry.title, source: result.entry?.sourceLabel ?? '' })
-                    : result.outcome === 'suggested'
-                      ? t('library.migrationSuggestedToast', { title: entry.title })
-                      : t('library.noAlternateSource', { title: entry.title })
-            );
+            toast.info(t(rematchOutcomeKey(result.outcome), { title: entry.title, source: result.entry?.sourceLabel ?? '' }));
             await refreshLibrary();
         } catch (error) {
             toast.error((error as Error).message);
@@ -398,6 +476,23 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
         try {
             await api.rollbackChapter(entry.id, chapter.chapterId);
             toast.success(t('library.chapterRestored', { chapter: chapter.title }));
+            setChapters(await api.entryChapters(entry.id));
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Queue one chapter (download or retry) via the ad-hoc endpoint; the route
+     *  resolves the entry so the chapter status follows the job. */
+    const downloadChapter = async (entry: LibraryEntryDto, chapter: LibraryChapterDto) => {
+        try {
+            await api.enqueue({
+                sourceId: entry.sourceId,
+                mangaId: entry.mangaId,
+                mangaTitle: entry.title,
+                chapters: toQueueChapters([chapter])
+            });
+            toast.success(t('library.chapterQueued', { chapter: chapter.title }));
             setChapters(await api.entryChapters(entry.id));
         } catch (error) {
             toast.error((error as Error).message);
@@ -452,6 +547,16 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
             .sort(SORTERS[sort]);
     }, [source, filter, activeFilters, sort]);
     const failingCount = source.filter(entry => (entry.checkFailures ?? 0) > 0).length;
+    const totalNew = library.reduce((sum, entry) => sum + entry.newCount, 0);
+    // bulk actions only process the selection that is visible in the current list (visible vs hidden)
+    const selectedInView = selecting ? source.filter(entry => selectedIds.has(entry.id)).length : 0;
+
+    // clicking the sidebar "new" badge focuses the library on new chapters (consumed once)
+    useEffect(() => {
+        if (focusFilter !== 'new') return;
+        setActiveFilters(new Set<FilterId>(['new']));
+        onFocusFilterDone?.();
+    }, [focusFilter, onFocusFilterDone]);
 
     const statusBadges = (entry: LibraryEntryDto) => (
         <>
@@ -591,6 +696,16 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                             {chapter.title}
                         </span>
                         <span className="flex items-center gap-1.5">
+                            {chapterDownloadable(chapter.status) && (
+                                <button
+                                    type="button"
+                                    title={chapter.status === 'failed' ? t('library.retryChapterHint') : t('library.downloadChapterHint')}
+                                    onClick={() => downloadChapter(entry, chapter)}
+                                    className="text-zinc-500 transition-colors hover:text-accent-soft"
+                                >
+                                    <IconDownload size={13} />
+                                </button>
+                            )}
                             {(chapter.historyCount ?? 0) > 0 && (
                                 <button
                                     type="button"
@@ -601,7 +716,7 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                                     ⟲
                                 </button>
                             )}
-                            <Badge tone={chapterTone(chapter.status)}>{chapter.status}</Badge>
+                            <Badge tone={chapterTone(chapter.status)}>{t(`library.chapterStatus.${chapter.status}`)}</Badge>
                         </span>
                     </div>
                 ))}
@@ -623,9 +738,14 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                 </button>
             </div>
             <div className="space-y-1.5 p-3">
-                <div className="line-clamp-2 min-h-[2.5em] text-sm font-semibold leading-tight" title={entry.title}>
+                <button
+                    type="button"
+                    className="line-clamp-2 min-h-[2.5em] w-full text-left text-sm font-semibold leading-tight transition-colors hover:text-accent-soft"
+                    title={entry.title}
+                    onClick={() => onOpenSeries?.(entry.id)}
+                >
                     {entry.title}
-                </div>
+                </button>
                 <div className="flex flex-wrap items-center gap-1">
                     {prefs.source && (entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>)}
                     {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
@@ -645,12 +765,26 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
     const renderListRow = (entry: LibraryEntryDto) => (
         <article key={entry.id} className="rounded-xl border border-line bg-surface/60 p-2.5 transition-colors hover:border-zinc-600">
             <div className="flex items-center gap-3">
+                {selecting && (
+                    <input
+                        type="checkbox"
+                        checked={selectedIds.has(entry.id)}
+                        onChange={() => toggleSelect(entry.id)}
+                        aria-label={entry.title}
+                        className="flex-none accent-orange-500"
+                    />
+                )}
                 <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 flex-none rounded-md" />
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-sm font-semibold" title={entry.title}>
+                        <button
+                            type="button"
+                            className="truncate text-sm font-semibold transition-colors hover:text-accent-soft"
+                            title={entry.title}
+                            onClick={() => onOpenSeries?.(entry.id)}
+                        >
                             {entry.title}
-                        </span>
+                        </button>
                         {statusBadges(entry)}
                         {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
                     </div>
@@ -695,7 +829,12 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
             type="button"
             title={label}
             aria-label={label}
-            onClick={() => setView(mode)}
+            onClick={() => {
+                setView(mode);
+                if (mode !== 'list') {
+                    exitSelection();
+                }
+            }}
             className={`px-2.5 py-1.5 transition-colors first:rounded-l-lg last:rounded-r-lg ${view === mode ? 'bg-zinc-800 text-fg' : 'text-muted hover:bg-zinc-800/60'}`}
         >
             {icon}
@@ -719,6 +858,10 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
             <SectionTitle
                 right={
                     <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                        <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('library.downloadAllNewHint')}>
+                            <IconDownload size={13} /> {t('library.downloadAllNew')}
+                            {totalNew > 0 && <span className="rounded-full bg-zinc-950/15 px-1.5 text-xs font-semibold text-zinc-950">{totalNew}</span>}
+                        </Button>
                         {failingCount > 0 && (
                             <Button small variant="ghost" onClick={rematchAllFailed} loading={rematchAllBusy} title={t('library.rematchFailedHint')}>
                                 <IconSearch size={13} /> {t('library.rematchFailed', { n: failingCount })}
@@ -731,6 +874,16 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                         <Button small variant="ghost" onClick={rescan} loading={rescanBusy} title={t('library.rescanHint')}>
                             <IconRefresh size={13} /> {t('library.rescan')}
                         </Button>
+                        {view === 'list' && (
+                            <Button
+                                small
+                                variant={selecting ? 'primary' : 'ghost'}
+                                onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+                                title={t('library.selectionHint')}
+                            >
+                                <IconCheck size={13} /> {t('library.selection')}
+                            </Button>
+                        )}
                     </div>
                 }
             >
@@ -811,6 +964,21 @@ export default function Library({ library, loaded, refreshLibrary }: { library: 
                     )}
                 </div>
             </div>
+
+            {selecting && (
+                <Card className="flex flex-wrap items-center gap-2 p-3">
+                    <span className="text-sm text-muted">{t('library.selectionCount', { n: selectedInView })}</span>
+                    <Button small onClick={bulkCheck} disabled={selectedInView === 0} loading={bulkBusy === 'check'}>
+                        <IconRefresh size={13} /> {t('library.checkSelected', { n: selectedInView })}
+                    </Button>
+                    <Button small onClick={bulkDownload} disabled={selectedInView === 0} loading={bulkBusy === 'download'}>
+                        <IconDownload size={13} /> {t('library.downloadSelected', { n: selectedInView })}
+                    </Button>
+                    <Button small variant="ghost" onClick={exitSelection}>
+                        {t('common.cancel')}
+                    </Button>
+                </Card>
+            )}
 
             {!loaded && view === 'list' && (
                 <div className="space-y-2">

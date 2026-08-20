@@ -101,7 +101,7 @@ export interface LibraryChapterDto {
     chapterId: string;
     title: string;
     language?: string;
-    status: 'new' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     path?: string;
     discoveredAt: string;
     downloadedAt?: string;

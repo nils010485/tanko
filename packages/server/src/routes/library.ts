@@ -53,22 +53,33 @@ export function registerLibraryRoutes(
         listDecorated(request.query.hidden === '1' || request.query.hidden === 'true' ? true : undefined)
     );
 
-    app.post<{ Body: { sourceId: string; mangaId: string; title: string; url?: string; thumbnail?: string; autoDownload?: boolean } }>(
-        '/api/library',
-        async (request, reply) => {
-            const body = request.body;
-            if (!body?.sourceId || !body?.mangaId || !body?.title) {
-                return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
-            }
-            try {
-                const result = await store.addEntry(body);
-                events.publish({ type: 'library.updated', entry: result.entry });
-                return reply.code(201).send(result);
-            } catch (error) {
-                return reply.code(400).send({ error: (error as Error).message });
-            }
+    app.post<{
+        Body: { sourceId: string; mangaId: string; title: string; url?: string; thumbnail?: string; autoDownload?: boolean; backlog?: 'ignore' | 'grab' };
+    }>('/api/library', async (request, reply) => {
+        const body = request.body;
+        if (!body?.sourceId || !body?.mangaId || !body?.title) {
+            return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
         }
-    );
+        try {
+            const backlog = body.backlog === 'ignore' || body.backlog === 'grab' ? body.backlog : undefined;
+            const result = await store.addEntry({ ...body, backlog });
+            // explicit grab: queue the freshly snapshotted backlog right away;
+            // a queueing failure must not fail the request — the entry exists
+            let queued: number | undefined;
+            if (backlog === 'grab') {
+                try {
+                    queued = store.enqueueNewChapters(result.entry.id, queue);
+                } catch (error) {
+                    console.warn(`[library] backlog grab failed for "${body.title}":`, (error as Error).message);
+                    queued = 0;
+                }
+            }
+            events.publish({ type: 'library.updated', entry: store.getEntry(result.entry.id) ?? result.entry });
+            return reply.code(201).send({ ...result, queued });
+        } catch (error) {
+            return reply.code(400).send({ error: (error as Error).message });
+        }
+    });
 
     app.delete<{ Params: { entryId: string }; Querystring: { disk?: string } }>('/api/library/:entryId', async (request, reply) => {
         const { entryId } = request.params;

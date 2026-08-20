@@ -5,7 +5,7 @@
 
 import type { ScheduleSettingsDto, ScheduleStatusDto } from '@tanko/shared';
 import { useEffect, useState } from 'react';
-import { IconDownload, IconRefresh } from '../components/icons.js';
+import { IconRefresh } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -26,8 +26,6 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
     const [cron, setCron] = useState('');
     const [saving, setSaving] = useState(false);
     const [running, setRunning] = useState(false);
-    const [totalNew, setTotalNew] = useState(0);
-    const [dlAllBusy, setDlAllBusy] = useState(false);
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
     const [regenBusy, setRegenBusy] = useState(false);
     const toast = useToast();
@@ -37,11 +35,6 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
             setSettings(data.settings);
             setCron(data.settings.cron);
         });
-        api.library()
-            .then(entries => setTotalNew(entries.reduce((sum, entry) => sum + entry.newCount, 0)))
-            .catch(() => {
-                /* badge stays hidden */
-            });
     }, []);
 
     // cover cache status: polled every few seconds while the view is open
@@ -101,19 +94,6 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
         }
     };
 
-    const downloadAllNew = async () => {
-        setDlAllBusy(true);
-        try {
-            const result = await api.downloadAllNew();
-            setTotalNew(0);
-            toast.success(t('schedule.downloadAllNewDone', { queued: result.queued, entries: result.entries }));
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setDlAllBusy(false);
-        }
-    };
-
     if (!settings) {
         return (
             <div className="space-y-6">
@@ -133,18 +113,7 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
 
     return (
         <div className="space-y-6">
-            <SectionTitle
-                right={
-                    <div className="flex items-center gap-2">
-                        <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('schedule.downloadAllNewHint')}>
-                            <IconDownload size={13} /> {t('schedule.downloadAllNew')}
-                            {totalNew > 0 && <span className="rounded-full bg-zinc-950/15 px-1.5 text-xs font-semibold text-zinc-950">{totalNew}</span>}
-                        </Button>
-                    </div>
-                }
-            >
-                {t('schedule.title')}
-            </SectionTitle>
+            <SectionTitle>{t('schedule.title')}</SectionTitle>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <Card className="space-y-4 p-4">

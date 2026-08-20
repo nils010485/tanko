@@ -1,8 +1,9 @@
 import type { SourceRegistry } from '@tanko/core';
 import type { FastifyInstance } from 'fastify';
 import type { DownloadQueue } from '../downloader/queue.js';
+import type { LibraryStore } from '../library/store.js';
 
-export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry): void {
+export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry, store?: LibraryStore): void {
     // List jobs (active first, then recent history) — paginated & filterable
     const KNOWN_STATUSES = new Set(['queued', 'downloading', 'completed', 'failed', 'cancelled']);
     app.get<{ Querystring: { limit?: string; offset?: string; status?: string; q?: string } }>('/api/downloads', async request =>
@@ -19,6 +20,8 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
     app.get('/api/downloads/status', async () => queue.status());
 
     // Enqueue chapters for download
+    // Enqueue chapters for download; when the manga is tracked in the library the
+    // queue items carry its entryId so completions update the chapter status
     app.post<{
         Body: {
             sourceId: string;
@@ -35,15 +38,23 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         if (!source) {
             return reply.code(404).send({ error: `Source "${body.sourceId}" not found` });
         }
+        const entry = store?.findEntryByManga(body.sourceId, body.mangaId) ?? null;
         const result = queue.enqueue(
             body.chapters.map(chapter => ({
                 sourceId: body.sourceId,
                 mangaId: body.mangaId,
                 mangaTitle: body.mangaTitle,
                 chapterId: chapter.id,
-                chapterTitle: chapter.title
+                chapterTitle: chapter.title,
+                entryId: entry?.id
             }))
         );
+        if (entry) {
+            store?.markChaptersQueued(
+                entry.id,
+                body.chapters.map(chapter => chapter.id)
+            );
+        }
         return result;
     });
 

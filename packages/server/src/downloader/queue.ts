@@ -117,18 +117,24 @@ export class DownloadQueue {
         const now = new Date().toISOString();
         for (const chapter of chapters) {
             const existing = this.opts.db.db
-                .prepare('SELECT id, status FROM download_jobs WHERE source_id = ? AND manga_id = ? AND chapter_id = ?')
-                .get(chapter.sourceId, chapter.mangaId, chapter.chapterId) as { id: number; status: DownloadStatus } | undefined;
+                .prepare('SELECT id, status, entry_id FROM download_jobs WHERE source_id = ? AND manga_id = ? AND chapter_id = ?')
+                .get(chapter.sourceId, chapter.mangaId, chapter.chapterId) as { id: number; status: DownloadStatus; entry_id: number | null } | undefined;
 
             if (existing && ACTIVE_STATUSES.has(existing.status)) {
+                // active duplicate: still backfill its entry link when it was queued before the manga was followed
+                if (existing.entry_id === null && chapter.entryId != null) {
+                    this.opts.db.db.prepare('UPDATE download_jobs SET entry_id = ? WHERE id = ?').run(chapter.entryId, existing.id);
+                }
                 skipped++;
                 continue;
             }
             if (existing) {
-                // failed/cancelled job -> requeue
+                // failed/cancelled job -> requeue (and link it to the library entry if it wasn't)
                 this.opts.db.db
-                    .prepare('UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, updated_at = ? WHERE id = ?')
-                    .run('queued', now, existing.id);
+                    .prepare(
+                        'UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, entry_id = COALESCE(?, entry_id), updated_at = ? WHERE id = ?'
+                    )
+                    .run('queued', chapter.entryId ?? null, now, existing.id);
                 retried++;
                 continue;
             }

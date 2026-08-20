@@ -11,13 +11,14 @@ import { IconActivity, IconClock, IconDownload, IconImport, IconLibrary, IconMen
 import { Badge } from './components/ui.js';
 import { useI18n } from './i18n/index.js';
 import { useLiveState } from './lib/live.js';
-import { useHashRoute } from './lib/router.js';
+import { useHashRoute, useHashSeriesId } from './lib/router.js';
 import Activity from './views/Activity.js';
 import Discover from './views/Discover.js';
 import Downloads from './views/Downloads.js';
 import Import from './views/Import.js';
 import Library from './views/Library.js';
 import Schedule from './views/Schedule.js';
+import Series from './views/Series.js';
 import Settings from './views/Settings.js';
 
 type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'schedule' | 'settings' | 'activity';
@@ -36,7 +37,9 @@ const TAB_IDS = TABS.map(item => item.id);
 
 export default function App() {
     const [tab, setTab] = useHashRoute<Tab>('library', TAB_IDS);
+    const [seriesId, navigateSeries] = useHashSeriesId();
     const [navOpen, setNavOpen] = useState(false);
+    const [libraryFocusFilter, setLibraryFocusFilter] = useState<string | null>(null);
     const live = useLiveState();
     const { t } = useI18n();
 
@@ -101,7 +104,12 @@ export default function App() {
                                 <Icon size={16} />
                                 <span className="flex-1 text-left">{t(`nav.${item.id}`)}</span>
                                 {item.id === 'downloads' && activeJobs > 0 && <Badge tone="blue">{activeJobs}</Badge>}
-                                {item.id === 'library' && totalNew > 0 && <Badge tone="orange">{totalNew}</Badge>}
+                                {item.id === 'library' && totalNew > 0 && (
+                                    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the badge rides the keyboard-accessible tab button; clicking only adds the "new" filter
+                                    <span onClick={() => setLibraryFocusFilter('new')} title={t('app.focusNewChapters')}>
+                                        <Badge tone="orange">{totalNew}</Badge>
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
@@ -133,8 +141,26 @@ export default function App() {
                 {/* Main content */}
                 <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
                     <div className="mx-auto max-w-5xl">
-                        {tab === 'discover' && <Discover onAddedToLibrary={live.refreshLibrary} />}
-                        {tab === 'library' && <Library library={live.library} loaded={live.libraryLoaded} refreshLibrary={live.refreshLibrary} />}
+                        {tab === 'discover' && <Discover onAddedToLibrary={live.refreshLibrary} onOpenSeries={navigateSeries} />}
+                        {tab === 'library' && seriesId === null && (
+                            <Library
+                                library={live.library}
+                                loaded={live.libraryLoaded}
+                                refreshLibrary={live.refreshLibrary}
+                                focusFilter={libraryFocusFilter}
+                                onFocusFilterDone={() => setLibraryFocusFilter(null)}
+                                onOpenSeries={navigateSeries}
+                            />
+                        )}
+                        {tab === 'library' && seriesId !== null && (
+                            <Series
+                                entryId={seriesId}
+                                library={live.library}
+                                libraryLoaded={live.libraryLoaded}
+                                onBack={() => navigateSeries(null)}
+                                refreshLibrary={live.refreshLibrary}
+                            />
+                        )}
                         {tab === 'downloads' && <Downloads library={live.library} />}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
                         {tab === 'schedule' && <Schedule schedule={live.schedule} />}
