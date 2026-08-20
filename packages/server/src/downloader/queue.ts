@@ -356,10 +356,7 @@ export class DownloadQueue {
                 throw new Error(`Source "${row.source_id}" not found`);
             }
 
-            const pages = await source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title });
-            if (!pages.length) {
-                throw new Error('Page list is empty');
-            }
+            const pages = await this._getPageListWithRetries(source, row);
 
             const paths = chapterPaths(this.opts.settings.dataDirectory, source.label, row.manga_title, row.chapter_title, this.opts.settings.directoryLayout);
             const isCbz = this.opts.settings.chapterFormat === 'cbz';
@@ -461,6 +458,35 @@ export class DownloadQueue {
         }
     }
 
+    /**
+     * Page lists can fail intermittently (protected chapter scripts, rate
+     * limiting, transient anti-bot pages) — retry with backoff before
+     * failing the whole job.
+     */
+    private async _getPageListWithRetries(source: SourceAdapter, row: JobRow): Promise<Awaited<ReturnType<SourceAdapter['getPages']>>> {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {
+            // throws Error('cancelled') — must propagate untouched (job status contract)
+            this._checkCancel(row.id);
+            try {
+                const pages = await source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title });
+                if (!pages.length) {
+                    throw new Error('Page list is empty');
+                }
+                return pages;
+            } catch (error) {
+                if ((error as Error)?.message === 'cancelled') {
+                    throw error;
+                }
+                lastError = error;
+                if (attempt < PAGE_ATTEMPTS - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)));
+                }
+            }
+        }
+        throw new Error(`Failed to get page list: ${String((lastError as Error)?.message || lastError)}`);
+    }
+ 
     private async _fetchPageWithRetries(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {
         let lastError: unknown;
         for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {

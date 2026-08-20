@@ -89,7 +89,7 @@ export default function App() {
                     <div className="text-xl font-bold tracking-tight">
                         Tan<span className="text-accent-soft">ko</span>
                     </div>
-                    <div className="mt-0.5 text-xs text-faint">headless · dashboard</div>
+                    <div className="mt-0.5 text-xs text-faint">manga &amp; anime downloader</div>
                 </div>
                 <nav className="flex-1 space-y-1 px-3">
                     {TABS.map(item => {

@@ -78,9 +78,63 @@ export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string)
     return { headers, extraCookie };
 }
 
+ /**
+  * Browsers cap connections per host (~6); a vm script firing hundreds of
+  * parallel requests (e.g. MangaHere's chapterfun.ashx for every page of a
+  * chapter) trips server-side throttling that answers 200 with empty bodies.
+  * Gate sandboxed requests to a browser-like per-host concurrency.
+  */
+/** Attempts before giving up on an endpoint that keeps answering 200 with an empty body. */
+const AJAX_EMPTY_ATTEMPTS = 3;
+/** Per-attempt cap so ajax retries (backoff included) fit the caller's overall timeout. */
+const AJAX_ATTEMPT_TIMEOUT_MS = 15000;
+ const MAX_IN_FLIGHT_PER_HOST = 5;
+ 
+ class HostGate {
+     private inFlight = new Map<string, number>();
+     private waiters = new Map<string, Array<() => void>>();
+ 
+     async run<T>(url: string, task: () => Promise<T>): Promise<T> {
+         const host = new URL(url).hostname;
+         await this.acquire(host);
+         try {
+             return await task();
+         } finally {
+             this.release(host);
+         }
+     }
+ 
+     private async acquire(host: string): Promise<void> {
+         const current = this.inFlight.get(host) ?? 0;
+         if (current < MAX_IN_FLIGHT_PER_HOST) {
+             this.inFlight.set(host, current + 1);
+             return;
+         }
+         await new Promise<void>(resolve => {
+             const queue = this.waiters.get(host);
+             if (queue) {
+                 queue.push(resolve);
+             } else {
+                 this.waiters.set(host, [resolve]);
+             }
+         });
+     }
+ 
+     private release(host: string): void {
+         const next = this.waiters.get(host)?.shift();
+         if (next) {
+             next(); // hand the slot over to the next queued request
+             return;
+        }
+         this.inFlight.set(host, Math.max(0, (this.inFlight.get(host) ?? 1) - 1));
+     }
+ }
+ 
 export class HeadlessRequest {
     userAgent: string;
     jar: CookieJar;
+    /** Shared so parallel evaluations (download queue) hit one global per-host cap. */
+    private gate = new HostGate();
 
     constructor() {
         this.userAgent = randomUserAgent();
@@ -178,14 +232,21 @@ export class HeadlessRequest {
                     /* hostile page script, ignore */
                 }
             }, ms);
-        const safeSetInterval = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) =>
-            setInterval(() => {
+        // intervals are tracked so they can be cleared once the evaluation
+        // settles (the legacy BrowserWindow was destroyed after each script)
+        const trackedIntervals = new Set<ReturnType<typeof setInterval>>();
+        const safeSetInterval = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+            const id = setInterval(() => {
                 try {
                     callback(...args);
                 } catch {
                     /* hostile page script, ignore */
                 }
             }, ms);
+            trackedIntervals.add(id);
+            return id;
+        };
+        const gate = this.gate;
         const sandbox: Record<string, unknown> = {
             console,
             setTimeout: safeSetTimeout,
@@ -223,7 +284,13 @@ export class HeadlessRequest {
             encodeURI,
             encodeURIComponent,
             crypto: globalThis.crypto,
-            fetch: (input: Request | string, init?: RequestInit) => this.fetch(typeof input === 'string' ? new Request(input, init) : input),
+            fetch: (input: Request | string, init?: RequestInit) => {
+                const request = typeof input === 'string' ? new Request(new URL(input, location.href).href, init) : input;
+                // browsers send the page URL as Referer on every subrequest;
+                // hotlink protection (mangahere & co.) rejects without it
+                request.headers.set('x-referer', request.headers.get('x-referer') || location.href);
+                return gate.run(request.url, () => this.fetch(request));
+            },
             Headers,
             Request,
             Response,
@@ -236,6 +303,83 @@ export class HeadlessRequest {
             navigator: { userAgent: this.userAgent },
             location
         };
+        // jQuery is always loaded from an external <script src> which we never
+        // fetch — connectors like MangaHere/MangaFox rely on $.ajax, so provide
+        // a minimal promise-based subset (inline page scripts may overwrite it)
+        const ajax = async (settings: unknown) => {
+            const options = typeof settings === 'string' ? { url: settings } : (settings ?? {}) as Record<string, any>;
+            const method = String(options.type ?? options.method ?? 'GET').toUpperCase();
+            const target = new URL(String(options.url ?? location.href), location.href);
+            const data = options.data;
+            let body: string | undefined;
+            if (data !== undefined && data !== null) {
+                if (method === 'GET') {
+                    const params = new URLSearchParams(target.search);
+                    // data may be a plain object or a pre-serialized query string
+                    const entries = typeof data === 'string' ? new URLSearchParams(data) : Object.entries(data);
+                    for (const [key, value] of entries) {
+                        params.append(key, String(value));
+                    }
+                    target.search = params.toString();
+                } else {
+                    body = typeof data === 'string' ? data : JSON.stringify(data);
+                }
+            }
+            const headers = new Headers(options.headers);
+            // jQuery/XHR always sends the page URL as Referer — sites with
+            // hotlink protection answer missing-referer requests with 200 + empty body
+            if (!headers.has('Referer') && !headers.has('x-referer')) {
+                headers.set('x-referer', location.href);
+            }
+            if (body !== undefined && !headers.has('Content-Type')) {
+                headers.set('Content-Type', typeof data === 'string' ? 'application/x-www-form-urlencoded' : 'application/json');
+            }
+            // per-attempt timeouts + retry backoffs must fit the caller's overall
+            // budget — orphaned fetches would keep gate slots and hammer the host
+            // after the evaluation's race already reported a timeout
+            const deadline = Date.now() + timeoutMs;
+            let text = '';
+            let response: Response | undefined;
+            let networkError: unknown;
+            try {
+                for (let attempt = 1; ; attempt++) {
+                    const remaining = deadline - Date.now();
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    response = await gate.run(target.href, () => this.fetch({ url: target.href, method, headers, _body: body }, Math.min(remaining, AJAX_ATTEMPT_TIMEOUT_MS)));
+                    if (!response.ok) {
+                        break;
+                    }
+                    text = await response.text();
+                    // some endpoints (e.g. mangahere chapterfun.ashx) intermittently
+                    // answer 200 with an empty body — retry with backoff instead of
+                    // returning junk the connector's eval() cannot use
+                    if (text.trim() || attempt === AJAX_EMPTY_ATTEMPTS) {
+                        break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, Math.min(1000 * attempt, Math.max(0, deadline - Date.now()))));
+                }
+            } catch (error) {
+                networkError = error;
+            }
+            if (networkError !== undefined || (response !== undefined && !response.ok)) {
+                const error = networkError instanceof Error ? networkError : new Error(String(networkError ?? `HTTP ${response?.status}`));
+                options.error?.(undefined, 'error', error);
+                // like jQuery, the jqXHR promise rejects on transport/HTTP errors
+                throw error;
+            }
+            // jqXHR-like third argument (the real response body is already consumed)
+            const jqXHR = response && {
+                status: response.status,
+                responseText: text,
+                getResponseHeader: (name: string) => response.headers.get(name)
+            };
+            options.success?.(text, 'success', jqXHR);
+            return text;
+        };
+        sandbox.$ = { ajax };
+        sandbox.jQuery = sandbox.$;
         // window is the sandbox itself (window.document / window.location land here)
         sandbox.window = sandbox;
         sandbox.self = sandbox;
@@ -280,6 +424,11 @@ export class HeadlessRequest {
             timer = setTimeout(() => reject(new Error('script evaluation timed out')), timeoutMs);
             timer.unref?.();
         });
-        return Promise.race([settled, expired]).finally(() => clearTimeout(timer));
+        return Promise.race([settled, expired]).finally(() => {
+            clearTimeout(timer);
+            for (const id of trackedIntervals) {
+                clearInterval(id);
+            }
+        });
     }
 }
