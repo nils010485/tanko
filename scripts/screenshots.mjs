@@ -8,12 +8,14 @@
  *
  * Usage:  node scripts/screenshots.mjs          (run from app/, after `npm run build -w @tanko/dashboard`)
  *
- * Covers were fetched from (all public domain):
- *   https://commons.wikimedia.org/wiki/Special:FilePath/The_Great_Wave_off_Kanagawa.jpg?width=700
- *   https://commons.wikimedia.org/wiki/Special:FilePath/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg?width=700
- *   https://commons.wikimedia.org/wiki/Special:FilePath/Edvard_Munch_-_The_Scream_-_Google_Art_Project.jpg?width=700
- *   https://commons.wikimedia.org/wiki/Special:FilePath/Toshusai_Sharaku-_Otani_Oniji,_1794.jpg?width=700
- *   https://commons.wikimedia.org/wiki/Special:FilePath/Vincent_van_Gogh_-_Self-Portrait_-_Google_Art_Project.jpg?width=700
+ * Covers are public-domain Golden Age comic covers (Wikimedia Commons,
+ * cached under scripts/screenshot-assets/covers/):
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/Planet_Comics_03.jpg?width=700
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/WhizComicsNo22.jpg?width=700
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/MasterComics005.jpg?width=700
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/Fight_Comics_29.jpg?width=700
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/FlashGordonStrangeAdventuresDecember1936.png?width=700
+ *   https://commons.wikimedia.org/wiki/Special:FilePath/Planet_stories_1940spr.jpg?width=700
  */
 
 import { readFile } from 'node:fs/promises';
@@ -41,95 +43,95 @@ const MIME = {
 
 const hours = n => new Date(Date.now() + n * 3_600_000).toISOString();
 
-const LIBRARY = [
-    {
-        id: 1,
-        sourceId: 'asurascans',
-        sourceLabel: 'Asura Scans',
-        mangaId: 'solo-leveling',
-        title: 'Solo Leveling',
-        coverUrl: '/covers/c4.jpg',
-        autoDownload: true,
-        chapterCount: 179,
-        downloadedCount: 171,
-        newCount: 12,
-        lastCheckedAt: hours(-1),
-        addedAt: hours(-2400)
-    },
-    {
-        id: 2,
-        sourceId: 'kaliscan',
-        sourceLabel: 'KaliScan',
-        mangaId: 'tbate',
-        title: 'The Beginning After The End',
-        coverUrl: '/covers/c2.jpg',
-        autoDownload: true,
-        chapterCount: 145,
-        downloadedCount: 145,
-        newCount: 0,
-        lastCheckedAt: hours(-2),
-        addedAt: hours(-2200)
-    },
-    {
-        id: 3,
-        sourceId: 'mangahere',
-        sourceLabel: 'MangaHere',
-        mangaId: 'orv',
-        title: "Omniscient Reader's Viewpoint",
-        coverUrl: '/covers/c3.jpg',
-        autoDownload: true,
-        chapterCount: 210,
-        downloadedCount: 98,
-        newCount: 3,
-        lastCheckedAt: hours(-3),
-        addedAt: hours(-2000)
-    },
-    {
-        id: 4,
-        sourceId: 'kaliscan',
-        sourceLabel: 'KaliScan',
-        mangaId: 'tog',
-        title: 'Tower of God',
-        coverUrl: '/covers/c1.jpg',
-        autoDownload: false,
-        chapterCount: 590,
-        downloadedCount: 350,
-        newCount: 0,
-        lastCheckedAt: hours(-5),
-        addedAt: hours(-3000)
-    },
-    {
-        id: 5,
-        sourceId: 'asurascans',
-        sourceLabel: 'Asura Scans',
-        mangaId: 'northern-blade',
-        title: 'The Legend of the Northern Blade',
-        coverUrl: '/covers/c7.jpg',
-        autoDownload: true,
-        chapterCount: 102,
-        downloadedCount: 76,
-        newCount: 5,
-        lastCheckedAt: hours(-6),
-        addedAt: hours(-1800),
-        canRollbackMigration: true
-    }
-];
+ const LIBRARY = [
+     {
+         id: 1,
+         sourceId: 'dcm',
+         sourceLabel: 'Digital Comic Museum',
+         mangaId: 'planet-comics',
+         title: 'Planet Comics',
+         coverUrl: '/covers/planet-comics.jpg',
+         autoDownload: true,
+         chapterCount: 73,
+         downloadedCount: 61,
+         newCount: 4,
+         lastCheckedAt: hours(-1),
+         addedAt: hours(-2400)
+     },
+     {
+         id: 2,
+         sourceId: 'cbp',
+         sourceLabel: 'Comic Book Plus',
+         mangaId: 'whiz-comics',
+         title: 'Whiz Comics',
+         coverUrl: '/covers/whiz-comics.jpg',
+         autoDownload: true,
+         chapterCount: 155,
+         downloadedCount: 155,
+         newCount: 0,
+         lastCheckedAt: hours(-2),
+         addedAt: hours(-2200)
+     },
+     {
+         id: 3,
+         sourceId: 'dcm',
+         sourceLabel: 'Digital Comic Museum',
+         mangaId: 'master-comics',
+         title: 'Master Comics',
+         coverUrl: '/covers/master-comics.jpg',
+         autoDownload: true,
+         chapterCount: 133,
+         downloadedCount: 42,
+         newCount: 2,
+         lastCheckedAt: hours(-3),
+         addedAt: hours(-2000)
+     },
+     {
+         id: 4,
+         sourceId: 'cbp',
+         sourceLabel: 'Comic Book Plus',
+         mangaId: 'fight-comics',
+         title: 'Fight Comics',
+         coverUrl: '/covers/fight-comics.jpg',
+         autoDownload: false,
+         chapterCount: 88,
+         downloadedCount: 30,
+         newCount: 0,
+         lastCheckedAt: hours(-5),
+         addedAt: hours(-3000)
+     },
+     {
+         id: 5,
+         sourceId: 'dcm',
+         sourceLabel: 'Digital Comic Museum',
+         mangaId: 'flash-gordon',
+         title: 'Flash Gordon: Strange Adventures',
+         coverUrl: '/covers/flash-gordon.png',
+         autoDownload: true,
+         chapterCount: 1,
+         downloadedCount: 1,
+         newCount: 0,
+         lastCheckedAt: hours(-6),
+         addedAt: hours(-1800),
+         canRollbackMigration: true
+     }
+ ];
 
-const SOURCES = [
-    { id: 'asurascans', label: 'Asura Scans', tags: ['en', 'webtoon'], kind: 'native', health: 'ok', healthLatencyMs: 312 },
-    { id: 'kaliscan', label: 'KaliScan', tags: ['fr', 'webtoon'], kind: 'native', health: 'ok', healthLatencyMs: 480 },
-    { id: 'mangahere', label: 'MangaHere', tags: ['en'], kind: 'legacy', health: 'ok', healthLatencyMs: 1250 },
-    { id: 'mangaplus', label: 'MangaPlus by Shueisha', tags: ['en', 'official'], kind: 'legacy', health: 'untested' }
-];
+ const SOURCES = [
+     { id: 'dcm', label: 'Digital Comic Museum', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 312 },
+     { id: 'cbp', label: 'Comic Book Plus', tags: ['en', 'public-domain'], kind: 'native', health: 'ok', healthLatencyMs: 480 },
+     { id: 'gutenberg', label: 'Project Gutenberg', tags: ['en', 'ebooks'], kind: 'legacy', health: 'ok', healthLatencyMs: 1250 },
+     { id: 'archive', label: 'Internet Archive', tags: ['en', 'scans'], kind: 'legacy', health: 'untested' }
+ ];
 
-const SEARCH = [
-    { sourceId: 'asurascans', id: 'solo-leveling', title: 'Solo Leveling', thumbnail: '/covers/c4.jpg' },
-    { sourceId: 'asurascans', id: 'solo-leveling-ragnarok', title: 'Solo Leveling: Ragnarok', thumbnail: '/covers/c2.jpg' },
-    { sourceId: 'asurascans', id: 'leveling-with-the-gods', title: 'Leveling with the Gods', thumbnail: '/covers/c1.jpg' },
-    { sourceId: 'asurascans', id: 'max-level-player', title: "The Max-Level Player's 100th Regression", thumbnail: '/covers/c3.jpg' },
-    { sourceId: 'asurascans', id: 'tomb-raider-king', title: 'Tomb Raider King', thumbnail: '/covers/c7.jpg' },
-    { sourceId: 'asurascans', id: 'leveling-beyond', title: 'Leveling Beyond the Max', thumbnail: '/covers/c4.jpg' }
-];
+ const SEARCH = [
+     { sourceId: 'dcm', id: 'planet-comics', title: 'Planet Comics', thumbnail: '/covers/planet-comics.jpg' },
+    { sourceId: 'dcm', id: 'planet-stories', title: 'Planet Stories', thumbnail: '/covers/planet-stories.jpg' },
+     { sourceId: 'dcm', id: 'whiz-comics', title: 'Whiz Comics', thumbnail: '/covers/whiz-comics.jpg' },
+     { sourceId: 'dcm', id: 'master-comics', title: 'Master Comics', thumbnail: '/covers/master-comics.jpg' },
+     { sourceId: 'dcm', id: 'fight-comics', title: 'Fight Comics', thumbnail: '/covers/fight-comics.jpg' },
+     { sourceId: 'dcm', id: 'strange-adventures', title: 'Flash Gordon: Strange Adventures', thumbnail: '/covers/flash-gordon.png' }
+ ];
 
 const ROUTES = {
     'GET /api/library': LIBRARY,
@@ -185,7 +187,7 @@ const server = createServer(async (req, res) => {
     if (coverPath?.startsWith('/covers/')) {
         try {
             const data = await readFile(join(coversDir, coverPath.replace('/covers/', '')));
-            res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+            res.writeHead(200, { 'Content-Type': MIME[extname(coverPath)] ?? 'image/jpeg' });
             res.end(data);
         } catch {
             res.writeHead(404).end();
@@ -239,9 +241,9 @@ await shot('discover.png', '/discover', async page => {
     await page.waitForSelector('main div.relative > button', { timeout: 15000 });
     await page.click('main div.relative > button'); // open the source picker
     await page.evaluate(() => {
-        [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('Asura Scans'))?.click();
+        [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('Digital Comic Museum'))?.click();
     });
-    await page.type('main input', 'solo leveling');
+    await page.type('main input', 'planet');
     await page.evaluate(() => {
         [...document.querySelectorAll('button')].find(btn => btn.textContent.match(/Search|Rechercher/))?.click();
     });
