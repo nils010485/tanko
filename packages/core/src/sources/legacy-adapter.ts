@@ -5,6 +5,7 @@
  */
 
 import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
+import { withAbortScope } from '../shims/abort-scope.js';
 import { isAntiBotShell } from '../shims/browser.js';
 import { type ChapterInfo, errorMessage, type HealthResult, type MangaInfo, type PageList, type SourceAdapter, SourceError } from './types.js';
 
@@ -104,9 +105,25 @@ export class LegacySourceAdapter implements SourceAdapter {
         }
 
         try {
-            const listPromise = this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
+            // when the catalog scan loses the 12s race, abort the whole
+            // crawl instead of letting it run as a zombie
             const SLOW = Symbol('slow');
-            const mangas = await Promise.race([listPromise, new Promise<typeof SLOW>(resolve => setTimeout(() => resolve(SLOW), 12000))]);
+            let crawlScope: AbortController | undefined;
+            const listPromise = withAbortScope(scope => {
+                crawlScope = scope;
+                return this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
+            });
+            let slowTimer: ReturnType<typeof setTimeout> | undefined;
+            const mangas = await Promise.race([
+                listPromise,
+                new Promise<typeof SLOW>(resolve => {
+                    slowTimer = setTimeout(() => {
+                        crawlScope?.abort(new Error('health check deadline exceeded'));
+                        resolve(SLOW);
+                    }, 12000);
+                    slowTimer.unref?.();
+                })
+            ]).finally(() => clearTimeout(slowTimer));
             if (mangas === SLOW) {
                 // too slow to verify (catalog scanner) but root has real content
                 return { ok: true, latencyMs: Date.now() - startedAt };
@@ -120,20 +137,28 @@ export class LegacySourceAdapter implements SourceAdapter {
         }
     }
 
-    /** Wrap a legacy callback-style connector call into a Promise. */
     private _promisify<T>(invoke: (callback: (error: unknown, result: T) => void) => void): Promise<T> {
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error('legacy connector timed out')), 90_000);
-            timer.unref?.();
-            invoke((error, result) => {
-                clearTimeout(timer);
-                if (error) {
-                    reject(error);
-                } else {
-                    resolve(result);
-                }
-            });
-        });
+        // abort scope: on timeout every in-flight fetch dies so the catalog
+        // becomes collectible instead of piling up (see shims/abort-scope.ts)
+        return withAbortScope(
+            scope =>
+                new Promise<T>((resolve, reject) => {
+                    const timer = setTimeout(() => {
+                        const reason = new Error('legacy connector timed out');
+                        scope.abort(reason);
+                        reject(reason);
+                    }, 90_000);
+                    timer.unref?.();
+                    invoke((error, result) => {
+                        clearTimeout(timer);
+                        if (error) {
+                            reject(error);
+                        } else {
+                            resolve(result);
+                        }
+                    });
+                })
+        );
     }
 
     private _toMangaInfo(manga: LegacyManga): MangaInfo {

@@ -23,6 +23,11 @@ services:
       # CONNECTORS_AUTO_RESTART: "0"
       # Uncomment to change the port inside the container
       # PORT: "8080"
+      # Memory guardrails (recommended on small hosts): set a container limit
+      # and a V8 heap ceiling BELOW it so Node GCs harder instead of hitting
+      # the wall — e.g. mem_limit 3g with --max-old-space-size=2304.
+      # NODE_OPTIONS: --max-old-space-size=2304
+    # mem_limit: 3g
     volumes:
       # SQLite database, settings and downloaded library
       - ./data:/data

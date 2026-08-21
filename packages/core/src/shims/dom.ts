@@ -7,8 +7,17 @@ import { parseHTML } from 'linkedom';
 
 export function parseDocument(html: string): Document {
     const { document } = parseHTML(html) as { document: Document };
-    patchAnchorPathname(document);
+    patchLinkedomDocument(document);
     return document;
+}
+
+/**
+ * Apply every linkedom compatibility patch to a freshly parsed document
+ * (cheap and idempotent — safe to call on every parse point).
+ */
+export function patchLinkedomDocument(document: Document): void {
+    patchAnchorPathname(document);
+    patchAnchorText(document);
 }
 
 /**
@@ -18,12 +27,7 @@ export function parseDocument(html: string): Document {
  * silently yields `id: undefined` and crashes later at chapter listing.
  */
 function patchAnchorPathname(document: Document): void {
-    const anchor = document.querySelector('a');
-    const prototype = anchor?.constructor?.prototype as { pathname?: string } | undefined;
-    if (!prototype || 'pathname' in prototype) {
-        return;
-    }
-    Object.defineProperty(prototype, 'pathname', {
+    defineAnchorProperty(document, 'pathname', {
         get(this: { getAttribute(name: string): string | null }) {
             const href = this.getAttribute('href') ?? '';
             if (!href) {
@@ -34,7 +38,32 @@ function patchAnchorPathname(document: Document): void {
             } catch {
                 return href;
             }
-        },
-        configurable: true
+        }
     });
+}
+
+/**
+ * linkedom (0.18) does not implement `text` on <a> elements either, unlike
+ * browsers/jsdom. Many legacy connectors read `element.text` for titles
+ * (WordPressMadara family, MangaKatana, ...) and crash with
+ * "Cannot read properties of undefined (reading 'replace')" without it.
+ */
+function patchAnchorText(document: Document): void {
+    defineAnchorProperty(document, 'text', {
+        get(this: { textContent: string | null }) {
+            return this.textContent ?? '';
+        },
+        set(this: { textContent: string | null }, value: string) {
+            this.textContent = value;
+        }
+    });
+}
+
+/** Define a missing anchor property on the document's anchor prototype (no-op when implemented). */
+function defineAnchorProperty(document: Document, name: string, descriptor: PropertyDescriptor): void {
+    const prototype = document.querySelector('a')?.constructor?.prototype as object | undefined;
+    if (!prototype || name in prototype) {
+        return;
+    }
+    Object.defineProperty(prototype, name, { ...descriptor, configurable: true });
 }

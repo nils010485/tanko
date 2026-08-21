@@ -6,6 +6,7 @@
 import { createRequire } from 'node:module';
 import { parseHTML } from 'linkedom';
 import type { EngineContext } from '../engine.js';
+import { patchLinkedomDocument } from './dom.js';
 
 const require = createRequire(import.meta.url);
 
@@ -31,6 +32,7 @@ class DOMContainer {
 
     set innerHTML(content: string) {
         this._document = parseHTML(`<!doctype html>${content}`).document;
+        patchLinkedomDocument(this._document);
     }
 
     get innerHTML(): string {
@@ -85,10 +87,29 @@ export function installGlobals(): void {
         }
         return realCreateElement(tag);
     }) as typeof dom.document.createElement;
+    // the linkedom compatibility patches must ride on every parse point:
+    // global document, DOMContainer.innerHTML above, DOMParser below
+    patchLinkedomDocument(dom.document);
+    const OriginalDOMParser = dom.window.DOMParser as unknown as new () => {
+        parseFromString(...args: unknown[]): ShimDocument;
+    };
+    const PatchedDOMParser = class extends OriginalDOMParser {
+        parseFromString(...args: unknown[]) {
+            const parsed = super.parseFromString(...args);
+            patchLinkedomDocument(parsed as unknown as Document);
+            return parsed;
+        }
+    };
+    // patch window.DOMParser too when linkedom allows it (non-writable in some versions)
+    try {
+        dom.window.DOMParser = PatchedDOMParser as unknown as typeof dom.window.DOMParser;
+    } catch {
+        /* the patched global above already covers the connector paths */
+    }
     Object.assign(globalThis, {
         document: dom.document,
         window: dom.window,
-        DOMParser: dom.window.DOMParser
+        DOMParser: PatchedDOMParser
     });
 
     // Event name constants dispatched by Manga/Chapter/DownloadJob on `document`

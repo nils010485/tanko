@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { LegacyConnector } from './legacy-types.js';
+import { currentAbortSignal } from './shims/abort-scope.js';
 import { installGlobals } from './shims/globals.js';
 import { HeadlessRequest } from './shims/request.js';
 import { HeadlessSettings } from './shims/settings.js';
@@ -96,7 +97,13 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             if (input instanceof Request && [...input.headers.keys()].some(name => name.toLowerCase().startsWith('x-'))) {
                 return request.fetch(input);
             }
-            return nativeFetch(input, init);
+            // Kill the whole crawl when the owning operation is aborted (see
+            // shims/abort-scope.ts): the scope signal rides along every fetch.
+            // init.signal (or the Request's own) still applies — combine them.
+            const scope = currentAbortSignal();
+            const own = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+            const signal = scope && own ? AbortSignal.any([scope, own]) : (scope ?? own);
+            return nativeFetch(input, signal ? { ...init, signal } : init);
         }) as typeof fetch;
     }
 

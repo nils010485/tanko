@@ -78,58 +78,58 @@ export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string)
     return { headers, extraCookie };
 }
 
- /**
-  * Browsers cap connections per host (~6); a vm script firing hundreds of
-  * parallel requests (e.g. MangaHere's chapterfun.ashx for every page of a
-  * chapter) trips server-side throttling that answers 200 with empty bodies.
-  * Gate sandboxed requests to a browser-like per-host concurrency.
-  */
+/**
+ * Browsers cap connections per host (~6); a vm script firing hundreds of
+ * parallel requests (e.g. MangaHere's chapterfun.ashx for every page of a
+ * chapter) trips server-side throttling that answers 200 with empty bodies.
+ * Gate sandboxed requests to a browser-like per-host concurrency.
+ */
 /** Attempts before giving up on an endpoint that keeps answering 200 with an empty body. */
 const AJAX_EMPTY_ATTEMPTS = 3;
 /** Per-attempt cap so ajax retries (backoff included) fit the caller's overall timeout. */
 const AJAX_ATTEMPT_TIMEOUT_MS = 15000;
- const MAX_IN_FLIGHT_PER_HOST = 5;
- 
- class HostGate {
-     private inFlight = new Map<string, number>();
-     private waiters = new Map<string, Array<() => void>>();
- 
-     async run<T>(url: string, task: () => Promise<T>): Promise<T> {
-         const host = new URL(url).hostname;
-         await this.acquire(host);
-         try {
-             return await task();
-         } finally {
-             this.release(host);
-         }
-     }
- 
-     private async acquire(host: string): Promise<void> {
-         const current = this.inFlight.get(host) ?? 0;
-         if (current < MAX_IN_FLIGHT_PER_HOST) {
-             this.inFlight.set(host, current + 1);
-             return;
-         }
-         await new Promise<void>(resolve => {
-             const queue = this.waiters.get(host);
-             if (queue) {
-                 queue.push(resolve);
-             } else {
-                 this.waiters.set(host, [resolve]);
-             }
-         });
-     }
- 
-     private release(host: string): void {
-         const next = this.waiters.get(host)?.shift();
-         if (next) {
-             next(); // hand the slot over to the next queued request
-             return;
+const MAX_IN_FLIGHT_PER_HOST = 5;
+
+class HostGate {
+    private inFlight = new Map<string, number>();
+    private waiters = new Map<string, Array<() => void>>();
+
+    async run<T>(url: string, task: () => Promise<T>): Promise<T> {
+        const host = new URL(url).hostname;
+        await this.acquire(host);
+        try {
+            return await task();
+        } finally {
+            this.release(host);
         }
-         this.inFlight.set(host, Math.max(0, (this.inFlight.get(host) ?? 1) - 1));
-     }
- }
- 
+    }
+
+    private async acquire(host: string): Promise<void> {
+        const current = this.inFlight.get(host) ?? 0;
+        if (current < MAX_IN_FLIGHT_PER_HOST) {
+            this.inFlight.set(host, current + 1);
+            return;
+        }
+        await new Promise<void>(resolve => {
+            const queue = this.waiters.get(host);
+            if (queue) {
+                queue.push(resolve);
+            } else {
+                this.waiters.set(host, [resolve]);
+            }
+        });
+    }
+
+    private release(host: string): void {
+        const next = this.waiters.get(host)?.shift();
+        if (next) {
+            next(); // hand the slot over to the next queued request
+            return;
+        }
+        this.inFlight.set(host, Math.max(0, (this.inFlight.get(host) ?? 1) - 1));
+    }
+}
+
 export class HeadlessRequest {
     userAgent: string;
     jar: CookieJar;
@@ -307,7 +307,7 @@ export class HeadlessRequest {
         // fetch — connectors like MangaHere/MangaFox rely on $.ajax, so provide
         // a minimal promise-based subset (inline page scripts may overwrite it)
         const ajax = async (settings: unknown) => {
-            const options = typeof settings === 'string' ? { url: settings } : (settings ?? {}) as Record<string, any>;
+            const options = typeof settings === 'string' ? { url: settings } : ((settings ?? {}) as Record<string, any>);
             const method = String(options.type ?? options.method ?? 'GET').toUpperCase();
             const target = new URL(String(options.url ?? location.href), location.href);
             const data = options.data;
@@ -347,7 +347,9 @@ export class HeadlessRequest {
                     if (remaining <= 0) {
                         break;
                     }
-                    response = await gate.run(target.href, () => this.fetch({ url: target.href, method, headers, _body: body }, Math.min(remaining, AJAX_ATTEMPT_TIMEOUT_MS)));
+                    response = await gate.run(target.href, () =>
+                        this.fetch({ url: target.href, method, headers, _body: body }, Math.min(remaining, AJAX_ATTEMPT_TIMEOUT_MS))
+                    );
                     if (!response.ok) {
                         break;
                     }

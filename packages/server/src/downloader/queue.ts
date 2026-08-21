@@ -486,7 +486,7 @@ export class DownloadQueue {
         }
         throw new Error(`Failed to get page list: ${String((lastError as Error)?.message || lastError)}`);
     }
- 
+
     private async _fetchPageWithRetries(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {
         let lastError: unknown;
         for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {
