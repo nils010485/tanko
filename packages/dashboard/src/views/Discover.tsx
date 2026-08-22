@@ -402,17 +402,17 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                 {t('discover.title')}
             </SectionTitle>
 
-            {/* Unified search: source picker as prefix, single button, scope toggle below */}
+            {/* Unified search bar: source picker, query, scope toggle and a compact icon button on one row */}
             <Card className="p-4">
-                <div className="flex flex-wrap items-stretch gap-2">
-                    <div className="relative" ref={comboRef}>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className={`relative ${scope === 'global' ? 'opacity-60' : ''}`} ref={comboRef}>
                         <button
                             type="button"
                             onClick={() => {
                                 setComboOpen(open => !open);
                                 setSourceQuery('');
                             }}
-                            className="flex h-full items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm transition-colors hover:border-zinc-600"
+                            className="flex h-10 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm transition-colors hover:border-zinc-600"
                         >
                             {currentSource ? (
                                 <>
@@ -488,7 +488,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                         )}
                     </div>
 
-                    <div className="relative min-w-64 flex-1">
+                    <div className="relative min-w-56 flex-1">
                         <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                         <Input
                             className="w-full pl-9"
@@ -499,49 +499,53 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                         />
                     </div>
 
-                    <Button
-                        onClick={runScopedSearch}
-                        disabled={!query.trim() || (scope === 'source' && !sourceId) || searching || globalSearching}
-                        loading={searching || globalSearching}
-                    >
-                        <IconSearch size={15} /> {t('discover.searchButton')}
-                    </Button>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <div className="flex rounded-lg border border-line bg-zinc-950/60 p-0.5 text-xs">
+                    {/* scope: this source vs everywhere — compact segmented control */}
+                    <div className="flex h-10 items-center rounded-lg border border-line bg-zinc-950/60 p-0.5 text-xs">
                         <button
                             type="button"
                             onClick={() => setScope('source')}
-                            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${scope === 'source' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            title={t('discover.scopeSource')}
+                            className={`h-full rounded-md px-2.5 transition-colors ${scope === 'source' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
                         >
                             {t('discover.scopeSource')}
                         </button>
                         <button
                             type="button"
                             onClick={() => setScope('global')}
-                            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${scope === 'global' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            title={t('discover.scopeGlobal')}
+                            className={`flex h-full items-center gap-1.5 rounded-md px-2.5 transition-colors ${scope === 'global' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
                         >
-                            <IconGlobe size={13} /> {t('discover.scopeGlobal')}
+                            <IconGlobe size={13} /> {t('discover.scopeGlobalShort')}
                         </button>
                     </div>
 
-                    {currentSource && scope === 'source' && (
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
-                            {healthDot(currentSource.health, t)}
-                            <span>
-                                {currentSource.health === 'ok' && t('discover.statusOk')}
-                                {currentSource.health === 'error' && t('discover.statusError')}
-                                {currentSource.health === 'checking' && t('discover.statusChecking')}
-                                {currentSource.health === 'untested' && t('discover.statusUntested')}
-                                {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
-                            </span>
-                            {currentSource.tags?.slice(0, 4).map((tag: string) => (
-                                <Badge key={tag}>{tag}</Badge>
-                            ))}
-                        </div>
-                    )}
+                    {/* compact icon button — Enter in the input also runs the search */}
+                    <button
+                        type="button"
+                        onClick={runScopedSearch}
+                        disabled={!query.trim() || (scope === 'source' && !sourceId) || searching || globalSearching}
+                        title={t('discover.searchButton')}
+                        className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent text-zinc-950 transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        {searching || globalSearching ? <Spinner size={15} /> : <IconSearch size={16} />}
+                    </button>
                 </div>
+
+                {currentSource && scope === 'source' && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                        {healthDot(currentSource.health, t)}
+                        <span>
+                            {currentSource.health === 'ok' && t('discover.statusOk')}
+                            {currentSource.health === 'error' && t('discover.statusError')}
+                            {currentSource.health === 'checking' && t('discover.statusChecking')}
+                            {currentSource.health === 'untested' && t('discover.statusUntested')}
+                            {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
+                        </span>
+                        {currentSource.tags?.slice(0, 4).map((tag: string) => (
+                            <Badge key={tag}>{tag}</Badge>
+                        ))}
+                    </div>
+                )}
             </Card>
 
             {searchError && (

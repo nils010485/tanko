@@ -53,6 +53,7 @@ export const en = {
     'discover.searchButton': 'Search',
     'discover.scopeSource': 'This source',
     'discover.scopeGlobal': 'All healthy sources',
+    'discover.scopeGlobalShort': 'Everywhere',
     'discover.noResults': 'No results',
     'discover.noResultsHint': 'Try another search or another source.',
     'discover.chapters': 'Chapters',

@@ -53,6 +53,7 @@ export const fr: typeof import('./en.js').en = {
     'discover.searchButton': 'Rechercher',
     'discover.scopeSource': 'Cette source',
     'discover.scopeGlobal': 'Toutes les sources saines',
+    'discover.scopeGlobalShort': 'Partout',
     'discover.noResults': 'Aucun résultat',
     'discover.noResultsHint': 'Essayez une autre recherche ou une autre source.',
     'discover.chapters': 'Chapitres',
