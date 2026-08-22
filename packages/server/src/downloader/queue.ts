@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import { createComicInfoXML, LegacySourceAdapter, randomUserAgent } from '@tanko/core';
-import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
+import type { DownloadJobDto, DownloadStatus, QueueStatusDto } from '@tanko/shared';
 import JSZip from 'jszip';
 import type { Database } from '../db.js';
 import { withTimeout } from '../util/timeout.js';
@@ -161,6 +161,7 @@ export class DownloadQueue {
             added++;
         }
         this._schedule();
+        this._publishStatus();
         return { added, skipped, retried };
     }
 
@@ -220,11 +221,13 @@ export class DownloadQueue {
 
     pause(): void {
         this.paused = true;
+        this._publishStatus();
     }
 
     resume(): void {
         this.paused = false;
         this._schedule();
+        this._publishStatus();
     }
 
     /** Empty the pending queue: queued jobs are deleted, running ones get the
@@ -237,17 +240,23 @@ export class DownloadQueue {
         for (const job of active) {
             this.cancelFlags.set(job.id, true);
         }
+        const queued = this.opts.db.db.prepare("SELECT id FROM download_jobs WHERE status = 'queued'").all() as unknown as Array<{ id: number }>;
         const pairs = this.opts.db.db
             .prepare("SELECT entry_id AS entryId, chapter_id AS chapterId FROM download_jobs WHERE status = 'queued' AND entry_id IS NOT NULL")
             .all() as unknown as Array<{ entryId: number; chapterId: string }>;
         const removed = Number(this.opts.db.db.prepare("DELETE FROM download_jobs WHERE status = 'queued'").run().changes);
+        // tell the dashboard the queued rows are gone (no job.updated will ever fire for them)
+        for (const row of queued) {
+            this.opts.events.publish({ type: 'job.removed', jobId: row.id });
+        }
         if (pairs.length > 0) {
             this.opts.onJobsCleared?.(pairs);
         }
+        this._publishStatus();
         return { cancelled: active.length, removed };
     }
 
-    status(): { paused: boolean; active: number; queued: number } {
+    status(): QueueStatusDto {
         const row = this.opts.db.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'queued'").get() as { n: number };
         const active = [...this.activePerSource.values()].reduce((total, count) => total + count, 0);
         return { paused: this.paused, active, queued: row.n };
@@ -292,7 +301,7 @@ export class DownloadQueue {
 
     /** Delete every finished job (completed/failed/cancelled); returns the number removed. */
     clearHistory(): number {
-        return Number(this.opts.db.db.prepare(`DELETE FROM download_jobs WHERE ${FINISHED_JOBS}`).run().changes);
+        return this._deleteFinished('1 = 1');
     }
 
     stop(): void {
@@ -353,8 +362,7 @@ export class DownloadQueue {
             return;
         }
         // updated_at is ISO-8601, so a lexicographic cutoff works
-        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        this.opts.db.db.prepare(`DELETE FROM download_jobs WHERE ${FINISHED_JOBS} AND updated_at < ?`).run(cutoff);
+        this._deleteFinished(`updated_at < '${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}'`);
     }
 
     private _schedule(): void {
@@ -652,6 +660,31 @@ export class DownloadQueue {
         this.opts.db.db.prepare(`UPDATE download_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         const row = this.opts.db.db.prepare('SELECT * FROM download_jobs WHERE id = ?').get(jobId) as unknown as JobRow;
         this.opts.events.publish({ type: 'job.updated', job: this._toDto(row) });
+        // status transitions change the queue counters — push them with the job
+        if (patch.status !== undefined) {
+            this._publishStatus();
+        }
+    }
+
+    /** Shared delete for finished jobs (history clear + retention prune):
+     *  drops the rows and notifies WS clients via job.removed. */
+    private _deleteFinished(where: string): number {
+        const ids = (this.opts.db.db.prepare(`SELECT id FROM download_jobs WHERE ${FINISHED_JOBS} AND ${where}`).all() as unknown as Array<{ id: number }>).map(
+            row => row.id
+        );
+        if (ids.length === 0) {
+            return 0;
+        }
+        const removed = Number(this.opts.db.db.prepare(`DELETE FROM download_jobs WHERE ${FINISHED_JOBS} AND ${where}`).run().changes);
+        for (const id of ids) {
+            this.opts.events.publish({ type: 'job.removed', jobId: id });
+        }
+        return removed;
+    }
+
+    /** Push the authoritative queue counters (paused/active/queued) to WS clients. */
+    private _publishStatus(): void {
+        this.opts.events.publish({ type: 'queue.status', status: this.status() });
     }
 
     private _toDto(row: JobRow): DownloadJobDto {

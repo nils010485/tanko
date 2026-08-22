@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { WsEvent } from '@tanko/shared';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/db.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
 import { EventBus } from '../src/ws.js';
@@ -15,6 +16,7 @@ let baseUrl: string;
 let tmpDir: string;
 let database: Database;
 let queue: DownloadQueue;
+let bus: EventBus;
 
 const fakeSource = {
     id: 'test-source',
@@ -86,10 +88,11 @@ beforeAll(async () => {
 
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-test-'));
     database = new Database(tmpDir);
+    bus = new EventBus();
     queue = new DownloadQueue({
         db: database,
         registry: fakeRegistry,
-        events: new EventBus(),
+        events: bus,
         settings: {
             dataDirectory: path.join(tmpDir, 'downloads'),
             chapterFormat: 'img',
@@ -283,6 +286,27 @@ describe('DownloadQueue', () => {
         queue.resume();
     });
 
+    it('pushes queue counters and job removals over the event bus', () => {
+        queue.pause();
+        const spy = vi.spyOn(bus, 'publish');
+        const lastStatus = () => {
+            const calls = spy.mock.calls.filter(([event]) => event.type === 'queue.status');
+            return calls.length > 0 ? (calls.at(-1)?.[0] as Extract<WsEvent, { type: 'queue.status' }>) : undefined;
+        };
+
+        queue.enqueue([
+            { sourceId: 'test-source', mangaId: 'manga-ws', mangaTitle: 'WS Manga', chapterId: 'chapter-ws-1', chapterTitle: 'Chapter WS 1' },
+            { sourceId: 'test-source', mangaId: 'manga-ws', mangaTitle: 'WS Manga', chapterId: 'chapter-ws-2', chapterTitle: 'Chapter WS 2' }
+        ]);
+        expect(lastStatus()?.status).toMatchObject({ paused: true, active: 0, queued: 2 });
+
+        const result = queue.clearQueue();
+        expect(result.removed).toBe(2);
+        expect(spy.mock.calls.filter(([event]) => event.type === 'job.removed')).toHaveLength(2);
+        expect(lastStatus()?.status).toMatchObject({ paused: true, active: 0, queued: 0 });
+
+        spy.mockRestore();
+    });
     it('runs parallelSources × concurrencyPerSource jobs spread across sources', async () => {
         queue.pause();
         queue.updateSettings({ parallelSources: 2, concurrencyPerSource: 2 });

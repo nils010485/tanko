@@ -43,7 +43,6 @@ export default function App() {
     const live = useLiveState();
     const { t } = useI18n();
 
-    const activeJobs = live.jobs.filter(job => job.status === 'downloading' || job.status === 'queued').length;
     const totalNew = live.library.reduce((sum, entry) => sum + entry.newCount, 0);
     const activeLabel = t(`nav.${tab}`);
 
@@ -103,7 +102,16 @@ export default function App() {
                             >
                                 <Icon size={16} />
                                 <span className="flex-1 text-left">{t(`nav.${item.id}`)}</span>
-                                {item.id === 'downloads' && activeJobs > 0 && <Badge tone="blue">{activeJobs}</Badge>}
+                                {item.id === 'downloads' && live.queueStatus && live.queueStatus.active > 0 && (
+                                    <span title={t('downloads.activeCount', { n: live.queueStatus.active })}>
+                                        <Badge tone="blue">{live.queueStatus.active}</Badge>
+                                    </span>
+                                )}
+                                {item.id === 'downloads' && live.queueStatus && live.queueStatus.queued > 0 && (
+                                    <span title={t('downloads.queuedCount', { n: live.queueStatus.queued })}>
+                                        <Badge tone="zinc">{live.queueStatus.queued}</Badge>
+                                    </span>
+                                )}
                                 {item.id === 'library' && totalNew > 0 && (
                                     // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the badge rides the keyboard-accessible tab button; clicking only adds the "new" filter
                                     <span onClick={() => setLibraryFocusFilter('new')} title={t('app.focusNewChapters')}>

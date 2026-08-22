@@ -3,7 +3,7 @@
  * Keeps jobs / library / schedule / logs in sync with the server.
  */
 
-import type { DownloadJobDto, LibraryEntryDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
+import type { DownloadJobDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 
@@ -20,6 +20,8 @@ export interface LiveState {
     jobsLoaded: boolean;
     library: LibraryEntryDto[];
     libraryLoaded: boolean;
+    /** Authoritative queue counters, pushed over WS (null before the first snapshot). */
+    queueStatus: QueueStatusDto | null;
     schedule: ScheduleStatusDto | null;
     logs: LogLine[];
     refreshLibrary: () => Promise<void>;
@@ -44,6 +46,7 @@ export function useLiveState(): LiveState {
     const [library, setLibrary] = useState<LibraryEntryDto[]>([]);
     const [libraryLoaded, setLibraryLoaded] = useState(false);
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
+    const [queueStatus, setQueueStatus] = useState<QueueStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
     const logSeq = useRef(0);
 
@@ -74,10 +77,19 @@ export function useLiveState(): LiveState {
         }
     }, []);
 
+    const refreshQueueStatus = useCallback(async () => {
+        try {
+            setQueueStatus(await api.downloadStatus());
+        } catch {
+            /* ignore */
+        }
+    }, []);
+
     useEffect(() => {
         refreshJobs();
         refreshLibrary();
         refreshSchedule();
+        refreshQueueStatus();
 
         let disposed = false;
         let retry: ReturnType<typeof setTimeout> | undefined;
@@ -90,7 +102,14 @@ export function useLiveState(): LiveState {
             const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
             const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
             socket = ws;
-            ws.onopen = () => setConnected(true);
+            ws.onopen = () => {
+                setConnected(true);
+                // missed events while disconnected (queue cleared, jobs finished…) — resync
+                refreshJobs();
+                refreshLibrary();
+                refreshSchedule();
+                refreshQueueStatus();
+            };
             socket.onclose = () => {
                 setConnected(false);
                 retry = setTimeout(connect, 2500);
@@ -103,6 +122,9 @@ export function useLiveState(): LiveState {
                         case 'job.updated':
                             setJobs(current => upsert(current, message.job, true));
                             break;
+                        case 'job.removed':
+                            setJobs(current => current.filter(job => job.id !== message.jobId));
+                            break;
                         case 'library.updated':
                             // the event may be published without the cover decoration; keep the last known coverUrl
                             setLibrary(current =>
@@ -113,6 +135,9 @@ export function useLiveState(): LiveState {
                                         : { ...message.entry, coverUrl: current.find(entry => entry.id === message.entry.id)?.coverUrl }
                                 )
                             );
+                            break;
+                        case 'queue.status':
+                            setQueueStatus(message.status);
                             break;
                         case 'schedule.status':
                             setSchedule(message.status);
@@ -135,7 +160,7 @@ export function useLiveState(): LiveState {
             clearTimeout(retry);
             socket?.close();
         };
-    }, [refreshJobs, refreshLibrary, refreshSchedule]);
+    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus]);
 
-    return { connected, jobs, jobsLoaded, library, libraryLoaded, schedule, logs, refreshLibrary, refreshJobs };
+    return { connected, jobs, jobsLoaded, library, libraryLoaded, queueStatus, schedule, logs, refreshLibrary, refreshJobs };
 }

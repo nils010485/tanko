@@ -228,6 +228,15 @@ export interface NotificationSettingsDto {
     webhookUrl: string;
 }
 
+/** Queue counters (GET /api/downloads/status, pause/resume responses, WS pushes). */
+export interface QueueStatusDto {
+    paused: boolean;
+    /** Jobs currently downloading (workers running). */
+    active: number;
+    /** Jobs waiting in the queue. */
+    queued: number;
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket events (server -> dashboard)
 // ---------------------------------------------------------------------------
@@ -237,6 +246,7 @@ export type WsEvent =
     | { type: 'job.removed'; jobId: number }
     | { type: 'library.updated'; entry: LibraryEntryDto }
     | { type: 'schedule.status'; status: ScheduleStatusDto }
+    | { type: 'queue.status'; status: QueueStatusDto }
     | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string; at: string };
 
 // ---------------------------------------------------------------------------

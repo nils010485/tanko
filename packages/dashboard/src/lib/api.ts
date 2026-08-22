@@ -16,18 +16,14 @@ import type {
     MigrationSuggestion,
     NotificationSettingsDto,
     QueueSettingsDto,
+    QueueStatusDto,
     ScheduleSettingsDto,
     ScheduleStatusDto,
     SourceDto,
     SourceHealthDto
 } from '@tanko/shared';
 
-/** Queue counters (GET /api/downloads/status, pause, resume). */
-export interface QueueStatusDto {
-    paused: boolean;
-    active: number;
-    queued: number;
-}
+export type { QueueStatusDto };
 
 /** First-chapter cover cache status (GET /api/library/covers/status). */
 export interface CoverStatusDto {
