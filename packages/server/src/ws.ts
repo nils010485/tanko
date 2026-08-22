@@ -10,11 +10,27 @@ import { WebSocket } from 'ws';
 const HISTORY_SIZE = 200;
 const REPLAY_SIZE = 50;
 
+type LogEvent = Extract<WsEvent, { type: 'log' }>;
+
 export class EventBus {
     private readonly clients = new Set<WebSocket>();
     private readonly history: WsEvent[] = [];
+    /** Optional persistence hook: stores a log event and returns its row id. */
+    private logSink: ((event: LogEvent) => number | undefined) | undefined;
+
+    /** Attach a persistence hook for `log` events (row id is tagged on the
+     * broadcast copy so dashboards can dedupe against the REST history). */
+    setLogSink(sink: (event: LogEvent) => number | undefined): void {
+        this.logSink = sink;
+    }
 
     publish(event: WsEvent): void {
+        if (event.type === 'log' && this.logSink) {
+            const id = this.logSink(event);
+            if (id !== undefined) {
+                event = { ...event, id };
+            }
+        }
         this.history.push(event);
         if (this.history.length > HISTORY_SIZE) {
             this.history.splice(0, this.history.length - HISTORY_SIZE);

@@ -8,6 +8,7 @@ import fastifyWebsocket, { type WebSocket } from '@fastify/websocket';
 import { createEngine, loadConnectors, SourceRegistry } from '@tanko/core';
 import type { DownloadStatus } from '@tanko/shared';
 import Fastify from 'fastify';
+import { ActivityService } from './activity/service.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
 import { SqliteCacheStore } from './cache/sqlite-store.js';
 import { loadConfig } from './config.js';
@@ -17,6 +18,7 @@ import { ImportService } from './import/service.js';
 import { CoverService } from './library/covers.js';
 import { FailoverService } from './library/failover.js';
 import { LibraryStore } from './library/store.js';
+import { registerActivityRoutes } from './routes/activity.js';
 import { registerCoverRoutes } from './routes/covers.js';
 import { registerDownloadRoutes } from './routes/downloads.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -42,6 +44,9 @@ console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed
 // --- persistence + events ----------------------------------------------------
 const database = new Database(config.dataDirectory);
 const events = new EventBus();
+const activity = new ActivityService({ db: database });
+// every `log` event is persisted; the returned row id tags the broadcast copy
+events.setLogSink(({ level, message, at }) => activity.add(level, message, at));
 const cacheStore = new SqliteCacheStore(database);
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
@@ -159,6 +164,7 @@ app.decorate('engine', engine);
 app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
+registerActivityRoutes(app, activity);
 registerSourceRoutes(app, sourceRegistry);
 registerSourceHealthRoutes(app, healthService);
 registerSourceUpdateRoutes(app, config, database);

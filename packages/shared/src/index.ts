@@ -250,6 +250,16 @@ export interface AppSettingsResponseDto {
     diskUsedBytes: number;
 }
 
+export type LogLevel = 'info' | 'warn' | 'error';
+
+/** One Activity tab entry (GET /api/activity, live WS `log` events). */
+export interface ActivityLogDto {
+    id: number;
+    level: LogLevel;
+    message: string;
+    at: string;
+}
+
 export interface NotificationSettingsDto {
     enabled: boolean;
     webhookUrl: string;
@@ -274,7 +284,7 @@ export type WsEvent =
     | { type: 'library.updated'; entry: LibraryEntryDto }
     | { type: 'schedule.status'; status: ScheduleStatusDto }
     | { type: 'queue.status'; status: QueueStatusDto }
-    | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string; at: string };
+    | { type: 'log'; id?: number; level: LogLevel; message: string; at: string };
 
 // ---------------------------------------------------------------------------
 // Generic API envelope

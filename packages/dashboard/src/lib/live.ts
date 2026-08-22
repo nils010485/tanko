@@ -85,11 +85,20 @@ export function useLiveState(): LiveState {
         }
     }, []);
 
+    const refreshActivity = useCallback(async () => {
+        try {
+            // persisted history (newest first) — the WS replay dedupes against it by id
+            setLogs(await api.activity().then(result => result.logs));
+        } catch {
+            /* ignore */
+        }
+    }, []);
     useEffect(() => {
         refreshJobs();
         refreshLibrary();
         refreshSchedule();
         refreshQueueStatus();
+        refreshActivity();
 
         let disposed = false;
         let retry: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +118,7 @@ export function useLiveState(): LiveState {
                 refreshLibrary();
                 refreshSchedule();
                 refreshQueueStatus();
+                refreshActivity();
             };
             socket.onclose = () => {
                 setConnected(false);
@@ -143,9 +153,16 @@ export function useLiveState(): LiveState {
                             setSchedule(message.status);
                             break;
                         case 'log':
-                            setLogs(current =>
-                                [{ id: ++logSeq.current, level: message.level, message: message.message, at: message.at }, ...current].slice(0, 300)
-                            );
+                            setLogs(current => {
+                                // events replayed right after the REST load carry the same row id — skip those
+                                if (message.id !== undefined && current.some(log => log.id === message.id)) {
+                                    return current;
+                                }
+                                return [
+                                    { id: message.id ?? --logSeq.current, level: message.level, message: message.message, at: message.at },
+                                    ...current
+                                ].slice(0, 300);
+                            });
                             break;
                     }
                 } catch {
@@ -160,7 +177,7 @@ export function useLiveState(): LiveState {
             clearTimeout(retry);
             socket?.close();
         };
-    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus]);
+    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity]);
 
     return { connected, jobs, jobsLoaded, library, libraryLoaded, queueStatus, schedule, logs, refreshLibrary, refreshJobs };
 }

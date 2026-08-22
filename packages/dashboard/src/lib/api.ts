@@ -2,6 +2,7 @@
  * Minimal REST client for the dashboard.
  */
 import type {
+    ActivityLogDto,
     ApiError,
     AppSettingsResponseDto,
     ChapterDto,
@@ -217,12 +218,14 @@ export const api = {
     resumeQueue: () => request<QueueStatusDto>('/api/downloads/resume', { method: 'POST' }),
     clearQueue: () => request<{ cancelled: number; removed: number } & QueueStatusDto>('/api/downloads/clear', { method: 'POST' }),
 
+    // activity
+    activity: () => request<{ logs: ActivityLogDto[] }>('/api/activity'),
+
     // schedule
     schedule: () => request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule'),
     updateSchedule: (patch: SchedulePatch) =>
         request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule', { method: 'PATCH', body: JSON.stringify(patch) }),
     runSchedule: () => request<{ checked: number; newChapters: number; alreadyRunning?: boolean }>('/api/schedule/run', { method: 'POST' }),
-
     // settings
     settings: () => request<AppSettingsResponseDto>('/api/settings'),
     updateSettings: (
