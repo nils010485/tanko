@@ -76,6 +76,16 @@ export const fr: typeof import('./en.js').en = {
     'discover.chaptersQueued': '{n} chapitre(s) mis en file',
     'discover.downloadAll': 'Tout télécharger',
     'discover.openSeries': 'Ouvrir la série',
+    'discover.searchEverywhere': 'Rechercher partout',
+    'discover.globalProgress': 'Recherche… {done}/{total} sources',
+    'discover.globalStop': 'Arrêter',
+    'discover.globalDone': '{total} source(s) interrogée(s)',
+    'discover.globalResultsCount': '{n} résultat(s)',
+    'discover.globalSourceError': 'échec',
+    'discover.globalSourceTimeout': 'expirée',
+    'discover.globalSourceSkipped': 'non interrogée (budget)',
+    'discover.globalNoResults': 'Aucun résultat nulle part',
+    'discover.globalNoResultsHint': 'Seules les sources en cache répondent au premier passage — relancez la recherche pour en couvrir davantage.',
 
     // library
     'library.title': 'Librairie',

@@ -10,7 +10,7 @@
  */
 
 import { parseDocument } from '../../shims/dom.js';
-import { randomUserAgent } from '../../shims/request.js';
+import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
@@ -176,6 +176,7 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     private async _request(url: string, init: RequestInit, attempt = 0): Promise<Response> {
+        let retryAfter: number | undefined;
         try {
             const response = await fetch(url, {
                 ...init,
@@ -184,6 +185,8 @@ export class MadaraConnector implements SourceAdapter {
             });
             // transient protection/rate-limit responses -> retry with backoff
             if (response.status === 403 || response.status === 429 || response.status >= 500) {
+                // honor the server's Retry-After hint when it sent one
+                retryAfter = retryAfterMs(response);
                 throw new SourceError(`HTTP ${response.status}`, this.id);
             }
             if (!response.ok) {
@@ -192,7 +195,7 @@ export class MadaraConnector implements SourceAdapter {
             return response;
         } catch (error) {
             if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, 2500 * (attempt + 1)));
+                await new Promise(resolve => setTimeout(resolve, retryAfter ?? 2500 * (attempt + 1)));
                 return this._request(url, init, attempt + 1);
             }
             throw new SourceError(`${init.method || 'GET'} ${url} failed after retries`, this.id, error);

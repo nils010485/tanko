@@ -9,6 +9,7 @@ import type {
     ConnectorsUpdateStatus,
     DeadSeriesDto,
     DownloadsPageDto,
+    GlobalSearchStatusDto,
     LibraryChapterDto,
     LibraryEntryDto,
     MangaDto,
@@ -143,6 +144,9 @@ export const api = {
             body: JSON.stringify(sourceIds ? { sourceIds } : {})
         }),
     search: (sourceId: string, query: string) => request<MangaDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`),
+    searchAll: (query: string) =>
+        request<{ jobId: number; targets: number }>('/api/sources/search-all', { method: 'POST', body: JSON.stringify({ q: query }) }),
+    globalSearch: (jobId: number) => request<GlobalSearchStatusDto>(`/api/sources/search-all/${jobId}`),
     chapters: (sourceId: string, mangaId: string, title: string) =>
         request<ChapterDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/chapters?${qs({ mangaId, title })}`),
     pages: (sourceId: string, mangaId: string, chapterId: string, mangaTitle: string, chapterTitle: string) =>

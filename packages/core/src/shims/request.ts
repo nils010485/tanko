@@ -90,6 +90,31 @@ const AJAX_EMPTY_ATTEMPTS = 3;
 const AJAX_ATTEMPT_TIMEOUT_MS = 15000;
 const MAX_IN_FLIGHT_PER_HOST = 5;
 
+/** Attempts (total) for rate-limited responses before giving up. */
+const RATE_LIMIT_ATTEMPTS = 3;
+/** Upper bound honoring a Retry-After hint — longer hints still give up. */
+const MAX_RETRY_DELAY_MS = 15000;
+/** Fallback wait between attempts when the server doesn't say how long. */
+const RETRY_BACKOFF_MS = 1000;
+
+/**
+ * Parse the Retry-After header (delay-seconds or HTTP-date) into a wait in
+ * milliseconds, clamped to a sane maximum. Returns undefined when absent or
+ * unparseable.
+ */
+export function retryAfterMs(response: Response): number | undefined {
+    const header = response.headers.get('retry-after');
+    if (!header) {
+        return undefined;
+    }
+    const seconds = Number(header);
+    if (Number.isFinite(seconds)) {
+        return Math.min(Math.max(seconds * 1000, 0), MAX_RETRY_DELAY_MS);
+    }
+    const date = Date.parse(header);
+    return Number.isNaN(date) ? undefined : Math.min(Math.max(date - Date.now(), 0), MAX_RETRY_DELAY_MS);
+}
+
 class HostGate {
     private inFlight = new Map<string, number>();
     private waiters = new Map<string, Array<() => void>>();
@@ -143,32 +168,46 @@ export class HeadlessRequest {
 
     /**
      * Perform an HTTP(S) request with session cookies and header transforms.
+     * Rate-limited (429) responses — and 503 announcing a Retry-After — are
+     * retried with the announced delay (bounded) within the caller's timeout.
      */
     async fetch(request: LegacyRequest | string, timeout = 60000): Promise<Response> {
         const legacyRequest = typeof request === 'string' ? { url: request, headers: new Headers() } : request;
         const url = legacyRequest.url;
-        const { headers, extraCookie } = prepareHeaders(legacyRequest, this.userAgent);
+        const deadline = Date.now() + timeout;
 
-        let cookieHeader = await this.jar.getCookieString(url).catch(() => '');
-        if (extraCookie) {
-            cookieHeader = cookieHeader ? `${cookieHeader}; ${extraCookie}` : extraCookie;
-        }
-        if (cookieHeader) {
-            headers.set('Cookie', cookieHeader);
-        }
+        let response: Response | undefined;
+        for (let attempt = 0; ; attempt++) {
+            // re-prepare per attempt: a throttling response may have set cookies
+            const { headers, extraCookie } = prepareHeaders(legacyRequest, this.userAgent);
+            let cookieHeader = await this.jar.getCookieString(url).catch(() => '');
+            if (extraCookie) {
+                cookieHeader = cookieHeader ? `${cookieHeader}; ${extraCookie}` : extraCookie;
+            }
+            if (cookieHeader) {
+                headers.set('Cookie', cookieHeader);
+            }
 
-        const response = await fetch(url, {
-            method: legacyRequest.method || 'GET',
-            headers,
-            body: legacyRequest.method === 'POST' ? legacyRequest._body : undefined,
-            redirect: 'follow',
-            signal: AbortSignal.timeout(timeout)
-        });
+            response = await fetch(url, {
+                method: legacyRequest.method || 'GET',
+                headers,
+                body: legacyRequest.method === 'POST' ? legacyRequest._body : undefined,
+                redirect: 'follow',
+                signal: AbortSignal.timeout(Math.max(1, deadline - Date.now()))
+            });
 
-        for (const setCookie of response.headers.getSetCookie?.() || []) {
-            await this.jar.setCookie(setCookie, response.url || url).catch(() => undefined);
+            for (const setCookie of response.headers.getSetCookie?.() || []) {
+                await this.jar.setCookie(setCookie, response.url || url).catch(() => undefined);
+            }
+
+            const retryable = response.status === 429 || (response.status === 503 && response.headers.has('retry-after'));
+            const wait = retryAfterMs(response) ?? RETRY_BACKOFF_MS * (attempt + 1);
+            if (!retryable || attempt === RATE_LIMIT_ATTEMPTS - 1 || Date.now() + wait >= deadline) {
+                return response;
+            }
+            await response.body?.cancel().catch(() => undefined); // free the socket before idling
+            await new Promise(resolve => setTimeout(resolve, wait));
         }
-        return response;
     }
 
     /**

@@ -6,7 +6,7 @@
  * legacy connector (same id, registered first in the registry).
  */
 
-import { randomUserAgent } from '../../shims/request.js';
+import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
@@ -221,12 +221,15 @@ export class MangaDexConnector implements SourceAdapter {
 
     private async _fetch<T>(url: URL, attempt = 0): Promise<T> {
         await this._throttle();
+        let retryAfter: number | undefined;
         try {
             const response = await fetch(url, {
                 headers: { 'User-Agent': UA, Accept: 'application/json' },
                 signal: AbortSignal.timeout(30000)
             });
             if (response.status === 429 || response.status >= 500) {
+                // honor the server's Retry-After hint when it sent one
+                retryAfter = retryAfterMs(response);
                 throw new SourceError(`HTTP ${response.status}`, this.id);
             }
             if (!response.ok) {
@@ -235,7 +238,7 @@ export class MangaDexConnector implements SourceAdapter {
             return await response.json();
         } catch (error) {
             if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+                await new Promise(resolve => setTimeout(resolve, retryAfter ?? 2000 * (attempt + 1)));
                 return this._fetch(url, attempt + 1);
             }
             throw error instanceof SourceError ? error : new SourceError(`GET ${url.pathname} failed`, this.id, error);

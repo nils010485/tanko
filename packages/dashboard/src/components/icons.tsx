@@ -30,6 +30,24 @@ export function IconSearch(props: IconProps) {
     );
 }
 
+export function IconGlobe(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+            <path d="M2 12h20" />
+        </svg>
+    );
+}
+
+export function IconSquare(props: IconProps) {
+    return (
+        <svg {...base(props)}>
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+        </svg>
+    );
+}
+
 export function IconLibrary(props: IconProps) {
     return (
         <svg {...base(props)}>

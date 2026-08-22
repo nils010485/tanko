@@ -159,6 +159,25 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
         });
     });
 
+    // Global search across every visible source: returns a jobId, poll the
+    // route below for progressive per-source results
+    app.post<{ Body: { q?: string } }>('/api/sources/search-all', async (request, reply) => {
+        const query = String(request.body?.q || '').trim();
+        if (!query) {
+            return reply.code(400).send({ error: 'Body field "q" is required' });
+        }
+        return app.globalSearch.start(query);
+    });
+
+    app.get<{ Params: { jobId: string } }>('/api/sources/search-all/:jobId', async (request, reply) => {
+        const jobId = Number(request.params.jobId);
+        const status = Number.isInteger(jobId) && jobId > 0 ? app.globalSearch.get(jobId) : undefined;
+        if (!status) {
+            return reply.code(404).send({ error: `Search job "${request.params.jobId}" not found` });
+        }
+        return status;
+    });
+
     // List chapters of a manga on a given source
     app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; title?: string } }>('/api/sources/:sourceId/chapters', async (request, reply) => {
         const { sourceId } = request.params;

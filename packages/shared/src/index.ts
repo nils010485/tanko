@@ -58,6 +58,31 @@ export interface ChapterDto {
 }
 
 // ---------------------------------------------------------------------------
+// Global search (Discover)
+// ---------------------------------------------------------------------------
+
+/** One source's outcome in a global (all-sources) search. */
+export interface GlobalSearchSourceResultDto {
+    sourceId: string;
+    sourceLabel: string;
+    kind: 'legacy' | 'native';
+    status: 'ok' | 'error' | 'timeout' | 'skipped';
+    tookMs?: number;
+    error?: string;
+    mangas: MangaDto[];
+}
+
+/** Polling snapshot of a running or finished global search. */
+export interface GlobalSearchStatusDto {
+    jobId: number;
+    query: string;
+    total: number;
+    completed: number;
+    done: boolean;
+    results: GlobalSearchSourceResultDto[];
+}
+
+// ---------------------------------------------------------------------------
 // Library
 // ---------------------------------------------------------------------------
 

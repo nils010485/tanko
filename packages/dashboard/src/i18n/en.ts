@@ -76,6 +76,16 @@ export const en = {
     'discover.chaptersQueued': '{n} chapter(s) queued',
     'discover.downloadAll': 'Download all',
     'discover.openSeries': 'Open series',
+    'discover.searchEverywhere': 'Search everywhere',
+    'discover.globalProgress': 'Searching… {done}/{total} sources',
+    'discover.globalStop': 'Stop',
+    'discover.globalDone': 'Searched {total} source(s)',
+    'discover.globalResultsCount': '{n} result(s)',
+    'discover.globalSourceError': 'failed',
+    'discover.globalSourceTimeout': 'timed out',
+    'discover.globalSourceSkipped': 'not reached (budget)',
+    'discover.globalNoResults': 'No results anywhere',
+    'discover.globalNoResultsHint': 'Only sources with a warm cache answer on the first run — search again to reach more of them.',
 
     // library
     'library.title': 'Library',

@@ -3,14 +3,18 @@
  *  - legacy sources: the full manga list is cached (24h) and searches are
  *    filtered locally — catalog-scanning connectors (e.g. 11toon) go from
  *    minutes to instant after the first fetch
+ *  - native sources: search results are cached shortly (10 min) so repeated
+ *    global searches don't re-hit the site's search endpoint
  *  - all sources: chapter lists are cached (30 min)
  * Pages are never cached (image URLs are often short-lived).
  */
+import { createHash } from 'node:crypto';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '@tanko/core';
 import type { CacheStore } from './cache.js';
 
 const MANGA_LIST_TTL_SECONDS = 24 * 3600;
 const CHAPTERS_TTL_SECONDS = 30 * 60;
+const SEARCH_TTL_SECONDS = 10 * 60;
 
 export class CachedSourceAdapter implements SourceAdapter {
     constructor(
@@ -43,9 +47,22 @@ export class CachedSourceAdapter implements SourceAdapter {
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
-        // native sources use the site's own (fast) search endpoint -> no list cache
+        const needle = query.trim().toLowerCase();
+        // native sources use the site's own (fast) search endpoint: no list
+        // cache, but results are cached shortly so global search re-runs hit
+        // the cache instead of the endpoint (rate limits)
         if (this.inner.kind === 'native') {
-            return this.inner.searchMangas(query);
+            const key = `src:search:${this.id}:${createHash('sha1').update(needle).digest('hex')}`;
+            const cached = await this.cache.get<MangaInfo[]>(key);
+            if (cached) {
+                return cached;
+            }
+            const results = await this.inner.searchMangas(query);
+            // like the list cache: never cache an empty (likely failed) result
+            if (results.length > 0) {
+                await this.cache.set(key, results, SEARCH_TTL_SECONDS);
+            }
+            return results;
         }
         const key = `src:mangas:${this.id}`;
         let list = await this.cache.get<MangaInfo[]>(key);
@@ -58,7 +75,6 @@ export class CachedSourceAdapter implements SourceAdapter {
                 await this.cache.set(key, list, MANGA_LIST_TTL_SECONDS);
             }
         }
-        const needle = query.trim().toLowerCase();
         if (!needle) {
             return list;
         }

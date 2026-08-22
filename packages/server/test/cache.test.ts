@@ -100,7 +100,32 @@ describe('CachedSourceAdapter (legacy)', () => {
 });
 
 describe('CachedSourceAdapter (native)', () => {
-    it('does not cache native searches (site search endpoints are fast)', async () => {
+    it('caches native search results for the same query', async () => {
+        const calls = { search: 0 };
+        const native: SourceAdapter = {
+            id: 'native-x',
+            label: 'Native X',
+            tags: [],
+            kind: 'native',
+            url: 'https://n.test',
+            initialize: async () => undefined,
+            searchMangas: async () => {
+                calls.search++;
+                return [{ id: 'n1', title: 'One Piece' }];
+            },
+            getChapters: async () => [],
+            getPages: async () => [],
+            checkHealth: async () => ({ ok: true, latencyMs: 1 })
+        };
+        const adapter = new CachedSourceAdapter(native, store);
+        await adapter.searchMangas('one');
+        await adapter.searchMangas('one'); // same (normalized) query: cache hit
+        expect(calls.search).toBe(1);
+        await adapter.searchMangas('piece'); // different query: different key
+        expect(calls.search).toBe(2);
+    });
+
+    it('does not cache empty native results (likely a failure)', async () => {
         const calls = { search: 0 };
         const native: SourceAdapter = {
             id: 'native-x',
@@ -118,8 +143,8 @@ describe('CachedSourceAdapter (native)', () => {
             checkHealth: async () => ({ ok: true, latencyMs: 1 })
         };
         const adapter = new CachedSourceAdapter(native, store);
-        await adapter.searchMangas('a');
-        await adapter.searchMangas('b');
+        await adapter.searchMangas('x');
+        await adapter.searchMangas('x');
         expect(calls.search).toBe(2);
     });
 });

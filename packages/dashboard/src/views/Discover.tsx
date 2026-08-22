@@ -3,7 +3,7 @@
  * hiding, manga search and follow (monitor-only or with the whole backlog).
  */
 
-import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
+import type { ChapterDto, GlobalSearchSourceResultDto, GlobalSearchStatusDto, MangaDto, SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChapterList } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
@@ -15,10 +15,12 @@ import {
     IconDownload,
     IconEye,
     IconEyeOff,
+    IconGlobe,
     IconLibrary,
     IconPlus,
     IconRefresh,
     IconSearch,
+    IconSquare,
     IconStar,
     IconX
 } from '../components/icons.js';
@@ -50,6 +52,47 @@ function sourceRank(source: SourceDto): number {
     return 3;
 }
 
+/** Search result card shared by the single-source and the global results. */
+function MangaResultCard({
+    manga,
+    sourceLabel,
+    isAdded,
+    isAdding,
+    followDisabled,
+    onChapters,
+    onFollow
+}: {
+    manga: MangaDto;
+    sourceLabel: string;
+    isAdded: boolean;
+    isAdding: boolean;
+    followDisabled: boolean;
+    onChapters: (manga: MangaDto) => void;
+    onFollow: (manga: MangaDto) => void;
+}) {
+    const { t } = useI18n();
+    return (
+        <Card className="flex gap-3 p-3">
+            <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} className="h-24 w-16 rounded-md" />
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium" title={manga.title}>
+                    {manga.title}
+                </div>
+                <div className="mt-0.5 truncate text-xs text-zinc-500">{sourceLabel}</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Button small variant="ghost" onClick={() => onChapters(manga)}>
+                        {t('discover.chapters')}
+                    </Button>
+                    <Button small disabled={isAdded || followDisabled} loading={isAdding} onClick={() => onFollow(manga)}>
+                        {isAdded ? <IconCheck size={13} /> : <IconPlus size={13} />}
+                        {isAdded ? t('discover.followed') : t('discover.follow')}
+                    </Button>
+                </div>
+            </div>
+        </Card>
+    );
+}
+
 export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedToLibrary: () => void; onOpenSeries?: (id: number) => void }) {
     const [sources, setSources] = useState<SourceDto[]>([]);
     const [showHidden, setShowHidden] = useState(false);
@@ -62,6 +105,10 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     const [results, setResults] = useState<MangaDto[] | null>(null);
     const [searching, setSearching] = useState(false);
     const [searchError, setSearchError] = useState('');
+    const [globalStatus, setGlobalStatus] = useState<GlobalSearchStatusDto | null>(null);
+    const [globalSearching, setGlobalSearching] = useState(false);
+    const [globalError, setGlobalError] = useState('');
+    const globalStopped = useRef(false);
     const [selected, setSelected] = useState<MangaDto | null>(null);
     const [chapters, setChapters] = useState<ChapterDto[] | null>(null);
     const [chaptersError, setChaptersError] = useState('');
@@ -126,7 +173,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     const currentSource = sources.find(source => source.id === sourceId);
     const hiddenCount = sources.filter(source => source.hidden).length;
     const brokenCount = sources.filter(source => source.health === 'error' && !source.hidden).length;
-    const selectedKey = selected ? `${sourceId}:${selected.id}` : null;
+    const selectedKey = selected ? `${selected.sourceId}:${selected.id}` : null;
 
     const hideBroken = async () => {
         await api.hideBroken();
@@ -153,6 +200,9 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
 
     const runSearch = async () => {
         if (!sourceId || !query.trim()) return;
+        globalStopped.current = true; // a single-source search replaces the global one
+        setGlobalStatus(null);
+        setGlobalError('');
         setSearching(true);
         setSearchError('');
         setResults(null);
@@ -167,12 +217,61 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         }
     };
 
+    // global (all visible sources) search: start then poll; sources answer as
+    // their cache/endpoint allows and groups render progressively
+    const globalGroups = useMemo(() => {
+        if (!globalStatus) {
+            return [];
+        }
+        const rank = (group: GlobalSearchSourceResultDto) => (group.status === 'ok' ? (group.mangas.length > 0 ? 0 : 1) : 2);
+        return [...globalStatus.results].sort((a, b) => rank(a) - rank(b) || b.mangas.length - a.mangas.length || a.sourceLabel.localeCompare(b.sourceLabel));
+    }, [globalStatus]);
+
+    const runGlobalSearch = async () => {
+        if (globalSearching || !query.trim()) return;
+        globalStopped.current = false;
+        setGlobalSearching(true);
+        setGlobalError('');
+        setGlobalStatus(null);
+        setSearchError('');
+        setResults(null);
+        setSelected(null);
+        setChapters(null);
+        try {
+            const { jobId } = await api.searchAll(query.trim());
+            for (;;) {
+                await new Promise(resolve => setTimeout(resolve, 1200));
+                if (globalStopped.current) {
+                    return;
+                }
+                // 404 = the server purged the job (restart): keep what we have
+                const status = await api.globalSearch(jobId).catch(() => null);
+                if (!status) {
+                    return;
+                }
+                setGlobalStatus(status);
+                if (status.done) {
+                    return;
+                }
+            }
+        } catch (error) {
+            setGlobalError((error as Error).message);
+        } finally {
+            setGlobalSearching(false);
+        }
+    };
+
+    const stopGlobalSearch = () => {
+        globalStopped.current = true;
+        setGlobalSearching(false);
+    };
+
     const openChapters = async (manga: MangaDto) => {
         setSelected(manga);
         setChapters(null);
         setChaptersError('');
         try {
-            setChapters(await api.chapters(sourceId, manga.id, manga.title));
+            setChapters(await api.chapters(manga.sourceId, manga.id, manga.title));
         } catch (error) {
             setChapters([]);
             setChaptersError((error as Error).message);
@@ -188,7 +287,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         setPreviewError('');
         setPreviewLoading(true);
         try {
-            const result = await api.pages(sourceId, selected.id, chapter.id, selected.title, chapter.title);
+            const result = await api.pages(selected.sourceId, selected.id, chapter.id, selected.title, chapter.title);
             setPreview(result.pages || []);
         } catch (error) {
             setPreview([]);
@@ -202,15 +301,15 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
      *  The ref guards against a slow count resolving after the user switched targets. */
     const followCountFor = useRef<string | null>(null);
     const openFollowChoice = (manga: MangaDto) => {
-        const key = `${sourceId}:${manga.id}`;
+        const key = `${manga.sourceId}:${manga.id}`;
         followCountFor.current = key;
         setFollowTarget(manga);
-        if (selected?.id === manga.id && chapters) {
+        if (selected && `${selected.sourceId}:${selected.id}` === key && chapters) {
             setFollowCount(chapters.length);
             return;
         }
         setFollowCount(null);
-        api.chapters(sourceId, manga.id, manga.title)
+        api.chapters(manga.sourceId, manga.id, manga.title)
             .then(list => {
                 if (followCountFor.current === key) {
                     setFollowCount(list.length);
@@ -224,12 +323,12 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     };
 
     const followManga = async (manga: MangaDto, backlog: 'ignore' | 'grab') => {
-        const key = `${sourceId}:${manga.id}`;
+        const key = `${manga.sourceId}:${manga.id}`;
         setAddingKey(key);
         try {
             const mangaUrl = manga.url || (typeof manga.id === 'string' && manga.id.startsWith('http') ? manga.id : undefined);
             const result = await api.addToLibrary({
-                sourceId,
+                sourceId: manga.sourceId,
                 mangaId: manga.id,
                 title: manga.title,
                 url: mangaUrl,
@@ -257,7 +356,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     const enqueueChapters = async (manga: MangaDto, list: ChapterDto[]) => {
         try {
             const result = await api.enqueue({
-                sourceId,
+                sourceId: manga.sourceId,
                 mangaId: manga.id,
                 mangaTitle: manga.title,
                 chapters: list.map(chapter => ({ id: chapter.id, title: chapter.title }))
@@ -399,6 +498,9 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                     <Button onClick={runSearch} disabled={!query.trim() || !sourceId} loading={searching}>
                         <IconSearch size={15} /> {t('discover.searchButton')}
                     </Button>
+                    <Button variant="ghost" onClick={runGlobalSearch} disabled={!query.trim() || globalSearching} loading={globalSearching}>
+                        <IconGlobe size={15} /> {t('discover.searchEverywhere')}
+                    </Button>
                 </div>
             </Card>
 
@@ -416,34 +518,98 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
             {results && results.length > 0 && (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {results.map(manga => {
-                        const key = `${sourceId}:${manga.id}`;
-                        const isAdded = added.has(key);
+                        const key = `${manga.sourceId}:${manga.id}`;
                         return (
-                            <Card key={key} className="flex gap-3 p-3">
-                                <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} className="h-24 w-16 rounded-md" />
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-medium" title={manga.title}>
-                                        {manga.title}
-                                    </div>
-                                    <div className="mt-0.5 truncate text-xs text-zinc-500">{currentSource?.label}</div>
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                        <Button small variant="ghost" onClick={() => openChapters(manga)}>
-                                            {t('discover.chapters')}
-                                        </Button>
-                                        <Button
-                                            small
-                                            disabled={isAdded || addingKey !== null}
-                                            loading={addingKey === key}
-                                            onClick={() => openFollowChoice(manga)}
-                                        >
-                                            {isAdded ? <IconCheck size={13} /> : <IconPlus size={13} />}
-                                            {isAdded ? t('discover.followed') : t('discover.follow')}
-                                        </Button>
-                                    </div>
+                            <MangaResultCard
+                                key={key}
+                                manga={manga}
+                                sourceLabel={currentSource?.label ?? manga.sourceId}
+                                isAdded={added.has(key)}
+                                isAdding={addingKey === key}
+                                followDisabled={addingKey !== null}
+                                onChapters={openChapters}
+                                onFollow={openFollowChoice}
+                            />
+                        );
+                    })}
+                </div>
+            )}
+
+            {globalError && (
+                <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
+                    <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
+                    <span>{globalError}</span>
+                    <button type="button" onClick={() => setGlobalError('')} className="ml-auto text-red-400/70 hover:text-red-300">
+                        <IconX size={14} />
+                    </button>
+                </Card>
+            )}
+
+            {globalStatus && (
+                <div className="space-y-3">
+                    <Card className="flex flex-wrap items-center gap-3 p-3 text-sm text-zinc-400">
+                        {globalSearching ? (
+                            <>
+                                <Spinner />
+                                <span>{t('discover.globalProgress', { done: globalStatus.completed, total: globalStatus.total })}</span>
+                                <span className="ml-auto">
+                                    <Button small variant="ghost" onClick={stopGlobalSearch}>
+                                        <IconSquare size={13} /> {t('discover.globalStop')}
+                                    </Button>
+                                </span>
+                            </>
+                        ) : (
+                            <span>{t('discover.globalDone', { total: globalStatus.total })}</span>
+                        )}
+                    </Card>
+                    {globalGroups.map(group => {
+                        const source = sources.find(item => item.id === group.sourceId);
+                        return (
+                            <Card key={group.sourceId} className="p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {healthDot(source?.health, t)}
+                                    <span className="text-sm font-medium">{group.sourceLabel}</span>
+                                    {group.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
+                                    {group.status === 'ok' ? (
+                                        <span className="text-xs text-zinc-500">
+                                            {group.mangas.length > 0 ? t('discover.globalResultsCount', { n: group.mangas.length }) : t('discover.noResults')}
+                                            {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
+                                        </span>
+                                    ) : (
+                                        <Badge tone={group.status === 'skipped' ? undefined : 'red'}>
+                                            {group.status === 'error'
+                                                ? t('discover.globalSourceError')
+                                                : group.status === 'timeout'
+                                                  ? t('discover.globalSourceTimeout')
+                                                  : t('discover.globalSourceSkipped')}
+                                        </Badge>
+                                    )}
                                 </div>
+                                {group.mangas.length > 0 && (
+                                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                        {group.mangas.map(manga => {
+                                            const key = `${manga.sourceId}:${manga.id}`;
+                                            return (
+                                                <MangaResultCard
+                                                    key={key}
+                                                    manga={manga}
+                                                    sourceLabel={group.sourceLabel}
+                                                    isAdded={added.has(key)}
+                                                    isAdding={addingKey === key}
+                                                    followDisabled={addingKey !== null}
+                                                    onChapters={openChapters}
+                                                    onFollow={openFollowChoice}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </Card>
                         );
                     })}
+                    {!globalSearching && globalStatus.completed > 0 && globalGroups.every(group => group.mangas.length === 0) && (
+                        <EmptyState title={t('discover.globalNoResults')} hint={t('discover.globalNoResultsHint')} />
+                    )}
                 </div>
             )}
 
@@ -535,7 +701,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                 pages={preview}
                 loading={previewLoading}
                 error={previewError}
-                sourceId={sourceId}
+                sourceId={selected ? selected.sourceId : sourceId}
                 onClose={() => setPreview(null)}
             />
             {followTarget !== null && (

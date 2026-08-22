@@ -28,6 +28,7 @@ import { registerSourceHealthRoutes } from './routes/source-health.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { registerSourceUpdateRoutes } from './routes/sources-update.js';
 import { Scheduler } from './scheduler/scheduler.js';
+import { GlobalSearchService } from './sources/global-search.js';
 import { SourceHealthService } from './sources/health.js';
 import { EventBus } from './ws.js';
 
@@ -134,6 +135,16 @@ const importer = new ImportService({
     listSources: listSourceInfos
 });
 
+const globalSearch = new GlobalSearchService({
+    getAdapter: id => sourceRegistry.get(id),
+    listSources: async () => {
+        const hidden = healthService.getHiddenSet();
+        return (await sourceRegistry.list())
+            .filter(source => !hidden.has(source.id))
+            .map(source => ({ id: source.id, label: source.label, kind: source.kind }));
+    }
+});
+
 // --- http server -------------------------------------------------------------
 const app = Fastify({ logger: false });
 await app.register(fastifyWebsocket);
@@ -143,7 +154,7 @@ app.decorate('database', database);
 app.decorate('events', events);
 app.decorate('engine', engine);
 app.decorate('healthService', healthService);
-
+app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
 registerSourceRoutes(app, sourceRegistry);
 registerSourceHealthRoutes(app, healthService);
@@ -221,5 +232,6 @@ declare module 'fastify' {
         events: EventBus;
         engine: Awaited<ReturnType<typeof createEngine>>;
         healthService: SourceHealthService;
+        globalSearch: GlobalSearchService;
     }
 }
