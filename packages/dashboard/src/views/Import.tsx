@@ -4,8 +4,8 @@
  * reopened at any time — it simply polls the current job.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IconCheck, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
-import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle } from '../components/ui.js';
+import { IconCheck, IconFolder, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
+import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle, Toggle } from '../components/ui.js';
 import { type TFunction, useI18n } from '../i18n/index.js';
 import { api, type ImportJobSeries, type ImportJobStatus } from '../lib/api.js';
 
@@ -104,32 +104,40 @@ export default function Import({ onImported }: { onImported: () => void }) {
             <SectionTitle>{t('import.title')}</SectionTitle>
             <p className="-mt-3 mb-4 text-sm text-zinc-500">{t('import.intro')}</p>
 
-            <Card className="p-4">
-                <div className="flex flex-wrap items-end gap-3">
-                    <div className="min-w-64 flex-1">
-                        <label htmlFor="import-folder" className="mb-1 block text-xs text-zinc-500">
-                            {t('import.folderLabel')}
-                        </label>
-                        <Input id="import-folder" value={folderPath} onChange={value => setFolderPath(value)} placeholder="/biblio" />
+            <Card className="space-y-4 p-4">
+                <div>
+                    <label htmlFor="import-folder" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-zinc-300">
+                        <IconFolder size={14} className="text-zinc-500" />
+                        {t('import.folderLabel')}
+                    </label>
+                    <Input id="import-folder" value={folderPath} onChange={setFolderPath} placeholder="/biblio" />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className="text-faint">{t('import.folderHint')}</span>
+                        {job?.root && job.root !== folderPath.trim() && (
+                            <button
+                                type="button"
+                                className="min-w-0 truncate text-accent-soft transition-colors hover:underline"
+                                onClick={() => setFolderPath(job.root)}
+                            >
+                                {t('import.reuseRoot', { path: job.root })}
+                            </button>
+                        )}
                     </div>
-                    <label className="flex items-center gap-2 text-xs text-zinc-400">
-                        <input
-                            type="checkbox"
-                            checked={autoConfirm === 'auto'}
-                            disabled={active}
-                            onChange={event => setAutoConfirm(event.target.checked ? 'auto' : 'none')}
-                        />
-                        {t('import.autoConfirmLabel')}
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-zinc-400">
-                        <input type="checkbox" checked={autoDownload} disabled={active} onChange={event => setAutoDownload(event.target.checked)} />
-                        {t('import.autoDownloadLabel')}
-                    </label>
+                </div>
+
+                <div className="flex flex-col gap-2.5 border-t border-line pt-3.5 sm:flex-row sm:gap-6">
+                    <Toggle checked={autoConfirm === 'auto'} onChange={value => setAutoConfirm(value ? 'auto' : 'none')} label={t('import.autoConfirmLabel')} />
+                    <Toggle checked={autoDownload} onChange={setAutoDownload} label={t('import.autoDownloadLabel')} />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3.5">
+                    <p className="min-w-0 flex-1 text-xs text-faint sm:flex-none sm:max-w-md">{t('import.startHint')}</p>
                     <Button onClick={start} disabled={!folderPath.trim() || active} loading={busy && active}>
                         <IconPlay size={13} /> {t('import.start')}
                     </Button>
                 </div>
-                {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
+
+                {error && <div className="text-sm text-red-400">{error}</div>}
             </Card>
 
             {job && (
