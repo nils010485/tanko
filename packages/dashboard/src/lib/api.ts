@@ -19,6 +19,8 @@ import type {
     QueueStatusDto,
     ScheduleSettingsDto,
     ScheduleStatusDto,
+    SourceAlternativeDto,
+    SourceAlternativesResponseDto,
     SourceDto,
     SourceHealthDto
 } from '@tanko/shared';
@@ -187,6 +189,12 @@ export const api = {
         }),
     rollbackMigration: (entryId: number) =>
         request<{ ok: boolean; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/migration/rollback`, { method: 'POST' }),
+    entryAlternatives: (entryId: number) => request<SourceAlternativesResponseDto>(`/api/library/${entryId}/alternatives`),
+    migrateToSource: (entryId: number, target: SourceAlternativeDto) =>
+        request<{ kept: number; total: number; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/migrate`, {
+            method: 'POST',
+            body: JSON.stringify(target)
+        }),
 
     // downloads
     downloads: (params: { limit?: number; offset?: number; status?: string; q?: string } = {}) => {
@@ -218,9 +226,20 @@ export const api = {
     // settings
     settings: () => request<AppSettingsResponseDto>('/api/settings'),
     updateSettings: (
-        patch: Partial<QueueSettingsDto> & { preferredLanguages?: string[] | string; uiLanguage?: 'en' | 'fr'; useFirstChapterCovers?: boolean }
+        patch: Partial<QueueSettingsDto> & {
+            preferredLanguages?: string[] | string;
+            uiLanguage?: 'en' | 'fr';
+            useFirstChapterCovers?: boolean;
+            incompleteSourceDetection?: boolean;
+        }
     ) =>
-        request<{ queue: QueueSettingsDto; preferredLanguages: string[]; uiLanguage: 'en' | 'fr'; useFirstChapterCovers: boolean }>('/api/settings', {
+        request<{
+            queue: QueueSettingsDto;
+            preferredLanguages: string[];
+            uiLanguage: 'en' | 'fr';
+            useFirstChapterCovers: boolean;
+            incompleteSourceDetection: boolean;
+        }>('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify(patch)
         }),

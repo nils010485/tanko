@@ -1,4 +1,4 @@
-import type { LibraryEntryDto } from '@tanko/shared';
+import type { LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { DownloadQueue } from '../downloader/queue.js';
 import type { CoverService } from '../library/covers.js';
@@ -197,6 +197,21 @@ export function registerLibraryRoutes(
         const { entryId } = request.params;
         try {
             const { fresh } = await store.checkForNewChapters(Number(entryId));
+            // opt-in starved-source detection: probe other sources in the background
+            // when the check found nothing and the entry carries very few chapters
+            if (failover && fresh.length === 0) {
+                const checked = store.getEntry(Number(entryId));
+                if (checked) {
+                    void failover
+                        .suggestIfIncomplete({ id: checked.id, sourceId: checked.sourceId, title: checked.title }, checked.chapterCount)
+                        .then(suggested => {
+                            if (suggested) {
+                                publishEntry(checked.id);
+                            }
+                        })
+                        .catch(() => undefined);
+                }
+            }
             publishEntry(Number(entryId));
             return { newChapters: fresh.length };
         } catch (error) {
@@ -312,6 +327,55 @@ export function registerLibraryRoutes(
         return { applied: false };
     });
 
+    // Manual source picker: same series on other sources with their chapter counts
+    app.get<{ Params: { entryId: string } }>('/api/library/:entryId/alternatives', async (request, reply) => {
+        if (!failover) {
+            return reply.code(501).send({ error: 'Failover non disponible' });
+        }
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        try {
+            const alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            const payload: SourceAlternativesResponseDto = {
+                current: { sourceId: entry.sourceId, sourceLabel: entry.sourceLabel, chapterCount: entry.chapterCount },
+                alternatives
+            };
+            return payload;
+        } catch (error) {
+            return reply.code(502).send({ error: (error as Error).message });
+        }
+    });
+
+    // Migrate an entry to a source picked manually in the picker
+    app.post<{ Params: { entryId: string }; Body: Partial<SourceAlternativeDto> }>('/api/library/:entryId/migrate', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        const target = request.body;
+        if (!target?.sourceId || !target?.mangaId || !target?.mangaTitle || !target?.sourceLabel) {
+            return reply.code(400).send({ error: 'Body must contain sourceId, sourceLabel, mangaId and mangaTitle' });
+        }
+        if (target.sourceId === entry.sourceId && target.mangaId === entry.mangaId) {
+            return reply.code(400).send({ error: 'Entry already on this source' });
+        }
+        try {
+            const result = await store.migrateEntry(entry.id, {
+                sourceId: target.sourceId,
+                sourceLabel: target.sourceLabel,
+                mangaId: target.mangaId,
+                mangaTitle: target.mangaTitle,
+                url: target.url,
+                score: target.score
+            });
+            const updated = publishEntry(entry.id);
+            return { ...result, entry: updated };
+        } catch (error) {
+            return reply.code(502).send({ error: (error as Error).message });
+        }
+    });
     // Undo the latest source migration
     app.post<{ Params: { entryId: string } }>('/api/library/:entryId/migration/rollback', async (request, reply) => {
         const { entryId } = request.params;

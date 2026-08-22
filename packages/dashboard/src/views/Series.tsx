@@ -3,11 +3,11 @@
  * toggle, check / download actions and the full chapter list with per-chapter
  * download, retry, preview and restore. Reached via #/library/:id.
  */
-import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
+import type { LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChapterList, chapterTone } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
-import { IconArrowLeft, IconDownload, IconEye, IconLibrary, IconRefresh, IconSearch } from '../components/icons.js';
+import { IconArrowLeft, IconDownload, IconEye, IconGlobe, IconLibrary, IconRefresh, IconSearch, IconUndo, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, SectionTitle, Spinner, Toggle } from '../components/ui.js';
@@ -22,6 +22,10 @@ interface PreviewState {
     loading: boolean;
     error: string;
 }
+
+/** Entries with at most this many chapters get the "starved source" badge
+ *  (mirrors INCOMPLETE_SOURCE_CHAPTERS on the server). */
+const INCOMPLETE_BADGE_CHAPTERS = 10;
 
 export default function Series({
     entryId,
@@ -42,6 +46,15 @@ export default function Series({
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
     const toast = useToast();
+    /** Source picker dialog: alternatives with chapter counts. */
+    const [picker, setPicker] = useState<{ open: boolean; loading: boolean; error: string; data: SourceAlternativesResponseDto | null }>({
+        open: false,
+        loading: false,
+        error: '',
+        data: null
+    });
+    /** sourceId of the alternative being migrated to (row-level loading). */
+    const [migratingTo, setMigratingTo] = useState<string | null>(null);
     const { t, formatDate } = useI18n();
     /** Ignore responses that resolve after a newer fetch started (series switch, poll, refresh). */
     const requestSeq = useRef(0);
@@ -77,6 +90,7 @@ export default function Series({
     }, [jobsActive, loadChapters]);
 
     useEscapeKey(() => setPreview(null), preview !== null);
+    useEscapeKey(() => setPicker(current => ({ ...current, open: false })), picker.open);
 
     const setBusyFlag = (key: string, value: boolean) => setBusy(current => ({ ...current, [key]: value }));
 
@@ -141,6 +155,59 @@ export default function Series({
         }
     };
 
+    /** Open the manual source picker: same series on the other sources, with
+     *  chapter counts so a starved current source is obvious. */
+    const openPicker = async () => {
+        setPicker({ open: true, loading: true, error: '', data: null });
+        try {
+            const data = await api.entryAlternatives(entryId);
+            setPicker({ open: true, loading: false, error: '', data });
+        } catch (error) {
+            setPicker({ open: true, loading: false, error: (error as Error).message, data: null });
+        }
+    };
+
+    const closePicker = () => setPicker(current => ({ ...current, open: false }));
+
+    const migrateTo = async (target: SourceAlternativeDto) => {
+        setMigratingTo(target.sourceId);
+        try {
+            const result = await api.migrateToSource(entryId, target);
+            toast.success(t('library.migratedKept', { title: entry?.title ?? '', kept: result.kept, total: result.total }));
+            closePicker();
+            await refreshLibrary();
+            await loadChapters();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setMigratingTo(null);
+        }
+    };
+
+    /** Apply or dismiss the pending migration suggestion (banner). */
+    const confirmMigration = async (apply: boolean) => {
+        try {
+            const result = await api.confirmRematch(entryId, apply);
+            if (apply) {
+                toast.success(t('library.migratedKept', { title: entry?.title ?? '', kept: result.kept ?? 0, total: result.total ?? 0 }));
+            }
+            await refreshLibrary();
+            await loadChapters();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
+    const undoMigration = async () => {
+        try {
+            await api.rollbackMigration(entryId);
+            toast.success(t('library.rollbackMigrationHint'));
+            await refreshLibrary();
+            await loadChapters();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
     const toggleFollow = async (value: boolean) => {
         try {
             await api.setAutoDownload(entryId, value);
@@ -267,6 +334,11 @@ export default function Series({
                         </h2>
                         {entry.newCount > 0 && <Badge tone="orange">+{entry.newCount}</Badge>}
                         {entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>}
+                        {entry.chapterCount > 0 && entry.chapterCount <= INCOMPLETE_BADGE_CHAPTERS && (
+                            <button type="button" onClick={openPicker} title={t('series.changeSourceHint')}>
+                                <Badge tone="orange">{t('series.incompleteBadge', { n: entry.chapterCount })}</Badge>
+                            </button>
+                        )}
                         {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
@@ -300,10 +372,32 @@ export default function Series({
                         <Button small variant="ghost" onClick={rematch} loading={busy.rematch} title={t('library.rematchHint')}>
                             <IconSearch size={13} /> {t('library.rematch')}
                         </Button>
+                        <Button small variant="ghost" onClick={openPicker} title={t('series.changeSourceHint')}>
+                            <IconGlobe size={13} /> {t('series.changeSource')}
+                        </Button>
+                        {entry.canRollbackMigration && (
+                            <Button small variant="ghost" onClick={undoMigration} title={t('library.rollbackMigrationHint')}>
+                                <IconUndo size={13} /> {t('library.rollbackMigration')}
+                            </Button>
+                        )}
                     </div>
                 </div>
             </Card>
 
+            {entry.migrationSuggestion && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs">
+                    <span className="text-zinc-300">
+                        {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
+                        {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
+                    </span>
+                    <Button small onClick={() => confirmMigration(true)}>
+                        {t('library.migrate')}
+                    </Button>
+                    <Button small variant="ghost" onClick={() => confirmMigration(false)}>
+                        {t('common.cancel')}
+                    </Button>
+                </div>
+            )}
             <SectionTitle
                 right={
                     selectedChapters.size > 0 && (
@@ -338,6 +432,72 @@ export default function Series({
                 sourceId={entry.sourceId}
                 onClose={() => setPreview(null)}
             />
+
+            {picker.open && (
+                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (useEscapeKey below)
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    onClick={event => {
+                        if (event.target === event.currentTarget) closePicker();
+                    }}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={t('series.changeSource')}
+                        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50"
+                    >
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="break-words text-sm font-semibold text-fg">{t('series.changeSource')}</div>
+                            <IconButton title={t('common.close')} onClick={closePicker}>
+                                <IconX size={14} />
+                            </IconButton>
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                            {entry.sourceLabel} · {t('library.chaptersCount', { n: entry.chapterCount })} ({t('series.changeSourceCurrent')})
+                        </div>
+                        {picker.loading ? (
+                            <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+                                <Spinner /> {t('series.changeSourceSearching')}
+                            </div>
+                        ) : picker.error ? (
+                            <div className="mt-4 text-sm text-red-400">{picker.error}</div>
+                        ) : (picker.data?.alternatives.length ?? 0) === 0 ? (
+                            <div className="mt-4 text-sm text-zinc-500">{t('series.changeSourceEmpty')}</div>
+                        ) : (
+                            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                                {picker.data?.alternatives.map(alternative => (
+                                    <div
+                                        key={`${alternative.sourceId}:${alternative.mangaId}`}
+                                        className="flex items-center gap-3 rounded-lg border border-line bg-zinc-950/50 p-3"
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-sm text-zinc-200">
+                                                {alternative.sourceLabel}
+                                                {alternative.mangaTitle !== entry.title && (
+                                                    <span className="ml-1 text-zinc-500">— {alternative.mangaTitle}</span>
+                                                )}
+                                            </div>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+                                                <span className="text-zinc-300">{t('library.chaptersCount', { n: alternative.chapterCount })}</span>
+                                                {alternative.chapterCount > entry.chapterCount && (
+                                                    <span className="text-emerald-400">
+                                                        {t('series.changeSourceMore', { n: alternative.chapterCount - entry.chapterCount })}
+                                                    </span>
+                                                )}
+                                                <span>{t('series.changeSourceMatch', { n: Math.round((alternative.score ?? 0) * 100) })}</span>
+                                            </div>
+                                        </div>
+                                        <Button small onClick={() => migrateTo(alternative)} loading={migratingTo === alternative.sourceId}>
+                                            {t('library.migrate')}
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

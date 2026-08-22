@@ -93,6 +93,27 @@ export interface MigrationSuggestion {
     mangaId: string;
     mangaTitle: string;
     score: number;
+    /** Chapters offered by the suggested source (set by the picker/detection). */
+    chapterCount?: number;
+}
+
+/** Same series on another source, as shown by the manual source picker. */
+export interface SourceAlternativeDto {
+    sourceId: string;
+    sourceLabel: string;
+    mangaId: string;
+    mangaTitle: string;
+    url?: string;
+    /** Title similarity, 0..1. */
+    score?: number;
+    /** Chapters offered by this source in the preferred languages. */
+    chapterCount: number;
+}
+
+/** Response of GET /api/library/:id/alternatives (manual source picker). */
+export interface SourceAlternativesResponseDto {
+    current: { sourceId: string; sourceLabel: string; chapterCount: number };
+    alternatives: SourceAlternativeDto[];
 }
 
 export interface LibraryEntryDto {
@@ -220,6 +241,10 @@ export interface AppSettingsResponseDto {
     uiLanguage: 'en' | 'fr';
     /** Use the first downloaded chapter page as the library cover (WebP cache in SQLite). */
     useFirstChapterCovers: boolean;
+    /** Opt-in: starved sources (very few chapters) get searched on other
+     *  sources after a check; a migration suggestion is stored when one of
+     *  them offers far more chapters. */
+    incompleteSourceDetection: boolean;
     diskUsedBytes: number;
 }
 

@@ -52,6 +52,7 @@ export default function Settings() {
     const [languages, setLanguages] = useState<string[]>([]);
     const [savedLanguages, setSavedLanguages] = useState<string[]>([]);
     const [useCovers, setUseCovers] = useState(false);
+    const [detectIncomplete, setDetectIncomplete] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
     const [updateStatus, setUpdateStatus] = useState<ConnectorsUpdateStatus | null>(null);
@@ -68,6 +69,7 @@ export default function Settings() {
         setLanguages(data.preferredLanguages || []);
         setSavedLanguages(data.preferredLanguages || []);
         setUseCovers(data.useFirstChapterCovers ?? false);
+        setDetectIncomplete(data.incompleteSourceDetection ?? false);
         setUpdateStatus(await api.sourcesUpdateStatus());
     }, []);
 
@@ -104,6 +106,17 @@ export default function Settings() {
             }
         } catch (error) {
             setUseCovers(!value);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Starved-source detection is applied server-side on toggle. */
+    const toggleDetection = async (value: boolean) => {
+        setDetectIncomplete(value);
+        try {
+            await api.updateSettings({ incompleteSourceDetection: value });
+        } catch (error) {
+            setDetectIncomplete(!value);
             toast.error((error as Error).message);
         }
     };
@@ -224,6 +237,9 @@ export default function Settings() {
                             </SettingRow>
                             <SettingRow label={t('settings.useFirstChapterCovers')} hint={t('settings.useFirstChapterCoversHint')}>
                                 <Toggle checked={useCovers} onChange={toggleCovers} />
+                            </SettingRow>
+                            <SettingRow label={t('settings.incompleteSourceDetection')} hint={t('settings.incompleteSourceDetectionHint')}>
+                                <Toggle checked={detectIncomplete} onChange={toggleDetection} />
                             </SettingRow>
                         </>
                     )}

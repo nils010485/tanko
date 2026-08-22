@@ -208,6 +208,16 @@ export const en = {
     'series.downloadMissingHint': 'Queue the {n} chapter(s) never downloaded',
     'series.downloadSelection': 'Download selection ({n})',
 
+    'series.changeSource': 'Change source',
+    'series.changeSourceHint': 'Search the other sources for this series and move it (downloads are kept)',
+    'series.changeSourceSearching': 'Searching the other sources…',
+    'series.changeSourceEmpty': 'No other source has this series.',
+    'series.changeSourceCurrent': 'current',
+    'series.changeSourceMore': '+{n} vs current',
+    'series.changeSourceMatch': '{n}% match',
+    'series.incompleteBadge': 'only {n} chapters on this source',
+    'series.rollbackHere': 'Undo the last source change',
+
     // downloads
     'downloads.title': 'Downloads',
     'downloads.filterAll': 'All',
@@ -345,6 +355,9 @@ export const en = {
         'Only these languages are kept: they filter sources on import and chapters offered by multilingual sources (MangaDex…). Unchecking everything means no filter.',
     'settings.useFirstChapterCovers': 'Use the first chapter as thumbnail',
     'settings.useFirstChapterCoversHint': 'Stores a compressed WebP of the first page of the earliest downloaded chapter in the database',
+    'settings.incompleteSourceDetection': 'Detect incomplete sources',
+    'settings.incompleteSourceDetectionHint':
+        'After each check, series with very few chapters are searched on the other sources and a migration is suggested when one offers far more',
 
     'schedule.maintenance': 'Maintenance',
     'schedule.coversTitle': 'Thumbnail cache',

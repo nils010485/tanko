@@ -23,7 +23,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerImageRoutes } from './routes/images.js';
 import { registerImportRoutes } from './routes/import.js';
 import { registerLibraryRoutes } from './routes/library.js';
-import { createLanguagePreference, loadPersistedQueueSettings, registerSettingsRoutes } from './routes/settings.js';
+import { createIncompleteDetectionPref, createLanguagePreference, loadPersistedQueueSettings, registerSettingsRoutes } from './routes/settings.js';
 import { registerSourceHealthRoutes } from './routes/source-health.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { registerSourceUpdateRoutes } from './routes/sources-update.js';
@@ -126,7 +126,8 @@ const failover = new FailoverService({
     registry: sourceRegistry,
     store: library,
     listSources: listSourceInfos,
-    getPreferredLanguages: preferredLanguages
+    getPreferredLanguages: preferredLanguages,
+    isDetectionEnabled: createIncompleteDetectionPref(database)
 });
 const scheduler = new Scheduler({ db: database, store: library, queue, events, failover });
 const importer = new ImportService({

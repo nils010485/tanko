@@ -8,6 +8,7 @@
  * a suggestion for the dashboard.
  */
 import type { SourceRegistry } from '@tanko/core';
+import type { SourceAlternativeDto } from '@tanko/shared';
 import { confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
@@ -24,13 +25,25 @@ function byKind(a: SourceInfo, b: SourceInfo): number {
 
 import type { SourceInfo } from '../import/service.js';
 
+/** Starved-source detection: entries with at most this many chapters are
+ *  searched elsewhere (opt-in setting). */
+export const INCOMPLETE_SOURCE_CHAPTERS = 10;
+/** An alternative must offer at least this multiple of the current chapter
+ *  count to be worth suggesting. */
+const IMPROVEMENT_FACTOR = 2;
+
 export class FailoverService {
+    /** Entries currently probed by suggestIfIncomplete (re-entry guard). */
+    private readonly detectionRunning = new Set<number>();
+
     constructor(
         private readonly opts: {
             registry: SourceRegistry;
             store: LibraryStore;
             listSources: () => Promise<SourceInfo[]>;
             getPreferredLanguages: () => string[];
+            /** Opt-in starved-source detection (Settings); absent = disabled. */
+            isDetectionEnabled?: () => boolean;
         }
     ) {}
 
@@ -88,6 +101,78 @@ export class FailoverService {
 
         candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
         return { best, confidence: confidenceFor(best?.score), candidates: candidates.slice(0, 8) };
+    }
+
+    /**
+     * Chapter-counted alternatives for the manual source picker: the best
+     * candidate per source, probed in score order (broken ones are skipped),
+     * sorted by chapter count so incomplete sources are obvious.
+     */
+    async listAlternatives(entry: { id: number; sourceId: string; title: string }): Promise<SourceAlternativeDto[]> {
+        const { candidates } = await this.findAlternative(entry);
+        const perSource = new Map<string, MigrationTarget>();
+        for (const candidate of candidates) {
+            if (!perSource.has(candidate.sourceId)) {
+                perSource.set(candidate.sourceId, candidate);
+            }
+        }
+        const preferred = this.opts.getPreferredLanguages();
+        const alternatives: SourceAlternativeDto[] = [];
+        for (const candidate of perSource.values()) {
+            if (alternatives.length >= 6) {
+                break; // bound the latency: 6 distinct sources max
+            }
+            try {
+                const adapter = await this.opts.registry.get(candidate.sourceId);
+                if (!adapter) {
+                    continue;
+                }
+                const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+                const chapterCount = chapters.filter(chapter => chapterAllowed(chapter.language, preferred)).length;
+                if (chapterCount === 0) {
+                    continue;
+                }
+                alternatives.push({ ...candidate, chapterCount });
+            } catch {
+                /* a broken alternative is simply skipped */
+            }
+        }
+        return alternatives.sort((a, b) => b.chapterCount - a.chapterCount || (b.score ?? 0) - (a.score ?? 0));
+    }
+
+    /**
+     * Opt-in starved-source detection: after a check that found nothing new,
+     * an entry carrying at most INCOMPLETE_SOURCE_CHAPTERS chapters is searched
+     * on the other sources; when one offers at least twice as many, it is
+     * stored as a migration suggestion (existing banner flow). Returns true
+     * when a suggestion was stored.
+     */
+    async suggestIfIncomplete(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<boolean> {
+        if (!this.opts.isDetectionEnabled?.()) {
+            return false;
+        }
+        if (chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
+            return false;
+        }
+        if (this.detectionRunning.has(entry.id)) {
+            return false;
+        }
+        if (this.opts.store.getEntry(entry.id)?.migrationSuggestion) {
+            return false; // a suggestion is already awaiting review
+        }
+        this.detectionRunning.add(entry.id);
+        try {
+            const alternatives = await this.listAlternatives(entry);
+            const better = alternatives.find(alternative => alternative.chapterCount >= chapterCount * IMPROVEMENT_FACTOR);
+            if (!better) {
+                return false;
+            }
+            this.opts.store.setMigrationSuggestion(entry.id, better);
+            console.log(`[failover] "${entry.title}" : source incomplète (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
+            return true;
+        } finally {
+            this.detectionRunning.delete(entry.id);
+        }
     }
 
     /**

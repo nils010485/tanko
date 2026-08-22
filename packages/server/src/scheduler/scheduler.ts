@@ -8,6 +8,7 @@ import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
 import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
+import { INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
 import { type NotificationSettings, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
@@ -18,6 +19,8 @@ const LAST_RUN_KEY = 'schedule.lastrun';
  *  self-heal within minutes; real outages arm the failover in ~30min instead
  *  of ~18h at cron 6h × 3 failures). */
 const RETRY_DELAY_MS = 12 * 60 * 1000;
+/** Max starved-source probes per scheduler run (see _detectIncompleteSources). */
+const DETECTION_PROBES = 10;
 /** Retry rounds after a run: t0 + 12min + 24min reaches the 3-failure threshold. */
 const MAX_RETRY_ROUNDS = 2;
 export interface ScheduleSettings {
@@ -51,7 +54,11 @@ export class Scheduler {
             queue: DownloadQueue;
             events: EventBus;
             /** Optional source failover: invoked after repeated check failures. */
-            failover?: { maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto?: boolean): Promise<'migrated' | 'suggested' | 'none'> };
+            failover?: {
+                maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto?: boolean): Promise<'migrated' | 'suggested' | 'none'>;
+                /** Opt-in starved-source detection (Settings toggle). */
+                suggestIfIncomplete?(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<boolean>;
+            };
         }
     ) {
         this.settings = this._load();
@@ -137,6 +144,7 @@ export class Scheduler {
             }
 
             this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s) in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+            this._detectIncompleteSources(); // background, opt-in
             if (totalNew > 0) {
                 await this._notifyNewChapters(newBySeries);
             }
@@ -152,6 +160,40 @@ export class Scheduler {
             this._scheduleRetry(failedIds, 0);
         }
         return { checked, newChapters: totalNew };
+    }
+
+    /** Background pass after each run (opt-in): starved sources — entries with
+     *  very few chapters — get searched on the other sources; a much richer
+     *  alternative is surfaced as a migration suggestion. Bounded to
+     *  DETECTION_PROBES entries per run to keep the source load sane. */
+    private _detectIncompleteSources(): void {
+        const suggest = this.opts.failover?.suggestIfIncomplete;
+        if (!suggest) {
+            return;
+        }
+        let probes = 0;
+        void (async () => {
+            for (const entry of await this.opts.store.listEntries()) {
+                if (probes >= DETECTION_PROBES) {
+                    break;
+                }
+                if (entry.hidden || entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
+                    continue;
+                }
+                probes++;
+                try {
+                    if (await suggest({ id: entry.id, sourceId: entry.sourceId, title: entry.title }, entry.chapterCount)) {
+                        const updated = this.opts.store.getEntry(entry.id);
+                        if (updated) {
+                            this.opts.events.publish({ type: 'library.updated', entry: updated });
+                        }
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                } catch {
+                    /* next entry */
+                }
+            }
+        })();
     }
 
     status(): ScheduleStatusDto {

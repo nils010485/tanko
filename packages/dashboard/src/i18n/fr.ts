@@ -208,6 +208,16 @@ export const fr: typeof import('./en.js').en = {
     'series.downloadMissingHint': 'Met en file les {n} chapitre(s) jamais récupéré(s)',
     'series.downloadSelection': 'Télécharger la sélection ({n})',
 
+    'series.changeSource': 'Changer de source',
+    'series.changeSourceHint': 'Cherche la série sur les autres sources et la déplace (les téléchargements sont conservés)',
+    'series.changeSourceSearching': 'Recherche sur les autres sources…',
+    'series.changeSourceEmpty': 'Aucune autre source ne propose cette série.',
+    'series.changeSourceCurrent': 'actuelle',
+    'series.changeSourceMore': '+{n} vs actuelle',
+    'series.changeSourceMatch': '{n}% de correspondance',
+    'series.incompleteBadge': 'seulement {n} chapitres sur cette source',
+    'series.rollbackHere': 'Annuler le dernier changement de source',
+
     // downloads
     'downloads.title': 'Téléchargements',
     'downloads.filterAll': 'Tous',
@@ -372,6 +382,10 @@ export const fr: typeof import('./en.js').en = {
     'settings.unreachableAfterUpdate': 'Serveur injoignable après la mise à jour — vérifiez qu’il redémarre, puis rechargez la page.',
     'settings.useFirstChapterCovers': 'Utiliser le premier chapitre comme vignette',
     'settings.useFirstChapterCoversHint': 'Stocke en base un WebP compressé de la première page du premier chapitre téléchargé',
+
+    'settings.incompleteSourceDetection': 'Détecter les sources incomplètes',
+    'settings.incompleteSourceDetectionHint':
+        'Après chaque vérification, les séries à très peu de chapitres sont cherchées sur les autres sources et une migration est suggérée quand l’une en propose bien plus',
 
     'schedule.maintenance': 'Maintenance',
     'schedule.coversTitle': 'Cache des vignettes',
