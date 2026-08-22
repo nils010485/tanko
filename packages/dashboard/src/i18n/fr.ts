@@ -51,6 +51,8 @@ export const fr: typeof import('./en.js').en = {
     'discover.search': 'Recherche',
     'discover.searchPlaceholder': 'Titre du manga ou manhwa…',
     'discover.searchButton': 'Rechercher',
+    'discover.scopeSource': 'Cette source',
+    'discover.scopeGlobal': 'Toutes les sources saines',
     'discover.noResults': 'Aucun résultat',
     'discover.noResultsHint': 'Essayez une autre recherche ou une autre source.',
     'discover.chapters': 'Chapitres',

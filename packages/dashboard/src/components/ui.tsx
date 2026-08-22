@@ -122,6 +122,7 @@ const fieldClasses = 'max-w-full rounded-lg border border-line bg-surface px-3 p
 export function Input({
     value,
     onChange,
+    onEnter,
     placeholder,
     type = 'text',
     id,
@@ -129,6 +130,7 @@ export function Input({
 }: {
     value: string;
     onChange: (value: string) => void;
+    onEnter?: () => void;
     placeholder?: string;
     type?: string;
     id?: string;
@@ -141,6 +143,12 @@ export function Input({
             value={value}
             placeholder={placeholder}
             onChange={event => onChange(event.target.value)}
+            onKeyDown={event => {
+                if (event.key === 'Enter' && onEnter) {
+                    event.preventDefault();
+                    onEnter();
+                }
+            }}
             className={`${fieldClasses} ${className}`}
         />
     );

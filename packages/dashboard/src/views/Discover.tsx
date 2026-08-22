@@ -106,6 +106,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     const [comboOpen, setComboOpen] = useState(false);
     const [sourceQuery, setSourceQuery] = useState('');
     const [sourceId, setSourceId] = useState('');
+    const [scope, setScope] = useState<'source' | 'global'>('source');
     const [rechecking, setRechecking] = useState(false);
 
     const [query, setQuery] = useState('');
@@ -280,7 +281,10 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         setGlobalSearching(false);
     };
 
+    const runScopedSearch = scope === 'global' ? runGlobalSearch : runSearch;
+
     const openChapters = async (manga: MangaDto) => {
+        setSelected(manga);
         setSelected(manga);
         setChapters(null);
         setChaptersError('');
@@ -398,123 +402,145 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                 {t('discover.title')}
             </SectionTitle>
 
-            {/* Source picker */}
+            {/* Unified search: source picker as prefix, single button, scope toggle below */}
             <Card className="p-4">
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">{t('discover.source')}</div>
-                <div className="relative" ref={comboRef}>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setComboOpen(open => !open);
-                            setSourceQuery('');
-                        }}
-                        className="flex w-full items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 text-left text-sm transition-colors hover:border-zinc-600"
-                    >
-                        {currentSource ? (
-                            <>
-                                {healthDot(currentSource.health, t)}
-                                <span className="flex-1 truncate font-medium">{currentSource.label}</span>
-                                {currentSource.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
-                            </>
-                        ) : (
-                            <span className="flex-1 text-zinc-500">{t('discover.pickSource')}</span>
-                        )}
-                        <IconChevronDown size={16} className="text-zinc-500" />
-                    </button>
+                <div className="flex flex-wrap items-stretch gap-2">
+                    <div className="relative" ref={comboRef}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setComboOpen(open => !open);
+                                setSourceQuery('');
+                            }}
+                            className="flex h-full items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm transition-colors hover:border-zinc-600"
+                        >
+                            {currentSource ? (
+                                <>
+                                    {healthDot(currentSource.health, t)}
+                                    <span className="max-w-40 truncate font-medium">{currentSource.label}</span>
+                                    {currentSource.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
+                                </>
+                            ) : (
+                                <span className="text-zinc-500">{t('discover.pickSource')}</span>
+                            )}
+                            <IconChevronDown size={16} className="text-zinc-500" />
+                        </button>
 
-                    {comboOpen && (
-                        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl shadow-black/40">
-                            <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
-                                <IconSearch size={14} className="text-zinc-500" />
-                                <input
-                                    // biome-ignore lint/a11y/noAutofocus: the combobox search should be focused as soon as it opens
-                                    autoFocus
-                                    value={sourceQuery}
-                                    onChange={event => setSourceQuery(event.target.value)}
-                                    placeholder={t('discover.filterSources')}
-                                    className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-600"
-                                />
-                            </div>
-                            <div className="max-h-80 overflow-y-auto">
-                                {visibleSources.map(source => (
+                        {comboOpen && (
+                            <div className="absolute z-20 mt-2 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl shadow-black/40">
+                                <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+                                    <IconSearch size={14} className="text-zinc-500" />
+                                    <input
+                                        // biome-ignore lint/a11y/noAutofocus: the combobox search should be focused as soon as it opens
+                                        autoFocus
+                                        value={sourceQuery}
+                                        onChange={event => setSourceQuery(event.target.value)}
+                                        placeholder={t('discover.filterSources')}
+                                        className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-600"
+                                    />
+                                </div>
+                                <div className="max-h-80 overflow-y-auto">
+                                    {visibleSources.map(source => (
+                                        <button
+                                            type="button"
+                                            key={source.id}
+                                            onClick={() => {
+                                                setSourceId(source.id);
+                                                setComboOpen(false);
+                                                setScope('source');
+                                            }}
+                                            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-800 ${source.id === sourceId ? 'bg-zinc-800/70' : ''}`}
+                                        >
+                                            {healthDot(source.health, t)}
+                                            <span className="flex-1 truncate">{source.label}</span>
+                                            {source.kind === 'native' && <IconStar size={13} className="text-violet-400" />}
+                                            {source.id === sourceId && <IconCheck size={14} className="text-orange-400" />}
+                                        </button>
+                                    ))}
+                                    {visibleSources.length === 0 && (
+                                        <div className="px-3 py-4 text-center text-sm text-zinc-500">{t('discover.noSourceMatch')}</div>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 text-xs text-zinc-500">
+                                    <span>
+                                        {showHidden
+                                            ? t('discover.sourcesCount', { n: sources.length })
+                                            : t('discover.sourcesVisible', { n: sources.length - hiddenCount })}
+                                        {hiddenCount > 0 && ` · ${t('discover.hiddenCount', { n: hiddenCount })}`}
+                                    </span>
                                     <button
                                         type="button"
-                                        key={source.id}
-                                        onClick={() => {
-                                            setSourceId(source.id);
-                                            setComboOpen(false);
-                                        }}
-                                        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-800 ${source.id === sourceId ? 'bg-zinc-800/70' : ''}`}
+                                        onClick={() => setShowHidden(value => !value)}
+                                        className="flex items-center gap-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
                                     >
-                                        {healthDot(source.health, t)}
-                                        <span className="flex-1 truncate">{source.label}</span>
-                                        {source.kind === 'native' && <IconStar size={13} className="text-violet-400" />}
-                                        {source.id === sourceId && <IconCheck size={14} className="text-orange-400" />}
+                                        {showHidden ? (
+                                            <>
+                                                <IconEyeOff size={13} /> {t('discover.hideHidden')}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <IconEye size={13} /> {t('discover.showHidden')}
+                                            </>
+                                        )}
                                     </button>
-                                ))}
-                                {visibleSources.length === 0 && (
-                                    <div className="px-3 py-4 text-center text-sm text-zinc-500">{t('discover.noSourceMatch')}</div>
-                                )}
+                                </div>
                             </div>
-                            <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 text-xs text-zinc-500">
-                                <span>
-                                    {showHidden
-                                        ? t('discover.sourcesCount', { n: sources.length })
-                                        : t('discover.sourcesVisible', { n: sources.length - hiddenCount })}
-                                    {hiddenCount > 0 && ` · ${t('discover.hiddenCount', { n: hiddenCount })}`}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowHidden(value => !value)}
-                                    className="flex items-center gap-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
-                                >
-                                    {showHidden ? (
-                                        <>
-                                            <IconEyeOff size={13} /> {t('discover.hideHidden')}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <IconEye size={13} /> {t('discover.showHidden')}
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {currentSource && (
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        <Badge tone={currentSource.kind === 'native' ? 'purple' : 'zinc'}>{currentSource.kind}</Badge>
-                        {currentSource.health === 'ok' && (
-                            <Badge tone="green">
-                                {t('discover.statusOk')}
-                                {currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
-                            </Badge>
                         )}
-                        {currentSource.health === 'error' && <Badge tone="red">{t('discover.statusError')}</Badge>}
-                        {currentSource.health === 'checking' && <Badge tone="blue">{t('discover.statusChecking')}</Badge>}
-                        {currentSource.health === 'untested' && <Badge>{t('discover.statusUntested')}</Badge>}
-                        {currentSource.tags?.slice(0, 4).map((tag: string) => (
-                            <Badge key={tag}>{tag}</Badge>
-                        ))}
                     </div>
-                )}
-            </Card>
 
-            {/* Search */}
-            <Card className="p-4">
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">{t('discover.search')}</div>
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="min-w-64 flex-1">
-                        <Input className="w-full" value={query} onChange={setQuery} placeholder={t('discover.searchPlaceholder')} />
+                    <div className="relative min-w-64 flex-1">
+                        <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                        <Input
+                            className="w-full pl-9"
+                            value={query}
+                            onChange={setQuery}
+                            onEnter={runScopedSearch}
+                            placeholder={t('discover.searchPlaceholder')}
+                        />
                     </div>
-                    <Button onClick={runSearch} disabled={!query.trim() || !sourceId} loading={searching}>
+
+                    <Button
+                        onClick={runScopedSearch}
+                        disabled={!query.trim() || (scope === 'source' && !sourceId) || searching || globalSearching}
+                        loading={searching || globalSearching}
+                    >
                         <IconSearch size={15} /> {t('discover.searchButton')}
                     </Button>
-                    <Button variant="ghost" onClick={runGlobalSearch} disabled={!query.trim() || globalSearching} loading={globalSearching}>
-                        <IconGlobe size={15} /> {t('discover.searchEverywhere')}
-                    </Button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div className="flex rounded-lg border border-line bg-zinc-950/60 p-0.5 text-xs">
+                        <button
+                            type="button"
+                            onClick={() => setScope('source')}
+                            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${scope === 'source' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        >
+                            {t('discover.scopeSource')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setScope('global')}
+                            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${scope === 'global' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        >
+                            <IconGlobe size={13} /> {t('discover.scopeGlobal')}
+                        </button>
+                    </div>
+
+                    {currentSource && scope === 'source' && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                            {healthDot(currentSource.health, t)}
+                            <span>
+                                {currentSource.health === 'ok' && t('discover.statusOk')}
+                                {currentSource.health === 'error' && t('discover.statusError')}
+                                {currentSource.health === 'checking' && t('discover.statusChecking')}
+                                {currentSource.health === 'untested' && t('discover.statusUntested')}
+                                {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
+                            </span>
+                            {currentSource.tags?.slice(0, 4).map((tag: string) => (
+                                <Badge key={tag}>{tag}</Badge>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </Card>
 

@@ -51,6 +51,8 @@ export const en = {
     'discover.search': 'Search',
     'discover.searchPlaceholder': 'Manga or manhwa title…',
     'discover.searchButton': 'Search',
+    'discover.scopeSource': 'This source',
+    'discover.scopeGlobal': 'All healthy sources',
     'discover.noResults': 'No results',
     'discover.noResultsHint': 'Try another search or another source.',
     'discover.chapters': 'Chapters',
