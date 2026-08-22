@@ -118,7 +118,9 @@ const queue = new DownloadQueue({
         if (entry) {
             events.publish({ type: 'library.updated', entry });
         }
-    }
+    },
+    /** "Clear queue" drops the jobs without finishing them — put the chapters back. */
+    onJobsCleared: pairs => library.revertClearedChapters(pairs)
 });
 const failover = new FailoverService({
     registry: sourceRegistry,

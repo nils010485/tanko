@@ -534,6 +534,18 @@ export class LibraryStore {
             .run(entryId, chapterId);
     }
 
+    /** Bulk variant of revertCancelledChapter for cleared queues: restores every
+     *  listed chapter still stuck at 'queued' back to its pre-queue status. */
+    revertClearedChapters(pairs: Array<{ entryId: number; chapterId: string }>): void {
+        const update = this.opts.db.db.prepare(
+            `UPDATE library_chapters SET status = COALESCE(prev_status, 'new'), prev_status = NULL
+             WHERE entry_id = ? AND chapter_id = ? AND status = 'queued'`
+        );
+        for (const { entryId, chapterId } of pairs) {
+            update.run(entryId, chapterId);
+        }
+    }
+
     /** Called by the download queue / import / failover when a chapter changes. */
     markChapter(entryId: number, chapterId: string, status: 'downloaded' | 'failed' | 'new', filePath?: string, origin = 'download'): void {
         const previous = this._get<{ title: string; status: string; path: string | null }>(

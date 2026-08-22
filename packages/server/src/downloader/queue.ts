@@ -97,6 +97,9 @@ export class DownloadQueue {
             settings: QueueSettings;
             /** Invoked when a job reaches a terminal state (completed/failed/cancelled). */
             onJobFinished?: (job: DownloadJobDto) => void;
+            /** Invoked with the (entry, chapter) pairs of queued jobs removed by
+             *  clearQueue(), so the library can restore their chapter status. */
+            onJobsCleared?: (pairs: Array<{ entryId: number; chapterId: string }>) => void;
         }
     ) {
         this.gate = new DomainGate(opts.settings.throttleMs);
@@ -226,13 +229,21 @@ export class DownloadQueue {
 
     /** Empty the pending queue: queued jobs are deleted, running ones get the
      *  cancel flag (consumed at the worker's next checkpoint, so they finish
-     *  as 'cancelled'). History is left untouched. */
+     *  as 'cancelled'). History is left untouched. Chapter statuses of the
+     *  removed jobs are restored through onJobsCleared so they do not stay
+     *  stuck at 'queued' with no job behind them. */
     clearQueue(): { cancelled: number; removed: number } {
         const active = this.opts.db.db.prepare("SELECT id FROM download_jobs WHERE status = 'downloading'").all() as unknown as Array<{ id: number }>;
         for (const job of active) {
             this.cancelFlags.set(job.id, true);
         }
+        const pairs = this.opts.db.db
+            .prepare("SELECT entry_id AS entryId, chapter_id AS chapterId FROM download_jobs WHERE status = 'queued' AND entry_id IS NOT NULL")
+            .all() as unknown as Array<{ entryId: number; chapterId: string }>;
         const removed = Number(this.opts.db.db.prepare("DELETE FROM download_jobs WHERE status = 'queued'").run().changes);
+        if (pairs.length > 0) {
+            this.opts.onJobsCleared?.(pairs);
+        }
         return { cancelled: active.length, removed };
     }
 
