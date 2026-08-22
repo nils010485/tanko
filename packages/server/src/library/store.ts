@@ -35,6 +35,7 @@ interface EntryRow {
     auto_download: number;
     check_failures: number;
     migration_suggestion: string | null;
+    migration_dismissed: string | null;
     hidden: number;
     last_checked_at: string | null;
     added_at: string;
@@ -310,6 +311,14 @@ export class LibraryStore {
         this.opts.db.db.prepare('UPDATE library SET migration_suggestion = ? WHERE id = ?').run(suggestion ? JSON.stringify(suggestion) : null, entryId);
     }
 
+    /** Dismiss a suggestion AND remember the refusal, so the background
+     *  detection does not re-suggest the same target on the next run. */
+    dismissMigrationSuggestion(entryId: number, suggestion: MigrationTarget): void {
+        this.opts.db.db
+            .prepare('UPDATE library SET migration_suggestion = NULL, migration_dismissed = ? WHERE id = ?')
+            .run(JSON.stringify(suggestion), entryId);
+    }
+
     /**
      * Move an entry to another source: snapshot the current state, then rebuild
      * the chapter list from the new source. Downloaded chapters keep their
@@ -361,7 +370,7 @@ export class LibraryStore {
         this.opts.db.db
             .prepare(
                 `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
-                    migration_suggestion = NULL, check_failures = 0, last_checked_at = ? WHERE id = ?`
+                    migration_suggestion = NULL, migration_dismissed = NULL, check_failures = 0, last_checked_at = ? WHERE id = ?`
             )
             .run(target.sourceId, source.label, target.mangaId, target.mangaTitle, target.url || null, now, entryId);
 
@@ -396,7 +405,7 @@ export class LibraryStore {
         this.opts.db.db
             .prepare(
                 `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
-                    migration_suggestion = NULL, check_failures = 0 WHERE id = ?`
+                    migration_suggestion = NULL, migration_dismissed = NULL, check_failures = 0 WHERE id = ?`
             )
             .run(data.entry.source_id, data.entry.source_label, data.entry.manga_id, data.entry.title, data.entry.url, entryId);
         this.opts.db.db.prepare('DELETE FROM library_chapters WHERE entry_id = ?').run(entryId);
@@ -737,6 +746,7 @@ export class LibraryStore {
         this._addColumn('library', columns, 'thumbnail', 'thumbnail TEXT');
         this._addColumn('library', columns, 'check_failures', 'check_failures INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'migration_suggestion', 'migration_suggestion TEXT');
+        this._addColumn('library', columns, 'migration_dismissed', 'migration_dismissed TEXT');
         this._addColumn('library', columns, 'hidden', 'hidden INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'download_failures', 'download_failures INTEGER NOT NULL DEFAULT 0');
         const chapterColumns = this.opts.db.db.prepare('PRAGMA table_info(library_chapters)').all() as Array<{ name: string }>;
@@ -770,6 +780,12 @@ export class LibraryStore {
         } catch {
             suggestion = undefined;
         }
+        let dismissed: LibraryEntryDto['dismissedMigration'];
+        try {
+            dismissed = row.migration_dismissed ? JSON.parse(row.migration_dismissed) : undefined;
+        } catch {
+            dismissed = undefined;
+        }
         let chapterCount = Number(counts.total || 0);
         let downloadedCount = Number(counts.downloaded || 0);
         // no chapter registered (import whose source-based sync failed,
@@ -796,6 +812,7 @@ export class LibraryStore {
             addedAt: row.added_at,
             checkFailures: Number(row.check_failures || 0),
             migrationSuggestion: suggestion,
+            dismissedMigration: dismissed,
             canRollbackMigration: Number(snapshot.n || 0) > 0,
             hidden: Number(row.hidden || 0) === 1
         };

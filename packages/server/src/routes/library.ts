@@ -201,7 +201,7 @@ export function registerLibraryRoutes(
             // when the check found nothing and the entry carries very few chapters
             if (failover && fresh.length === 0) {
                 const checked = store.getEntry(Number(entryId));
-                if (checked) {
+                if (checked && !checked.hidden) {
                     void failover
                         .suggestIfIncomplete({ id: checked.id, sourceId: checked.sourceId, title: checked.title }, checked.chapterCount)
                         .then(suggested => {
@@ -323,7 +323,8 @@ export function registerLibraryRoutes(
             const updated = publishEntry(Number(entryId));
             return { applied: true, ...result, entry: updated };
         }
-        store.setMigrationSuggestion(Number(entryId), null);
+        // remember the refusal so the background detection does not re-suggest it
+        store.dismissMigrationSuggestion(Number(entryId), entry.migrationSuggestion);
         return { applied: false };
     });
 
@@ -355,8 +356,18 @@ export function registerLibraryRoutes(
             return reply;
         }
         const target = request.body;
-        if (!target?.sourceId || !target?.mangaId || !target?.mangaTitle || !target?.sourceLabel) {
-            return reply.code(400).send({ error: 'Body must contain sourceId, sourceLabel, mangaId and mangaTitle' });
+        if (
+            typeof target?.sourceId !== 'string' ||
+            !target.sourceId ||
+            typeof target.mangaId !== 'string' ||
+            !target.mangaId ||
+            typeof target.mangaTitle !== 'string' ||
+            !target.mangaTitle ||
+            typeof target.sourceLabel !== 'string' ||
+            !target.sourceLabel ||
+            (target.url !== undefined && typeof target.url !== 'string')
+        ) {
+            return reply.code(400).send({ error: 'Body must contain string sourceId, sourceLabel, mangaId and mangaTitle' });
         }
         if (target.sourceId === entry.sourceId && target.mangaId === entry.mangaId) {
             return reply.code(400).send({ error: 'Entry already on this source' });

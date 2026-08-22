@@ -163,7 +163,19 @@ export class FailoverService {
         this.detectionRunning.add(entry.id);
         try {
             const alternatives = await this.listAlternatives(entry);
-            const better = alternatives.find(alternative => alternative.chapterCount >= chapterCount * IMPROVEMENT_FACTOR);
+            // the probe takes seconds of network: the entry may have been
+            // migrated, suggested or deleted meanwhile — re-read and bail out
+            const current = this.opts.store.getEntry(entry.id);
+            if (!current || current.migrationSuggestion || current.sourceId !== entry.sourceId) {
+                return false;
+            }
+            // never re-suggest a target the user explicitly dismissed
+            const dismissed = current.dismissedMigration;
+            const better = alternatives.find(
+                alternative =>
+                    alternative.chapterCount >= Math.max(chapterCount, 2) * IMPROVEMENT_FACTOR &&
+                    !(dismissed && dismissed.sourceId === alternative.sourceId && dismissed.mangaId === alternative.mangaId)
+            );
             if (!better) {
                 return false;
             }

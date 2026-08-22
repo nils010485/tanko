@@ -46,6 +46,8 @@ export class Scheduler {
     private lastRunResult?: string;
     private seriesChecked = 0;
     private newChaptersFound = 0;
+    /** A starved-source detection pass is in flight (prevents overlapping passes). */
+    private detectPassRunning = false;
 
     constructor(
         private readonly opts: {
@@ -166,32 +168,47 @@ export class Scheduler {
      *  very few chapters — get searched on the other sources; a much richer
      *  alternative is surfaced as a migration suggestion. Bounded to
      *  DETECTION_PROBES entries per run to keep the source load sane. */
+    /** Background pass after each run (opt-in): starved sources — entries with
+     *  very few chapters — get searched on the other sources; a much richer
+     *  alternative is surfaced as a migration suggestion. Bounded to
+     * DETECTION_PROBES entries per run to keep the source load sane. */
     private _detectIncompleteSources(): void {
-        const suggest = this.opts.failover?.suggestIfIncomplete;
-        if (!suggest) {
+        if (!this.opts.failover?.suggestIfIncomplete || this.detectPassRunning) {
             return;
         }
+        this.detectPassRunning = true;
         let probes = 0;
         void (async () => {
-            for (const entry of await this.opts.store.listEntries()) {
-                if (probes >= DETECTION_PROBES) {
-                    break;
-                }
-                if (entry.hidden || entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
-                    continue;
-                }
-                probes++;
-                try {
-                    if (await suggest({ id: entry.id, sourceId: entry.sourceId, title: entry.title }, entry.chapterCount)) {
-                        const updated = this.opts.store.getEntry(entry.id);
-                        if (updated) {
-                            this.opts.events.publish({ type: 'library.updated', entry: updated });
-                        }
+            try {
+                for (const entry of await this.opts.store.listEntries()) {
+                    if (probes >= DETECTION_PROBES) {
+                        break;
                     }
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                } catch {
-                    /* next entry */
+                    if (entry.hidden || entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
+                        continue;
+                    }
+                    probes++;
+                    try {
+                        // member call on purpose: suggestIfIncomplete relies on `this`
+                        const suggested = await this.opts.failover?.suggestIfIncomplete?.(
+                            { id: entry.id, sourceId: entry.sourceId, title: entry.title },
+                            entry.chapterCount
+                        );
+                        if (suggested) {
+                            const updated = this.opts.store.getEntry(entry.id);
+                            if (updated) {
+                                this.opts.events.publish({ type: 'library.updated', entry: updated });
+                            }
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                    } catch {
+                        /* next entry */
+                    }
                 }
+            } catch {
+                /* the pass is best-effort background work */
+            } finally {
+                this.detectPassRunning = false;
             }
         })();
     }

@@ -201,7 +201,7 @@ export default function Series({
     const undoMigration = async () => {
         try {
             await api.rollbackMigration(entryId);
-            toast.success(t('library.rollbackMigrationHint'));
+            toast.success(t('library.rollbackMigrationDone'));
             await refreshLibrary();
             await loadChapters();
         } catch (error) {
@@ -389,6 +389,9 @@ export default function Series({
                     <span className="text-zinc-300">
                         {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
                         {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
+                        {(entry.migrationSuggestion.chapterCount ?? 0) > 0 && (
+                            <span className="text-emerald-400"> · {t('library.chaptersCount', { n: entry.migrationSuggestion.chapterCount ?? 0 })}</span>
+                        )}
                     </span>
                     <Button small onClick={() => confirmMigration(true)}>
                         {t('library.migrate')}

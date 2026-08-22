@@ -150,6 +150,7 @@ export const fr: typeof import('./en.js').en = {
     'library.moreActions': 'Plus d’actions',
     'library.rollbackMigrationHint': 'Revenir à la source précédente',
     'library.rollbackMigration': '⟲ migration',
+    'library.rollbackMigrationDone': 'Source précédente restaurée',
     'library.reestablish': 'Rétablir',
     'library.remove': 'Retirer',
     'library.restoreFileHint': 'Restaurer le fichier précédent',
@@ -216,7 +217,6 @@ export const fr: typeof import('./en.js').en = {
     'series.changeSourceMore': '+{n} vs actuelle',
     'series.changeSourceMatch': '{n}% de correspondance',
     'series.incompleteBadge': 'seulement {n} chapitres sur cette source',
-    'series.rollbackHere': 'Annuler le dernier changement de source',
 
     // downloads
     'downloads.title': 'Téléchargements',

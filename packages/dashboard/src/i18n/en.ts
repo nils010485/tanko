@@ -150,6 +150,7 @@ export const en = {
     'library.moreActions': 'More actions',
     'library.rollbackMigrationHint': 'Go back to the previous source',
     'library.rollbackMigration': '⟲ migration',
+    'library.rollbackMigrationDone': 'Previous source restored',
     'library.reestablish': 'Restore',
     'library.remove': 'Remove',
     'library.restoreFileHint': 'Restore the previous file',
@@ -216,7 +217,6 @@ export const en = {
     'series.changeSourceMore': '+{n} vs current',
     'series.changeSourceMatch': '{n}% match',
     'series.incompleteBadge': 'only {n} chapters on this source',
-    'series.rollbackHere': 'Undo the last source change',
 
     // downloads
     'downloads.title': 'Downloads',

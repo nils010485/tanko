@@ -135,6 +135,8 @@ export interface LibraryEntryDto {
     checkFailures?: number;
     /** Suggested source migration (awaiting user confirmation). */
     migrationSuggestion?: MigrationSuggestion;
+    /** Migration target the user explicitly dismissed (detection must not re-suggest it). */
+    dismissedMigration?: MigrationSuggestion;
     /** A migration snapshot exists -> the last source change can be undone. */
     canRollbackMigration?: boolean;
     /** Hidden entries stay out of the default library list and the scheduler. */

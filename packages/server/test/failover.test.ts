@@ -106,4 +106,12 @@ describe('opt-in starved-source detection (suggestIfIncomplete)', () => {
         expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 42)).toBe(false);
         expect(store.getEntry(entryId)?.migrationSuggestion).toBeUndefined();
     });
+
+    it('does not re-suggest a target the user dismissed (a different source is fine)', async () => {
+        store.setMigrationSuggestion(entryId, null);
+        // the user rejected the richer source: only that exact target is barred
+        store.dismissMigrationSuggestion(entryId, { sourceId: 'richer', sourceLabel: 'Richer', mangaId: 'm1', mangaTitle: 'Starved Series', score: 1 });
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe(true);
+        expect(store.getEntry(entryId)?.migrationSuggestion?.sourceId).toBe('stranger');
+    });
 });
