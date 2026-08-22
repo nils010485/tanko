@@ -52,6 +52,13 @@ function sourceRank(source: SourceDto): number {
     return 3;
 }
 
+/** i18n key for each failed global-search status ('ok' groups show counts instead). */
+const GLOBAL_STATUS_KEYS: Record<'error' | 'timeout' | 'skipped', Parameters<TFunction>[0]> = {
+    error: 'discover.globalSourceError',
+    timeout: 'discover.globalSourceTimeout',
+    skipped: 'discover.globalSourceSkipped'
+};
+
 /** Search result card shared by the single-source and the global results. */
 function MangaResultCard({
     manga,
@@ -155,6 +162,13 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
 
+    // stop the global-search polling loop when the view unmounts
+    useEffect(() => {
+        globalStopped.current = false;
+        return () => {
+            globalStopped.current = true;
+        };
+    }, []);
     // close the chapters / page-preview / follow dialogs with Escape
     const closeModals = useCallback(() => {
         setSelected(null);
@@ -576,13 +590,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                                             {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
                                         </span>
                                     ) : (
-                                        <Badge tone={group.status === 'skipped' ? undefined : 'red'}>
-                                            {group.status === 'error'
-                                                ? t('discover.globalSourceError')
-                                                : group.status === 'timeout'
-                                                  ? t('discover.globalSourceTimeout')
-                                                  : t('discover.globalSourceSkipped')}
-                                        </Badge>
+                                        <Badge tone={group.status === 'skipped' ? undefined : 'red'}>{t(GLOBAL_STATUS_KEYS[group.status])}</Badge>
                                     )}
                                 </div>
                                 {group.mangas.length > 0 && (
