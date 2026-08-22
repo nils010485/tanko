@@ -24,7 +24,8 @@ beforeAll(async () => {
             dataDirectory: path.join(tmpDir, 'downloads'),
             directoryLayout: 'source',
             chapterFormat: 'img',
-            concurrency: 1,
+            parallelSources: 1,
+            concurrencyPerSource: 1,
             throttleMs: 0
         }
     });

@@ -29,8 +29,33 @@ const fakeSource = {
     checkHealth: async () => ({ ok: true, latencyMs: 1 })
 };
 
+// Sources whose getPages waits until the test opens the gate: the scheduler
+// marks their jobs "downloading" but they never finish, so tests can observe
+// the steady-state concurrency per source.
+let gateOpen = false;
+const gateWaiters: Array<() => void> = [];
+const openGate = () => {
+    gateOpen = true;
+    for (const waiter of gateWaiters.splice(0)) {
+        waiter();
+    }
+};
+const gatedSource = (id: string, label: string) => ({
+    ...fakeSource,
+    id,
+    label,
+    getPages: async () => {
+        if (!gateOpen) {
+            await new Promise<void>(resolve => gateWaiters.push(resolve));
+        }
+        return [`${baseUrl}/page1.png`];
+    }
+});
+const gatedA = gatedSource('gated-a', 'Gated A');
+const gatedB = gatedSource('gated-b', 'Gated B');
+const sourcesById: Record<string, unknown> = { 'test-source': fakeSource, 'gated-a': gatedA, 'gated-b': gatedB };
 const fakeRegistry: any = {
-    get: async (id: string) => (id === 'test-source' ? fakeSource : undefined),
+    get: async (id: string) => sourcesById[id],
     list: async () => [fakeSource]
 };
 
@@ -49,6 +74,7 @@ function waitForJob(jobId: number, statuses: string[], timeoutMs = 20000): Promi
         }, 200);
     });
 }
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 beforeAll(async () => {
     server = http.createServer((_, response) => {
@@ -67,7 +93,8 @@ beforeAll(async () => {
         settings: {
             dataDirectory: path.join(tmpDir, 'downloads'),
             chapterFormat: 'img',
-            concurrency: 2,
+            parallelSources: 1,
+            concurrencyPerSource: 2,
             throttleMs: 10
         }
     });
@@ -254,5 +281,29 @@ describe('DownloadQueue', () => {
         const history = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'completed'").get() as any;
         expect(history.n).toBeGreaterThan(0);
         queue.resume();
+    });
+
+    it('runs parallelSources × concurrencyPerSource jobs spread across sources', async () => {
+        queue.pause();
+        queue.updateSettings({ parallelSources: 2, concurrencyPerSource: 2 });
+        queue.enqueue([
+            ...[1, 2, 3].map(n => ({ sourceId: 'gated-a', mangaId: 'gated', mangaTitle: 'Gated', chapterId: `ga-${n}`, chapterTitle: `GA ${n}` })),
+            ...[1, 2, 3].map(n => ({ sourceId: 'gated-b', mangaId: 'gated', mangaTitle: 'Gated', chapterId: `gb-${n}`, chapterTitle: `GB ${n}` }))
+        ]);
+        queue.resume(); // schedules synchronously: 2 chapters per gated source start now
+        await sleep(300); // let the started jobs settle inside getPages
+
+        const downloading = (source: string) =>
+            (database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = ? AND status = 'downloading'").get(source) as any).n;
+        expect(downloading('gated-a')).toBe(2);
+        expect(downloading('gated-b')).toBe(2);
+        const queued = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE chapter_id IN ('ga-3', 'gb-3') AND status = 'queued'").get() as any;
+        expect(queued.n).toBe(2);
+
+        openGate(); // releases the 4 running jobs; the 2 queued ones then start and pass through
+        queue.updateSettings({ parallelSources: 1, concurrencyPerSource: 2 }); // restore the other tests' behavior
+        for (const row of database.db.prepare("SELECT id FROM download_jobs WHERE chapter_id LIKE 'g%'").all() as any[]) {
+            await waitForJob(row.id, ['completed']);
+        }
     });
 });

@@ -14,8 +14,6 @@ import { api, type CoverStatusDto, type SchedulePatch } from '../lib/api.js';
 
 const CRON_PRESETS: Array<{ value: string; key: Parameters<TFunction>[0] }> = [
     { value: '0 */6 * * *', key: 'schedule.cron6' },
-    { value: '0 */2 * * *', key: 'schedule.cron2' },
-    { value: '*/30 * * * *', key: 'schedule.cron30' },
     { value: '0 8,20 * * *', key: 'schedule.cronTwiceADay' },
     { value: '0 8 * * *', key: 'schedule.cronDaily' }
 ];

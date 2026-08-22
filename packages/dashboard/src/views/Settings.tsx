@@ -253,10 +253,20 @@ export default function Settings() {
                                     ]}
                                 />
                             </SettingRow>
-                            <SettingRow label={t('settings.concurrency')} hint={t('settings.concurrencyHint')}>
+                            <SettingRow label={t('settings.parallelSources')} hint={t('settings.parallelSourcesHint')}>
                                 <Select
-                                    value={String(draft.concurrency)}
-                                    onChange={value => patchDraft({ concurrency: Number(value) })}
+                                    value={String(draft.parallelSources)}
+                                    onChange={value => patchDraft({ parallelSources: Number(value) })}
+                                    options={[1, 2, 3, 4].map(n => ({ value: String(n), label: String(n) }))}
+                                />
+                            </SettingRow>
+                            <SettingRow
+                                label={t('settings.concurrencyPerSource')}
+                                hint={t('settings.concurrencyPerSourceHint', { total: draft.parallelSources * draft.concurrencyPerSource })}
+                            >
+                                <Select
+                                    value={String(draft.concurrencyPerSource)}
+                                    onChange={value => patchDraft({ concurrencyPerSource: Number(value) })}
                                     options={[1, 2, 3, 4, 5, 6].map(n => ({ value: String(n), label: String(n) }))}
                                 />
                             </SettingRow>

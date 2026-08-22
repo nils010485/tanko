@@ -1,7 +1,7 @@
 /**
  * Persistent download queue:
  *  - jobs stored in SQLite (survive restarts, resume after crash)
- *  - configurable worker concurrency, per-domain rate limiting
+ *  - per-source worker concurrency (parallel sources × parallel chapters), per-domain rate limiting
  *  - page-level retries with backoff
  *  - output: folder of images or CBZ (Hakuneko-compatible layout)
  *  - progress published on the WebSocket event bus
@@ -25,8 +25,10 @@ export interface QueueSettings {
     directoryLayout: DirectoryLayout;
     /** 'img' = folder of images, 'cbz' = comic archive. */
     chapterFormat: 'img' | 'cbz';
-    /** Number of chapters downloaded in parallel. */
-    concurrency: number;
+    /** Max number of distinct sources downloading at the same time. */
+    parallelSources: number;
+    /** Max number of chapters downloaded in parallel per source. */
+    concurrencyPerSource: number;
     /** Minimum delay (ms) between two requests to the same domain. */
     throttleMs: number;
     /** Days to keep finished jobs (completed/failed/cancelled); 0 keeps them forever. */
@@ -75,7 +77,8 @@ export class DownloadQueue {
     private readonly gate: DomainGate;
     private readonly cancelFlags = new Map<number, boolean>();
     private paused = false;
-    private active = 0;
+    /** Running downloads per source id; keys = busy sources (values are always > 0). */
+    private readonly activePerSource = new Map<string, number>();
     private timer: ReturnType<typeof setInterval> | undefined;
     private pruneTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -228,7 +231,8 @@ export class DownloadQueue {
 
     status(): { paused: boolean; active: number; queued: number } {
         const row = this.opts.db.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'queued'").get() as { n: number };
-        return { paused: this.paused, active: this.active, queued: row.n };
+        const active = [...this.activePerSource.values()].reduce((total, count) => total + count, 0);
+        return { paused: this.paused, active, queued: row.n };
     }
 
     getSettings(): QueueSettings {
@@ -240,9 +244,13 @@ export class DownloadQueue {
         if (patch.chapterFormat === 'img' || patch.chapterFormat === 'cbz') {
             settings.chapterFormat = patch.chapterFormat;
         }
-        if (typeof patch.concurrency === 'number' && patch.concurrency >= 1) {
-            settings.concurrency = Math.floor(patch.concurrency);
-            this._schedule();
+        // both concurrency knobs share the same validation; _schedule() is idempotent
+        for (const key of ['parallelSources', 'concurrencyPerSource'] as const) {
+            const value = patch[key];
+            if (typeof value === 'number' && value >= 1) {
+                settings[key] = Math.floor(value);
+                this._schedule();
+            }
         }
         if (typeof patch.throttleMs === 'number' && patch.throttleMs >= 0) {
             settings.throttleMs = patch.throttleMs;
@@ -335,15 +343,26 @@ export class DownloadQueue {
         if (this.paused) {
             return;
         }
-        while (this.active < this.opts.settings.concurrency) {
-            const row = this.opts.db.db.prepare("SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY id ASC LIMIT 1").get() as JobRow | undefined;
-            if (!row) {
-                break;
+        const rows = this.opts.db.db.prepare("SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY id ASC").all() as unknown as JobRow[];
+        for (const row of rows) {
+            const running = this.activePerSource.get(row.source_id) ?? 0;
+            // skip while the source already downloads its full share of chapters…
+            if (running >= this.opts.settings.concurrencyPerSource) {
+                continue;
             }
-            this.active++;
+            // …or while starting it would need a source slot and none is left
+            if (running === 0 && this.activePerSource.size >= this.opts.settings.parallelSources) {
+                continue;
+            }
+            this.activePerSource.set(row.source_id, running + 1);
             this._update(row.id, { status: 'downloading' });
             this._runJob(row).finally(() => {
-                this.active--;
+                const remaining = (this.activePerSource.get(row.source_id) ?? 1) - 1;
+                if (remaining > 0) {
+                    this.activePerSource.set(row.source_id, remaining);
+                } else {
+                    this.activePerSource.delete(row.source_id);
+                }
                 this._schedule();
             });
         }

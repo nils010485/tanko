@@ -50,9 +50,11 @@ const queueSettings: QueueSettings = {
     dataDirectory: persistedQueueSettings.dataDirectory || config.dataDirectory,
     directoryLayout: persistedQueueSettings.directoryLayout || 'source',
     chapterFormat: persistedQueueSettings.chapterFormat || 'cbz',
-    // NB: || (not ??) on concurrency is intentional — a persisted 0 must not
-    // override the default, while throttleMs 0 is a valid value (hence ??).
-    concurrency: persistedQueueSettings.concurrency || 2,
+    // NB: || (not ??) on the concurrency fields is intentional — a persisted 0
+    // must not override the default, while throttleMs 0 is a valid value (hence ??).
+    // Old installs only knew "concurrency": it becomes the per-source cap.
+    parallelSources: persistedQueueSettings.parallelSources || 2,
+    concurrencyPerSource: persistedQueueSettings.concurrencyPerSource || persistedQueueSettings.concurrency || 2,
     throttleMs: persistedQueueSettings.throttleMs ?? 250,
     historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? 30
 };

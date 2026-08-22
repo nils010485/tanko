@@ -39,7 +39,9 @@ Podman works too: the image is OCI-compatible, `podman build -t tanko .` or
 
 ## Configuration
 
-Chapter format, download concurrency/throttle and preferred languages are
+Chapter format, download parallelism (parallel sources × chapters per
+source), throttle and preferred languages are user settings: change them
+anytime in the dashboard's Settings tab, they are persisted in the database.
 user settings: change them anytime in the dashboard's Settings tab, they
 are persisted in the database.
 

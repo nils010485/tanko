@@ -22,9 +22,13 @@ function readJsonSetting<T>(db: Database, key: string, fallback: T): T {
     }
 }
 
+/** Queue settings persisted in the KV store. Legacy installs (single global
+ * concurrency cap) may still carry an old "concurrency" value, hence the extra field. */
+export type PersistedQueueSettings = Partial<QueueSettings> & { concurrency?: number };
+
 /** Load persisted queue settings (merged over the built-in defaults at startup). */
-export function loadPersistedQueueSettings(db: Database): Partial<QueueSettings> {
-    return readJsonSetting<Partial<QueueSettings>>(db, QUEUE_SETTINGS_KEY, {});
+export function loadPersistedQueueSettings(db: Database): PersistedQueueSettings {
+    return readJsonSetting<PersistedQueueSettings>(db, QUEUE_SETTINGS_KEY, {});
 }
 
 /** Preferred chapter/source languages (ISO codes); empty = no filter (all).

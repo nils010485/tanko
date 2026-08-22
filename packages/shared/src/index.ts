@@ -177,8 +177,10 @@ export interface QueueSettingsDto {
     directoryLayout: 'source' | 'series';
     /** 'img' = folder of images, 'cbz' = comic archive. */
     chapterFormat: 'img' | 'cbz';
-    /** Number of chapters downloaded in parallel. */
-    concurrency: number;
+    /** Max number of distinct sources downloading at the same time. */
+    parallelSources: number;
+    /** Max number of chapters downloaded in parallel per source. */
+    concurrencyPerSource: number;
     /** Minimum delay (ms) between two requests to the same domain. */
     throttleMs: number;
     /** Days to keep finished jobs (completed/failed/cancelled); 0 keeps them forever. */

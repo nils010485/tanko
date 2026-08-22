@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { LibraryEntryDto } from '@tanko/shared';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/db.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
 import { Scheduler } from '../src/scheduler/scheduler.js';
@@ -37,7 +37,8 @@ beforeAll(() => {
             dataDirectory: path.join(tmpDir, 'downloads'),
             directoryLayout: 'source',
             chapterFormat: 'img',
-            concurrency: 1,
+            parallelSources: 1,
+            concurrencyPerSource: 1,
             throttleMs: 0
         }
     });

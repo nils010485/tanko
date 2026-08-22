@@ -76,7 +76,8 @@ beforeAll(async () => {
             dataDirectory: tmpDir,
             directoryLayout: 'source',
             chapterFormat: 'cbz',
-            concurrency: 1,
+            parallelSources: 1,
+            concurrencyPerSource: 1,
             throttleMs: 0
         }
     });
