@@ -9,6 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { parseChapterNumber } from '../import/scanner.js';
+
 export function sanitizeName(name: string): string {
     // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping C0/C1 control characters is the whole point of this sanitizer
     let result = String(name).replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
@@ -86,6 +88,7 @@ export function chapterPaths(
     const names = chapterFileNames(chapterTitle);
     const chapterName = names[0] ?? sanitizeName(chapterTitle);
     let existing: string | undefined;
+    // exact spellings first (fast path)
     for (const name of names) {
         if (fs.existsSync(path.join(seriesDir, `${name}.cbz`))) {
             existing = path.join(seriesDir, `${name}.cbz`);
@@ -94,6 +97,29 @@ export function chapterPaths(
         if (fs.existsSync(path.join(seriesDir, name)) && fs.readdirSync(path.join(seriesDir, name)).some(entry => !entry.startsWith('.'))) {
             existing = path.join(seriesDir, name);
             break;
+        }
+    }
+    // robust fallback: any entry of the series folder whose parsed chapter
+    // number equals the wanted one (« <manga> - Ch.161 », « Ch.0161 », « 0,5 »…).
+    // A « v2 » suffix replaces the original chapter, so the highest version wins.
+    if (!existing) {
+        const wanted = parseChapterNumber(chapterTitle);
+        if (wanted !== null) {
+            let best: { entry: string; version: number } | undefined;
+            for (const entry of listChapterEntries(seriesDir)) {
+                const stem = entry.replace(/\.cbz$/i, '');
+                if (parseChapterNumber(stem) !== wanted) {
+                    continue;
+                }
+                const versionMatch = stem.match(/(?:^|[\s._-])v(?:er(?:sion)?)?[\s._-]*(\d+)\s*$/i);
+                const version = versionMatch ? Number(versionMatch[1]) : 0;
+                if (!best || version > best.version) {
+                    best = { entry, version };
+                }
+            }
+            if (best) {
+                existing = path.join(seriesDir, best.entry);
+            }
         }
     }
     return {

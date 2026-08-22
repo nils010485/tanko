@@ -102,4 +102,51 @@ describe('outputExists', () => {
             fs.rmSync(base, { recursive: true, force: true });
         }
     });
+
+    it('prefers a v2 file when both versions of a chapter exist', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const seriesDir = path.join(base, 'Src', 'Serie');
+            fs.mkdirSync(seriesDir, { recursive: true });
+            fs.writeFileSync(path.join(seriesDir, 'Serie - Ch.161.cbz'), 'old');
+            fs.writeFileSync(path.join(seriesDir, 'Serie - Ch.161 v2.cbz'), 'fixed');
+            const paths = chapterPaths(base, 'Src', 'Serie', 'Ch.161');
+            expect(paths.existing).toBe(path.join(seriesDir, 'Serie - Ch.161 v2.cbz'));
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('matches decimal chapters across comma and dot spellings', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const seriesDir = path.join(base, 'Src', 'Serie');
+            fs.mkdirSync(seriesDir, { recursive: true });
+            fs.writeFileSync(path.join(seriesDir, 'Serie - Ch.0,5.cbz'), 'x');
+            const paths = chapterPaths(base, 'Src', 'Serie', 'Ch.0.5');
+            expect(paths.existing).toBe(path.join(seriesDir, 'Serie - Ch.0,5.cbz'));
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('detects a HakuNeko-style « <manga> - <chapter> » CBZ as an existing output', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const seriesDir = path.join(base, 'Src', 'The Legendary Moonlight Sculptor');
+            fs.mkdirSync(seriesDir, { recursive: true });
+            fs.writeFileSync(path.join(seriesDir, 'The Legendary Moonlight Sculptor - Ch.161.cbz'), 'x');
+            const paths = chapterPaths(base, 'Src', 'The Legendary Moonlight Sculptor', 'Ch.161');
+            expect(paths.existing).toBe(path.join(seriesDir, 'The Legendary Moonlight Sculptor - Ch.161.cbz'));
+            expect(outputExists(paths, 'cbz')).toBe(true);
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
 });
