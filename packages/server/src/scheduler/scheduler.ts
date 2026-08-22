@@ -14,7 +14,12 @@ import type { EventBus } from '../ws.js';
 
 const SETTINGS_KEY = 'schedule';
 const LAST_RUN_KEY = 'schedule.lastrun';
-
+/** Delay before re-checking the entries that failed a run (transient errors
+ *  self-heal within minutes; real outages arm the failover in ~30min instead
+ *  of ~18h at cron 6h × 3 failures). */
+const RETRY_DELAY_MS = 12 * 60 * 1000;
+/** Retry rounds after a run: t0 + 12min + 24min reaches the 3-failure threshold. */
+const MAX_RETRY_ROUNDS = 2;
 export interface ScheduleSettings {
     enabled: boolean;
     cron: string;
@@ -31,6 +36,7 @@ const DEFAULTS: ScheduleSettings = {
 
 export class Scheduler {
     private job: Cron | undefined;
+    private retryTimer: ReturnType<typeof setTimeout> | undefined;
     private settings: ScheduleSettings;
     private running = false;
     private lastRunAt?: string;
@@ -81,9 +87,10 @@ export class Scheduler {
     // runs
     // ------------------------------------------------------------------
 
-    async runNow(): Promise<{ checked: number; newChapters: number }> {
+    async runNow(): Promise<{ checked: number; newChapters: number; alreadyRunning?: boolean }> {
         if (this.running) {
-            return { checked: 0, newChapters: 0 };
+            // distinguishable from a real empty run (API clients, logs)
+            return { checked: 0, newChapters: 0, alreadyRunning: true };
         }
         this.running = true;
         const startedAt = Date.now();
@@ -94,20 +101,15 @@ export class Scheduler {
         // download-failure loops can both target the same entry — probing it
         // once is enough and halves the catalog crawls)
         const failoverProbed = new Set<number>();
+        const failedIds = new Set<number>();
         try {
             const entries = await this.opts.store.listEntries();
             for (const entry of entries) {
-                // small jitter between series checks to stay polite with sources
-                await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 1200));
-                try {
-                    const fresh = await this._checkEntry(entry, failoverProbed);
-                    checked++;
-                    totalNew += fresh.length;
-                    if (fresh.length > 0) {
-                        newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
-                    }
-                } catch (error) {
-                    await this._handleCheckFailure(entry, error, failoverProbed);
+                const fresh = await this._checkOne(entry, failoverProbed, failedIds);
+                checked++;
+                totalNew += fresh.length;
+                if (fresh.length > 0) {
+                    newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
                 }
             }
             // entries whose downloads keep failing on a source that still answers
@@ -147,6 +149,7 @@ export class Scheduler {
             this.newChaptersFound = totalNew;
             this._saveLastRun();
             this._publishStatus();
+            this._scheduleRetry(failedIds, 0);
         }
         return { checked, newChapters: totalNew };
     }
@@ -167,6 +170,10 @@ export class Scheduler {
     stop(): void {
         this.job?.stop();
         this.job = undefined;
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = undefined;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -174,14 +181,19 @@ export class Scheduler {
     // ------------------------------------------------------------------
 
     /** Check one entry for new chapters; logs, auto-enqueues and returns the fresh chapters. */
-    private async _checkEntry(entry: LibraryEntryDto, failoverProbed: Set<number>): Promise<ChapterRow[]> {
+    private async _checkEntry(entry: LibraryEntryDto, failoverProbed: Set<number>, failedIds?: Set<number>): Promise<ChapterRow[]> {
         const { fresh, usableSeen } = await this.opts.store.checkForNewChapters(entry.id);
         if (usableSeen === 0 && (entry.downloadedCount > 0 || entry.autoDownload)) {
             // La source ne référence plus aucun chapitre dans les langues préférées
             // (retrait pour licence typiquement) alors que la série est suivie —
             // déjà téléchargée ou en attente de nouveautés : compter comme un échec
             // pour armer le failover au lieu de rester silencieusement à « 0 nouveau ».
-            await this._handleCheckFailure(entry, new Error('la source ne référence plus aucun chapitre dans les langues préférées'), failoverProbed);
+            await this._handleCheckFailure(
+                entry,
+                new Error('la source ne référence plus aucun chapitre dans les langues préférées'),
+                failoverProbed,
+                failedIds
+            );
             return [];
         }
         this.opts.store.resetCheckFailures(entry.id);
@@ -204,8 +216,20 @@ export class Scheduler {
         return fresh;
     }
 
+    /** Jitter + check one entry; failures are routed to _handleCheckFailure and reported as []. */
+    private async _checkOne(entry: LibraryEntryDto, failoverProbed: Set<number>, failedIds: Set<number>): Promise<ChapterRow[]> {
+        await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 1200));
+        try {
+            return await this._checkEntry(entry, failoverProbed, failedIds);
+        } catch (error) {
+            await this._handleCheckFailure(entry, error, failoverProbed, failedIds);
+            return [];
+        }
+    }
+
     /** A series check failed: log it, count the failure, and try a failover after repeated failures. */
-    private async _handleCheckFailure(entry: LibraryEntryDto, error: unknown, failoverProbed?: Set<number>): Promise<void> {
+    private async _handleCheckFailure(entry: LibraryEntryDto, error: unknown, failoverProbed?: Set<number>, failedIds?: Set<number>): Promise<void> {
+        failedIds?.add(entry.id);
         this.opts.events.publish({
             type: 'log',
             level: 'warn',
@@ -235,6 +259,42 @@ export class Scheduler {
         } catch (migrationError) {
             console.warn(`[failover] "${entry.title}":`, (migrationError as Error).message);
         }
+    }
+
+    /** Schedule a one-off re-check of the entries that just failed (see RETRY_DELAY_MS). */
+    private _scheduleRetry(failedIds: Set<number>, round: number): void {
+        if (failedIds.size === 0 || round >= MAX_RETRY_ROUNDS || !this.settings.enabled) {
+            return;
+        }
+        // a pending retry from a previous run is superseded by the fresh id set
+        clearTimeout(this.retryTimer);
+        this.retryTimer = setTimeout(() => {
+            this.retryTimer = undefined;
+            this._retryFailed(failedIds, round).catch(error => console.warn('[scheduler] retry run failed:', error));
+        }, RETRY_DELAY_MS);
+    }
+
+    /** Re-check only the given entries; entries still failing arm the next round. */
+    private async _retryFailed(entryIds: Set<number>, round: number): Promise<void> {
+        if (this.running) {
+            return; // a full run owns the schedule; its own failures re-arm a retry
+        }
+        this.running = true;
+        const failoverProbed = new Set<number>();
+        const stillFailing = new Set<number>();
+        try {
+            for (const id of entryIds) {
+                const entry = this.opts.store.getEntry(id);
+                if (!entry || entry.hidden) {
+                    continue; // removed or hidden since the failure
+                }
+                await this._checkOne(entry, failoverProbed, stillFailing);
+            }
+        } finally {
+            this.running = false;
+            this._publishStatus();
+        }
+        this._scheduleRetry(stillFailing, round + 1);
     }
 
     /** Log message for a failover outcome. */

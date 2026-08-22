@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { chapterFileNames, chapterPaths, detectMime, pageFileName, sanitizeName } from '../src/downloader/paths.js';
+import { chapterFileNames, chapterPaths, detectMime, outputExists, pageFileName, sanitizeName } from '../src/downloader/paths.js';
 
 describe('sanitizeName', () => {
     it('strips control characters', () => {
@@ -82,5 +82,24 @@ describe('detectMime', () => {
 
     it('falls back to the given mime', () => {
         expect(detectMime(new Uint8Array([1, 2, 3]), 'image/gif')).toBe('image/gif');
+    });
+});
+
+describe('outputExists', () => {
+    it('treats a partially downloaded img chapter as missing', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const paths = chapterPaths(base, 'Src', 'Serie', 'Ch.1');
+            fs.mkdirSync(paths.directory, { recursive: true });
+            fs.writeFileSync(path.join(paths.directory, '001.jpg'), 'x');
+            fs.writeFileSync(path.join(paths.directory, '002.jpg'), 'x');
+            expect(outputExists(paths, 'img')).toBe(true); // legacy behavior: non-empty
+            expect(outputExists(paths, 'img', 2)).toBe(true); // complete
+            expect(outputExists(paths, 'img', 30)).toBe(false); // interrupted at 2/30
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
     });
 });

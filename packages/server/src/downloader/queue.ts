@@ -13,6 +13,7 @@ import { createComicInfoXML, LegacySourceAdapter, randomUserAgent } from '@tanko
 import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
 import JSZip from 'jszip';
 import type { Database } from '../db.js';
+import { withTimeout } from '../util/timeout.js';
 import type { EventBus } from '../ws.js';
 import type { ChapterPaths } from './paths.js';
 import { chapterPaths, type DirectoryLayout, detectMime, outputExists, pageFileName } from './paths.js';
@@ -46,6 +47,12 @@ const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const USER_AGENT = randomUserAgent();
 const PAGE_ATTEMPTS = 3;
+/** Overall cap for one chapter's page loop (paused time excluded); getPages is
+ *  already bounded by its own per-attempt timeout. */
+const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
+/** Past this in-memory zip size, the chapter falls back to the img-folder
+ *  layout: giant chapters (artbooks) must not double their RAM footprint. */
+const CBZ_MEMORY_GUARD_BYTES = 200 * 1024 * 1024;
 
 /** Statuses that make an existing job ineligible for requeue. */
 const ACTIVE_STATUSES = new Set<DownloadStatus>(['completed', 'queued', 'downloading']);
@@ -382,7 +389,7 @@ export class DownloadQueue {
             const output = isCbz ? paths.cbzFile : paths.directory;
 
             // already downloaded -> mark completed without re-downloading
-            if (outputExists(paths, isCbz ? 'cbz' : 'img')) {
+            if (outputExists(paths, isCbz ? 'cbz' : 'img', pages.length)) {
                 this._update(row.id, {
                     status: 'completed',
                     progress: 100,
@@ -398,12 +405,12 @@ export class DownloadQueue {
             if (!isCbz) {
                 fs.mkdirSync(paths.directory, { recursive: true });
             }
-            await this._downloadPages(row.id, pages, source, paths, zip);
-            if (zip) {
+            const mode = await this._downloadPages(row.id, pages, source, paths, zip);
+            if (mode === 'cbz' && zip) {
                 await this._finalizeCbz(zip, paths, row.manga_title, row.chapter_title, pages.length);
             }
 
-            this._update(row.id, { status: 'completed', progress: 100, path: output });
+            this._update(row.id, { status: 'completed', progress: 100, path: mode === 'cbz' ? paths.cbzFile : paths.directory });
         } catch (error: unknown) {
             // _checkCancel() aborts a job by throwing Error('cancelled');
             // matching by message (not instanceof) is the tested contract.
@@ -415,22 +422,43 @@ export class DownloadQueue {
                 error: cancelled ? undefined : String(message || error)
             });
         } finally {
+            // a cancel flag set just before an unrelated failure would
+            // otherwise linger in the Map forever
+            this.cancelFlags.delete(row.id);
             this._notifyFinished(row.id);
         }
     }
 
-    /** Download every page to the output folder (or in-memory zip), publishing progress. */
-    private async _downloadPages(jobId: number, pages: string[], source: SourceAdapter, paths: ChapterPaths, zip: JSZip | undefined): Promise<void> {
+    /** Download every page to the output folder (or in-memory zip), publishing progress.
+     *   Returns the mode actually used: a CBZ chapter whose pages outgrow the
+     *   memory guard is flushed to the img directory mid-flight and stays 'img'. */
+    private async _downloadPages(jobId: number, pages: string[], source: SourceAdapter, paths: ChapterPaths, zip: JSZip | undefined): Promise<'cbz' | 'img'> {
         const leadingZeroes = String(pages.length).length;
+        const startedAt = Date.now();
+        let pausedMs = 0;
+        let archive = zip;
+        let archiveBytes = 0;
         for (let index = 0; index < pages.length; index++) {
             this._checkCancel(jobId);
+            const pauseStart = Date.now();
             await this._waitWhilePaused();
+            pausedMs += Date.now() - pauseStart;
             this._checkCancel(jobId);
+            if (Date.now() - startedAt - pausedMs > CHAPTER_DEADLINE_MS) {
+                throw new Error(`chapter download timed out after ${Math.round(CHAPTER_DEADLINE_MS / 60000)}min (${index}/${pages.length} pages)`);
+            }
 
             const { mime, data } = await this._fetchPageWithRetries(pages[index], source);
             const fileName = pageFileName(index + 1, mime, leadingZeroes);
-            if (zip) {
-                zip.file(fileName, Buffer.from(data));
+            if (archive) {
+                archiveBytes += data.length;
+                if (archiveBytes > CBZ_MEMORY_GUARD_BYTES) {
+                    await this._spillArchiveToDirectory(archive, paths, jobId);
+                    archive = undefined;
+                }
+            }
+            if (archive) {
+                archive.file(fileName, Buffer.from(data));
             } else {
                 fs.writeFileSync(path.join(paths.directory, fileName), Buffer.from(data));
             }
@@ -439,6 +467,24 @@ export class DownloadQueue {
                 pages_done: index + 1,
                 progress: Math.round(((index + 1) / pages.length) * 100)
             });
+        }
+        return archive ? 'cbz' : 'img';
+    }
+
+    /** Memory guard tripped: write every buffered zip entry to the img directory
+     *   and drop the archive; the rest of the chapter lands on disk directly. */
+    private async _spillArchiveToDirectory(zip: JSZip, paths: ChapterPaths, jobId: number): Promise<void> {
+        this.opts.events.publish({
+            type: 'log',
+            level: 'warn',
+            message: `Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #${jobId})`,
+            at: new Date().toISOString()
+        });
+        fs.mkdirSync(paths.directory, { recursive: true });
+        for (const file of Object.values(zip.files)) {
+            if (!file.dir) {
+                fs.writeFileSync(path.join(paths.directory, file.name), await file.async('nodebuffer'));
+            }
         }
     }
 
@@ -488,7 +534,11 @@ export class DownloadQueue {
             // throws Error('cancelled') — must propagate untouched (job status contract)
             this._checkCancel(row.id);
             try {
-                const pages = await source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title });
+                const pages = await withTimeout(
+                    source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title }),
+                    90 * 1000,
+                    `getPages(${row.manga_title} - ${row.chapter_title})`
+                );
                 if (!pages.length) {
                     throw new Error('Page list is empty');
                 }

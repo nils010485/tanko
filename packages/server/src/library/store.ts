@@ -14,6 +14,7 @@ import { chapterPaths, countLocalChapters, outputExists } from '../downloader/pa
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
+import { withTimeout } from '../util/timeout.js';
 
 /** Shared INSERT statements for chapter rows (6-column snapshot, 6-column forced 'new', full 8-column). */
 const SQL_INSERT_CHAPTER = `INSERT OR IGNORE INTO library_chapters (entry_id, chapter_id, title, language, status, discovered_at)
@@ -433,7 +434,8 @@ export class LibraryStore {
         if (!source) {
             throw new Error(`Source "${row.source_id}" not found`);
         }
-        const chapters = await source.getChapters({ id: row.manga_id, title: row.title });
+        // a hanging connector must not stall the scheduler's run forever
+        const chapters = await withTimeout(source.getChapters({ id: row.manga_id, title: row.title }), 2 * 60 * 1000, `getChapters(${row.title})`);
         const now = new Date().toISOString();
         const insert = this.opts.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
         const fresh: ChapterRow[] = [];

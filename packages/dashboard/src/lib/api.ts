@@ -217,7 +217,7 @@ export const api = {
     schedule: () => request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule'),
     updateSchedule: (patch: SchedulePatch) =>
         request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule', { method: 'PATCH', body: JSON.stringify(patch) }),
-    runSchedule: () => request<{ checked: number; newChapters: number }>('/api/schedule/run', { method: 'POST' }),
+    runSchedule: () => request<{ checked: number; newChapters: number; alreadyRunning?: boolean }>('/api/schedule/run', { method: 'POST' }),
 
     // settings
     settings: () => request<AppSettingsResponseDto>('/api/settings'),

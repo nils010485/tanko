@@ -151,7 +151,12 @@ export function detectMime(data: Uint8Array, fallback: string): string {
 }
 
 /** True when a chapter output already exists on disk under any accepted name. */
-export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz'): boolean {
+/** True when a chapter output already exists on disk under any accepted name.
+ *  In 'img' mode, a partially downloaded chapter (interrupted mid-chapter) must
+ *  NOT count as existing: pass the expected page count so a short directory is
+ *  treated as missing and re-downloaded. Without it, any non-empty directory
+ *  counts (callers that don't know the page count). */
+export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz', expectedPages?: number): boolean {
     if (paths.existing) {
         return true;
     }
@@ -159,7 +164,8 @@ export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz'): boolea
         return fs.existsSync(paths.cbzFile);
     }
     try {
-        return fs.readdirSync(paths.directory).some(entry => !entry.startsWith('.'));
+        const count = fs.readdirSync(paths.directory).filter(entry => !entry.startsWith('.')).length;
+        return expectedPages === undefined ? count > 0 : count >= expectedPages;
     } catch {
         return false;
     }
