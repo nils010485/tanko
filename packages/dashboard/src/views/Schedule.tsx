@@ -160,6 +160,14 @@ export default function Schedule({ schedule }: { schedule: ScheduleStatusDto | n
                         </div>
                         <Toggle checked={settings.autoDownload} onChange={value => save({ autoDownload: value })} />
                     </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <div className="text-sm font-medium">{t('schedule.autoUnfollow')}</div>
+                            <div className="text-xs text-zinc-500">{t('schedule.autoUnfollowHint')}</div>
+                        </div>
+                        <Toggle checked={settings.autoUnfollow} onChange={value => save({ autoUnfollow: value })} />
+                    </div>
                 </Card>
 
                 <Card className="space-y-4 p-4">

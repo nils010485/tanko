@@ -106,3 +106,34 @@ describe('scheduler failover dedup', () => {
         expect(maybeMigrate).toHaveBeenCalledWith({ id: 7, sourceId: 'src', title: 'Series' });
     });
 });
+
+describe('scheduler auto-unfollow of stale series', () => {
+    it('hides stale entries when enabled, keeps them when disabled', async () => {
+        const stale = { id: 1, title: 'Old Series', lastChapterAt: '2020-01-01T00:00:00.000Z' };
+        const hidden: number[] = [];
+        const store = {
+            listEntries: async () => [{ id: 1, sourceId: 'src', title: 'Old Series', sourceLabel: 'Source', downloadedCount: 0, autoDownload: false }],
+            checkForNewChapters: async () => ({ fresh: [], usableSeen: 1 }),
+            resetCheckFailures: () => {},
+            recordCheckFailure: () => 1,
+            getEntry: () => undefined,
+            listDownloadFailing: () => [],
+            listStaleEntries: () => [stale],
+            setHidden: (id: number, value: boolean) => {
+                if (value) {
+                    hidden.push(id);
+                }
+            }
+        };
+        const disabled = buildScheduler(store);
+        await disabled.runNow();
+        expect(hidden).toEqual([]);
+
+        const enabled = buildScheduler(store);
+        enabled.updateSettings({ autoUnfollow: true });
+        await enabled.runNow();
+        expect(hidden).toEqual([1]);
+        // restore the shared persisted setting so later suites start clean
+        enabled.updateSettings({ autoUnfollow: false });
+    });
+});

@@ -345,6 +345,7 @@ export default function Series({
                         {entry.chapterCount > 0 && <span>{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>}
                         {missingCount > 0 && <span className="text-accent-soft">{t('library.missingCount', { n: missingCount })}</span>}
                         {entry.lastCheckedAt && <span className="text-faint">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>}
+                        {entry.lastChapterAt && <span className="text-faint">{t('library.lastChapterAt', { date: formatDate(entry.lastChapterAt) })}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <Toggle

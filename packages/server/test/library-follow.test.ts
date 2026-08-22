@@ -150,3 +150,52 @@ describe('cancelled downloads revert to the pre-queue status', () => {
         expect(statusOf(entry.id, 'c2').status).toBe('new');
     });
 });
+
+describe('stale series tracking (last_chapter_at)', () => {
+    it('sets the date at follow time, refreshes it on new chapters and drives listStaleEntries', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'Source', mangaId: 'm-stale', title: 'Stale' });
+        expect(entry.lastChapterAt).toBeTruthy();
+
+        // unknown date (legacy/import) backfills to today -> not stale
+        expect(store.listStaleEntries(90).find(item => item.id === entry.id)).toBeUndefined();
+
+        // an old last-chapter date -> stale
+        database.db.prepare('UPDATE library SET last_chapter_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', entry.id);
+        expect(store.listStaleEntries(90).find(item => item.id === entry.id)).toBeDefined();
+
+        // a failing source must not be mistaken for an abandoned series
+        database.db.prepare('UPDATE library SET check_failures = 2 WHERE id = ?').run(entry.id);
+        expect(store.listStaleEntries(90).find(item => item.id === entry.id)).toBeUndefined();
+        database.db.prepare('UPDATE library SET check_failures = 0 WHERE id = ?').run(entry.id);
+
+        // unhide grants a fresh stale period (the series is not re-hidden
+        // by the next scheduler run just because it is on a long hiatus)
+        store.setHidden(entry.id, true);
+        database.db.prepare('UPDATE library SET last_chapter_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', entry.id);
+        store.setHidden(entry.id, false);
+        expect(store.listStaleEntries(120).find(item => item.id === entry.id)).toBeUndefined();
+
+        // a hidden entry is never reported, even with an old date
+        store.setHidden(entry.id, true);
+        database.db.prepare('UPDATE library SET last_chapter_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', entry.id);
+        expect(store.listStaleEntries(120).find(item => item.id === entry.id)).toBeUndefined();
+        store.setHidden(entry.id, false);
+
+        // re-following an existing series rearms the stale period
+        database.db.prepare('UPDATE library SET last_chapter_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', entry.id);
+        await store.addEntry({ sourceId: 'Source', mangaId: 'm-stale', title: 'Stale' });
+        expect(store.listStaleEntries(120).find(item => item.id === entry.id)).toBeUndefined();
+
+        // a discovered chapter refreshes the date -> not stale anymore
+        const original = fakeSource.getChapters;
+        fakeSource.getChapters = async () => [
+            { id: 'c1', title: 'Chapter 1', language: 'en' },
+            { id: 'c2', title: 'Chapter 2', language: 'en' },
+            { id: 'c3', title: 'Chapter 3', language: 'en' }
+        ];
+        const { fresh } = await store.checkForNewChapters(entry.id);
+        fakeSource.getChapters = original;
+        expect(fresh).toHaveLength(1);
+        expect(store.listStaleEntries(90).find(item => item.id === entry.id)).toBeUndefined();
+    });
+});

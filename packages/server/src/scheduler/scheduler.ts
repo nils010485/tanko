@@ -23,10 +23,14 @@ const RETRY_DELAY_MS = 12 * 60 * 1000;
 const DETECTION_PROBES = 10;
 /** Retry rounds after a run: t0 + 12min + 24min reaches the 3-failure threshold. */
 const MAX_RETRY_ROUNDS = 2;
+/** A series with no new chapter for this long is hidden (autoUnfollow). 120
+ *  days: monthly series publish every ~30 days, quarterly ones every ~92. */
+const UNFOLLOW_STALE_DAYS = 120;
 export interface ScheduleSettings {
     enabled: boolean;
     cron: string;
     autoDownload: boolean;
+    autoUnfollow: boolean;
     notifications: NotificationSettings;
 }
 
@@ -34,6 +38,7 @@ const DEFAULTS: ScheduleSettings = {
     enabled: true,
     cron: '0 */6 * * *',
     autoDownload: true,
+    autoUnfollow: false,
     notifications: { enabled: false, webhookUrl: '' }
 };
 
@@ -85,6 +90,10 @@ export class Scheduler {
         // patch values can arrive untyped from HTTP clients: keep `enabled` a real boolean
         if (typeof this.settings.enabled !== 'boolean') {
             this.settings.enabled = true;
+        }
+        // same for the auto-unfollow toggle
+        if (typeof this.settings.autoUnfollow !== 'boolean') {
+            this.settings.autoUnfollow = false;
         }
         this.opts.db.kvSet(SETTINGS_KEY, JSON.stringify(this.settings));
         this._startJob();
@@ -145,7 +154,8 @@ export class Scheduler {
                 }
             }
 
-            this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s) in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+            const hiddenStale = this._hideStaleEntries();
+            this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s)${hiddenStale > 0 ? `, ${hiddenStale} stale series hidden` : ''} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
             this._detectIncompleteSources(); // background, opt-in
             if (totalNew > 0) {
                 await this._notifyNewChapters(newBySeries);
@@ -164,10 +174,33 @@ export class Scheduler {
         return { checked, newChapters: totalNew };
     }
 
-    /** Background pass after each run (opt-in): starved sources — entries with
-     *  very few chapters — get searched on the other sources; a much richer
-     *  alternative is surfaced as a migration suggestion. Bounded to
-     *  DETECTION_PROBES entries per run to keep the source load sane. */
+    /** Opt-in pass run after each check run: series whose last new chapter is
+     *  older than UNFOLLOW_STALE_DAYS are hidden (reversible from « Masquées »;
+     *  files and history are kept, the scheduler ignores hidden entries).
+     *  Entries with pending check failures are skipped by the store — an
+     *  unreachable source is not an abandoned series. */
+    private _hideStaleEntries(): number {
+        if (!this.settings.autoUnfollow) {
+            return 0;
+        }
+        let hidden = 0;
+        for (const stale of this.opts.store.listStaleEntries(UNFOLLOW_STALE_DAYS)) {
+            this.opts.store.setHidden(stale.id, true);
+            hidden++;
+            this.opts.events.publish({
+                type: 'log',
+                level: 'info',
+                message: `"${stale.title}" masquée automatiquement (aucun nouveau chapitre depuis plus de ${UNFOLLOW_STALE_DAYS} jours)`,
+                at: new Date().toISOString()
+            });
+            const updated = this.opts.store.getEntry(stale.id);
+            if (updated) {
+                this.opts.events.publish({ type: 'library.updated', entry: updated });
+            }
+        }
+        return hidden;
+    }
+
     /** Background pass after each run (opt-in): starved sources — entries with
      *  very few chapters — get searched on the other sources; a much richer
      *  alternative is surfaced as a migration suggestion. Bounded to

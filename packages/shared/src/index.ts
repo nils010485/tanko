@@ -130,6 +130,8 @@ export interface LibraryEntryDto {
     downloadedCount: number;
     newCount: number;
     lastCheckedAt?: string;
+    /** Date the last new chapter was discovered (auto-hide of stale series). */
+    lastChapterAt?: string;
     addedAt: string;
     /** Consecutive failed checks against the current source. */
     checkFailures?: number;
@@ -200,6 +202,8 @@ export interface ScheduleSettingsDto {
     enabled: boolean;
     cron: string;
     autoDownload: boolean;
+    /** Hide series with no new chapter for over 120 days. */
+    autoUnfollow: boolean;
     notifications: NotificationSettingsDto;
 }
 

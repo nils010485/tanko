@@ -38,6 +38,8 @@ interface EntryRow {
     migration_dismissed: string | null;
     hidden: number;
     last_checked_at: string | null;
+    /** Date the last new chapter was discovered (drives the stale-series auto-unfollow). */
+    last_chapter_at: string | null;
     added_at: string;
 }
 
@@ -100,11 +102,12 @@ export class LibraryStore {
         }
         const now = new Date().toISOString();
         const result = this._get<{ id: number }>(
-            `INSERT INTO library (source_id, source_label, manga_id, title, url, thumbnail, auto_download, last_checked_at, added_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO library (source_id, source_label, manga_id, title, url, thumbnail, auto_download, last_checked_at, last_chapter_at, added_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(source_id, manga_id) DO UPDATE SET title = excluded.title, url = excluded.url,
-                 thumbnail = COALESCE(excluded.thumbnail, library.thumbnail)
-             RETURNING id`,
+                thumbnail = COALESCE(excluded.thumbnail, library.thumbnail),
+                last_chapter_at = excluded.last_chapter_at
+            RETURNING id`,
             entry.sourceId,
             source.label,
             entry.mangaId,
@@ -112,6 +115,7 @@ export class LibraryStore {
             entry.url || null,
             entry.thumbnail || null,
             entry.autoDownload === false ? 0 : 1,
+            now,
             now,
             now
         );
@@ -264,9 +268,13 @@ export class LibraryStore {
         return Promise.all(rows.map(row => this._entryToDto(row)));
     }
 
-    /** Hide (or restore) an entry without touching its files. */
+    /** Hide (or restore) an entry without touching its files. Restoring also
+     *  refreshes the last-new-chapter date: an unhidden series gets a fresh
+     *  stale period instead of being re-hidden by the next scheduler run. */
     setHidden(entryId: number, hidden: boolean): boolean {
-        const result = this.opts.db.db.prepare('UPDATE library SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, entryId);
+        const sql = 'UPDATE library SET hidden = 1 WHERE id = ?';
+        const restoreSql = 'UPDATE library SET hidden = 0, last_chapter_at = ? WHERE id = ?';
+        const result = hidden ? this.opts.db.db.prepare(sql).run(entryId) : this.opts.db.db.prepare(restoreSql).run(new Date().toISOString(), entryId);
         return Number(result.changes) > 0;
     }
 
@@ -295,6 +303,18 @@ export class LibraryStore {
             'SELECT id, source_id, title, download_failures FROM library WHERE hidden = 0 AND download_failures >= ? ORDER BY download_failures DESC',
             minimum
         ).map(row => ({ id: row.id, sourceId: row.source_id, title: row.title, downloadFailures: Number(row.download_failures) }));
+    }
+
+    /** Entries with no new chapter for more than `maxAgeDays` (stale-series
+     *  auto-unfollow). Entries with pending check failures are skipped: an
+     *  unreachable source must not be mistaken for an abandoned series. */
+    listStaleEntries(maxAgeDays: number): Array<{ id: number; title: string; lastChapterAt: string }> {
+        const cutoff = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+        return this._all<{ id: number; title: string; last_chapter_at: string }>(
+            `SELECT id, title, last_chapter_at FROM library
+             WHERE hidden = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL AND last_chapter_at < ?`,
+            cutoff
+        ).map(row => ({ id: row.id, title: row.title, lastChapterAt: row.last_chapter_at }));
     }
 
     recordCheckFailure(entryId: number): number {
@@ -470,7 +490,13 @@ export class LibraryStore {
                 });
             }
         }
-        this.opts.db.db.prepare('UPDATE library SET last_checked_at = ? WHERE id = ?').run(now, entryId);
+        if (fresh.length > 0) {
+            // a new chapter just arrived: refresh the date that arms the
+            // stale-series auto-unfollow
+            this.opts.db.db.prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ? WHERE id = ?').run(now, now, entryId);
+        } else {
+            this.opts.db.db.prepare('UPDATE library SET last_checked_at = ? WHERE id = ?').run(now, entryId);
+        }
         return { fresh, usableSeen };
     }
 
@@ -749,6 +775,12 @@ export class LibraryStore {
         this._addColumn('library', columns, 'migration_dismissed', 'migration_dismissed TEXT');
         this._addColumn('library', columns, 'hidden', 'hidden INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'download_failures', 'download_failures INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'last_chapter_at', 'last_chapter_at TEXT');
+        // unknown last-new-chapter date (existing databases, imports, or rows
+        // created between the ALTER and a crash): start from today so the
+        // auto-unfollow cannot fire right on startup — runs on every boot, a
+        // no-op once every row carries a date
+        this.opts.db.db.prepare('UPDATE library SET last_chapter_at = ? WHERE last_chapter_at IS NULL').run(new Date().toISOString());
         const chapterColumns = this.opts.db.db.prepare('PRAGMA table_info(library_chapters)').all() as Array<{ name: string }>;
         this._addColumn('library_chapters', chapterColumns, 'prev_status', 'prev_status TEXT');
     }
@@ -809,6 +841,7 @@ export class LibraryStore {
             downloadedCount,
             newCount: Number(counts.fresh || 0),
             lastCheckedAt: row.last_checked_at || undefined,
+            lastChapterAt: row.last_chapter_at || undefined,
             addedAt: row.added_at,
             checkFailures: Number(row.check_failures || 0),
             migrationSuggestion: suggestion,
