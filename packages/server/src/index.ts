@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket, { type WebSocket } from '@fastify/websocket';
 import { createEngine, loadConnectors, SourceRegistry } from '@tanko/core';
-import type { DownloadStatus } from '@tanko/shared';
+import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
 import Fastify from 'fastify';
 import { ActivityService } from './activity/service.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
@@ -16,7 +16,7 @@ import { Database } from './db.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
 import { ImportService } from './import/service.js';
 import { CoverService } from './library/covers.js';
-import { FailoverService } from './library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, FailoverService } from './library/failover.js';
 import { LibraryStore } from './library/store.js';
 import { registerActivityRoutes } from './routes/activity.js';
 import { registerCoverRoutes } from './routes/covers.js';
@@ -91,6 +91,14 @@ const CHAPTER_STATUS: Partial<Record<DownloadStatus, 'downloaded' | 'failed'>> =
     completed: 'downloaded',
     failed: 'failed'
 };
+const failover = new FailoverService({
+    registry: sourceRegistry,
+    store: library,
+    listSources: listSourceInfos,
+    getPreferredLanguages: preferredLanguages,
+    isDetectionEnabled: createIncompleteDetectionPref(database)
+});
+
 const queue = new DownloadQueue({
     db: database,
     registry: sourceRegistry,
@@ -111,7 +119,7 @@ const queue = new DownloadQueue({
             }
         }
         if (job.status === 'failed') {
-            library.recordDownloadFailure(job.entryId);
+            handleDownloadFailure(job);
         } else if (job.status === 'completed') {
             library.resetDownloadFailures(job.entryId);
         }
@@ -127,13 +135,60 @@ const queue = new DownloadQueue({
     /** "Clear queue" drops the jobs without finishing them — put the chapters back. */
     onJobsCleared: pairs => library.revertClearedChapters(pairs)
 });
-const failover = new FailoverService({
-    registry: sourceRegistry,
-    store: library,
-    listSources: listSourceInfos,
-    getPreferredLanguages: preferredLanguages,
-    isDetectionEnabled: createIncompleteDetectionPref(database)
-});
+
+/** Repeated download failures on one entry: probe the alternative sources right
+ *  away instead of waiting for the next scheduler run (hours later). When a
+ *  migration is applied, the failed chapters are re-queued on the new source
+ *  so the interrupted download resumes by itself. */
+function handleDownloadFailure(job: DownloadJobDto): void {
+    const { entryId } = job;
+    if (entryId == null) {
+        return;
+    }
+    // the entry may have been deleted since its downloads were queued —
+    // recordDownloadFailure must not run against a missing row
+    const entry = library.getEntry(entryId);
+    if (!entry) {
+        return;
+    }
+    const failures = library.recordDownloadFailure(entryId);
+    // below the threshold, sibling jobs may still settle (their own finish
+    // events re-arm the probe), or a probe already crawls for this entry
+    if (failures < DOWNLOAD_FAILOVER_FAILURES || queue.hasPendingJobs(entryId) || !failover.tryBeginProbe(entryId)) {
+        return;
+    }
+    void (async () => {
+        try {
+            const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            events.publish({
+                type: 'log',
+                level: outcome === 'migrated' ? 'info' : 'warn',
+                message:
+                    outcome === 'migrated'
+                        ? `"${entry.title}" : ${failures} téléchargements en échec — migré vers une autre source, reprise du téléchargement`
+                        : outcome === 'suggested'
+                          ? `"${entry.title}" : ${failures} téléchargements en échec — migration de source suggérée (à confirmer)`
+                          : `"${entry.title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`,
+                at: new Date().toISOString()
+            });
+            if (outcome === 'migrated') {
+                library.requeueFailedAfterMigration(entryId, queue);
+            }
+        } catch (error) {
+            console.warn(`[failover] "${entry.title}":`, (error as Error).message);
+        } finally {
+            // implicit backoff (same idea as the scheduler loop): the probe
+            // only re-arms after as many fresh download failures
+            library.resetDownloadFailures(entryId);
+            failover.endProbe(entryId);
+            const updated = library.getEntry(entryId);
+            if (updated) {
+                events.publish({ type: 'library.updated', entry: updated });
+            }
+        }
+    })();
+}
+
 const scheduler = new Scheduler({ db: database, store: library, queue, events, failover });
 const importer = new ImportService({
     db: database,

@@ -290,7 +290,7 @@ export class LibraryStore {
     /** Consecutive download failures on an entry (reset by a success or a migration). */
     recordDownloadFailure(entryId: number): number {
         this.opts.db.db.prepare('UPDATE library SET download_failures = download_failures + 1 WHERE id = ?').run(entryId);
-        return Number((this._get('SELECT download_failures AS n FROM library WHERE id = ?', entryId) as { n: number }).n);
+        return Number((this._get('SELECT download_failures AS n FROM library WHERE id = ?', entryId) as { n: number } | undefined)?.n ?? 0);
     }
 
     resetDownloadFailures(entryId: number): void {
@@ -357,6 +357,44 @@ export class LibraryStore {
         this._snapshotEntry(entryId, 'failover');
         const downloadedByNumber = this._downloadedByNumber(entryId);
         return this._rebuildChapters(entryId, target, source, downloadedByNumber);
+    }
+
+    /** After a migration rebuilt the chapter list on a new source, re-queue the
+     *  chapters whose download failed on the old one (matched by chapter number,
+     *  like the file carry-over) so the interrupted download resumes by itself. */
+    requeueFailedAfterMigration(entryId: number, queue: DownloadQueue): number {
+        const titles = (
+            this.opts.db.db.prepare("SELECT chapter_title FROM download_jobs WHERE entry_id = ? AND status = 'failed'").all(entryId) as unknown as Array<{
+                chapter_title: string;
+            }>
+        ).map(row => row.chapter_title);
+        const numbers = new Set(
+            titles.flatMap(title => {
+                const number = parseChapterNumber(title);
+                return number === null ? [] : [number];
+            })
+        );
+        if (numbers.size === 0) {
+            return 0;
+        }
+        const entry = this._getEntryRow(entryId);
+        if (!entry) {
+            return 0;
+        }
+        const chapters = this._all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId).filter(chapter => {
+            const number = parseChapterNumber(chapter.title);
+            return chapter.status !== 'downloaded' && number !== null && numbers.has(number);
+        });
+        const queued = this._enqueueSelected(entry, chapters, queue, () =>
+            this.markChaptersQueued(
+                entryId,
+                chapters.map(chapter => chapter.chapter_id)
+            )
+        );
+        // the consumed failures point at the old source: purge them so a bulk
+        // "retry failed" cannot resurrect downloads from the dead source
+        this.opts.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status = 'failed'").run(entryId);
+        return queued;
     }
 
     /** Downloaded chapters of an entry keyed by chapter number (first occurrence wins). */
@@ -500,17 +538,21 @@ export class LibraryStore {
         return { fresh, usableSeen };
     }
 
-    /** Enqueue all chapters with status 'new' into the download queue. */
+    /** Enqueue every not-yet-downloaded chapter ('new' status plus failed
+     *  downloads worth retrying) into the download queue. */
     enqueueNewChapters(entryId: number, queue: DownloadQueue): number {
         const entry = this._getEntryRow(entryId);
         if (!entry) {
             return 0;
         }
-        const chapters = this._all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ? AND status = ? ORDER BY discovered_at ASC', entryId, 'new');
+        const chapters = this._all<ChapterRow>(
+            "SELECT * FROM library_chapters WHERE entry_id = ? AND status IN ('new', 'failed') ORDER BY discovered_at ASC",
+            entryId
+        );
         const markQueued = () => {
             this.opts.db.db
-                .prepare('UPDATE library_chapters SET status = ?, prev_status = status WHERE entry_id = ? AND status = ?')
-                .run('queued', entryId, 'new');
+                .prepare("UPDATE library_chapters SET status = ?, prev_status = status WHERE entry_id = ? AND status IN ('new', 'failed')")
+                .run('queued', entryId);
         };
         return this._enqueueSelected(entry, chapters, queue, markQueued);
     }

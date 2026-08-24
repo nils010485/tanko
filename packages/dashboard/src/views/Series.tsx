@@ -123,10 +123,10 @@ export default function Series({
         }
     };
 
-    /** Grab the chapters the monitor-only follow left as 'missing'. */
+    /** Grab the chapters never downloaded ('missing') or whose download failed. */
     const downloadMissing = async () => {
         if (!entry) return;
-        const missing = toQueueChapters((chapters ?? []).filter(chapter => chapter.status === 'missing'));
+        const missing = toQueueChapters((chapters ?? []).filter(chapter => chapter.status === 'missing' || chapter.status === 'failed'));
         if (missing.length === 0) return;
         setBusyFlag('dlMissing', true);
         try {
@@ -293,7 +293,10 @@ export default function Series({
         );
     }
 
-    const missingCount = chapters?.filter(chapter => chapter.status === 'missing').length ?? 0;
+    const missingOnly = chapters?.filter(chapter => chapter.status === 'missing').length ?? 0;
+    const failedCount = chapters?.filter(chapter => chapter.status === 'failed').length ?? 0;
+    // the "download existing" button grabs both the never-downloaded backlog and failed retries
+    const missingCount = missingOnly + failedCount;
 
     const chapterNode = (chapter: LibraryChapterDto) => (
         <span className="flex flex-none items-center gap-1.5">
@@ -343,7 +346,7 @@ export default function Series({
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
                         {entry.chapterCount > 0 && <span>{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>}
-                        {missingCount > 0 && <span className="text-accent-soft">{t('library.missingCount', { n: missingCount })}</span>}
+                        {missingOnly > 0 && <span className="text-accent-soft">{t('library.missingCount', { n: missingOnly })}</span>}
                         {entry.lastCheckedAt && <span className="text-faint">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>}
                         {entry.lastChapterAt && <span className="text-faint">{t('library.lastChapterAt', { date: formatDate(entry.lastChapterAt) })}</span>}
                     </div>
@@ -356,7 +359,7 @@ export default function Series({
                         <Button small onClick={checkNow} loading={busy.check}>
                             <IconRefresh size={13} /> {t('library.check')}
                         </Button>
-                        <Button small onClick={downloadNewChapters} disabled={entry.newCount === 0} loading={busy.dlNew}>
+                        <Button small onClick={downloadNewChapters} disabled={entry.newCount === 0 && failedCount === 0} loading={busy.dlNew}>
                             <IconDownload size={13} /> {t('library.downloadNew')}
                         </Button>
                         <Button

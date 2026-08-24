@@ -31,10 +31,17 @@ export const INCOMPLETE_SOURCE_CHAPTERS = 10;
 /** An alternative must offer at least this multiple of the current chapter
  *  count to be worth suggesting. */
 const IMPROVEMENT_FACTOR = 2;
+/** Consecutive download failures after which a source failover is probed
+ *  immediately — without waiting for the next scheduler run (hours later). */
+export const DOWNLOAD_FAILOVER_FAILURES = 2;
 
 export class FailoverService {
     /** Entries currently probed by suggestIfIncomplete (re-entry guard). */
     private readonly detectionRunning = new Set<number>();
+    /** Entries with a migration probe in flight — shared by the immediate
+     *  download-failure path (index.ts), the scheduler backstop and the
+     *  rematch actions, so at most one probe crawls for a given entry. */
+    private readonly probing = new Set<number>();
 
     constructor(
         private readonly opts: {
@@ -185,6 +192,20 @@ export class FailoverService {
         } finally {
             this.detectionRunning.delete(entry.id);
         }
+    }
+
+    /** Mark an entry as being probed; false when a probe already runs. */
+    tryBeginProbe(entryId: number): boolean {
+        if (this.probing.has(entryId)) {
+            return false;
+        }
+        this.probing.add(entryId);
+        return true;
+    }
+
+    /** Release an entry after its migration probe finished (any outcome). */
+    endProbe(entryId: number): void {
+        this.probing.delete(entryId);
     }
 
     /**

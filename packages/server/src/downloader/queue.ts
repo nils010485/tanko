@@ -19,6 +19,41 @@ import type { ChapterPaths } from './paths.js';
 import { chapterPaths, type DirectoryLayout, detectMime, outputExists, pageFileName } from './paths.js';
 import { DomainGate } from './rate-limiter.js';
 
+/** Human-readable page URL for error messages: 'connector://' payloads are
+ *  opaque base64 blobs that bury the real (signed) image URL and wreck the
+ *  dashboard layout — decode them and strip the query string instead. */
+function describePageUrl(url: string): string {
+    if (url.startsWith('connector://')) {
+        try {
+            const decoded = Buffer.from(new URL(url).searchParams.get('payload') ?? '', 'base64').toString('utf8');
+            // createConnectorURI base64-encodes JSON.stringify(payload): most
+            // connectors pass the plain image URL string, a few an object
+            // carrying it — decode both shapes.
+            const parsed: unknown = JSON.parse(decoded);
+            const real = typeof parsed === 'string' ? parsed : (parsed as { url?: unknown } | null)?.url;
+            if (typeof real === 'string' && real.startsWith('http')) {
+                return real.replace(/[?#].*$/, '');
+            }
+        } catch {
+            /* malformed connector URI: fall through to truncation */
+        }
+        return `${url.slice(0, 64)}…`;
+    }
+    return url.length > 160 ? `${url.slice(0, 160)}…` : url;
+}
+
+/** Map a job row back to enqueue() input (retry paths). */
+function toChapterInput(row: JobRow) {
+    return {
+        sourceId: row.source_id,
+        mangaId: row.manga_id,
+        mangaTitle: row.manga_title,
+        chapterId: row.chapter_id,
+        chapterTitle: row.chapter_title,
+        entryId: row.entry_id ?? undefined
+    };
+}
+
 export interface QueueSettings {
     /** Base directory for downloads. */
     dataDirectory: string;
@@ -47,6 +82,9 @@ const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const USER_AGENT = randomUserAgent();
 const PAGE_ATTEMPTS = 3;
+/** Max page-list refreshes per chapter: pages fetched through signed URLs
+ *  (connector:// payloads with ?expires=…) can go stale mid-chapter. */
+const PAGE_LIST_REFRESHES = 2;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
 const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
@@ -84,6 +122,10 @@ export class DownloadQueue {
     private readonly gate: DomainGate;
     private readonly cancelFlags = new Map<number, boolean>();
     private paused = false;
+    /** Whether the library table exists in this database — downloads can run
+     *  standalone (no library ever initialised), in which case the
+     *  migration-orphan filter of retryFailed/retryJob is disabled. */
+    private libraryPresent = false;
     /** Running downloads per source id; keys = busy sources (values are always > 0). */
     private readonly activePerSource = new Map<string, number>();
     private timer: ReturnType<typeof setInterval> | undefined;
@@ -219,6 +261,61 @@ export class DownloadQueue {
         return false;
     }
 
+    /** Requeue every failed job whose entry (when tracked) still downloads
+     *  from the job's source — jobs left behind by a source migration point
+     *  at a dead source and must not be resurrected. Returns the requeued
+     *  (entryId, chapterId) pairs so the caller can sync the library chapter
+     *  statuses back to 'queued'. */
+    retryFailed(): { retried: number; chapters: Array<{ entryId: number; chapterId: string }> } {
+        const orphanFilter = this.libraryPresent
+            ? ` AND (entry_id IS NULL OR EXISTS(SELECT 1 FROM library WHERE library.id = download_jobs.entry_id AND library.source_id = download_jobs.source_id))`
+            : '';
+        const rows = this.opts.db.db.prepare(`SELECT * FROM download_jobs WHERE status = 'failed'${orphanFilter}`).all() as unknown as JobRow[];
+        if (rows.length === 0) {
+            return { retried: 0, chapters: [] };
+        }
+        const { retried } = this.enqueue(rows.map(row => toChapterInput(row)));
+        return {
+            retried,
+            chapters: rows.flatMap(row => (row.entry_id != null ? [{ entryId: row.entry_id, chapterId: row.chapter_id }] : []))
+        };
+    }
+
+    /** Requeue a single finished job (failed or cancelled). */
+    retryJob(jobId: number): { retried: number; chapters: Array<{ entryId: number; chapterId: string }> } {
+        const row = this.opts.db.db.prepare('SELECT * FROM download_jobs WHERE id = ?').get(jobId) as unknown as JobRow | undefined;
+        if (!row || (row.status !== 'failed' && row.status !== 'cancelled')) {
+            return { retried: 0, chapters: [] };
+        }
+        if (row.entry_id != null && !this._entryTracksSource(row.entry_id, row.source_id)) {
+            return { retried: 0, chapters: [] }; // orphaned by a source migration
+        }
+        this.enqueue([toChapterInput(row)]);
+        return {
+            retried: 1,
+            chapters: row.entry_id != null ? [{ entryId: row.entry_id, chapterId: row.chapter_id }] : []
+        };
+    }
+
+    /** Whether the entry still has queued or downloading jobs. The immediate
+     *  download-failure failover defers until they settle so a migration does
+     *  not race chapters being rebuilt under running downloads. */
+    hasPendingJobs(entryId: number): boolean {
+        const row = this.opts.db.db
+            .prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE entry_id = ? AND status IN ('queued', 'downloading')")
+            .get(entryId) as { n: number };
+        return row.n > 0;
+    }
+
+    /** Whether the library entry (when tracked) still downloads from this
+     *  source — jobs orphaned by a source migration must not be retried. */
+    private _entryTracksSource(entryId: number, sourceId: string): boolean {
+        if (!this.libraryPresent) {
+            return true;
+        }
+        const row = this.opts.db.db.prepare('SELECT 1 AS ok FROM library WHERE id = ? AND source_id = ?').get(entryId, sourceId);
+        return row !== undefined;
+    }
     pause(): void {
         this.paused = true;
         this._publishStatus();
@@ -320,6 +417,7 @@ export class DownloadQueue {
     // ------------------------------------------------------------------
 
     private _migrate(): void {
+        this.libraryPresent = this.opts.db.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'library'").get() !== undefined;
         this.opts.db.db.exec(`
             CREATE TABLE IF NOT EXISTS download_jobs (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -424,9 +522,9 @@ export class DownloadQueue {
             if (!isCbz) {
                 fs.mkdirSync(paths.directory, { recursive: true });
             }
-            const mode = await this._downloadPages(row.id, pages, source, paths, zip);
+            const { mode, pageCount } = await this._downloadPages(row, pages, source, paths, zip);
             if (mode === 'cbz' && zip) {
-                await this._finalizeCbz(zip, paths, row.manga_title, row.chapter_title, pages.length);
+                await this._finalizeCbz(zip, paths, row.manga_title, row.chapter_title, pageCount);
             }
 
             this._update(row.id, { status: 'completed', progress: 100, path: mode === 'cbz' ? paths.cbzFile : paths.directory });
@@ -450,29 +548,70 @@ export class DownloadQueue {
 
     /** Download every page to the output folder (or in-memory zip), publishing progress.
      *   Returns the mode actually used: a CBZ chapter whose pages outgrow the
-     *   memory guard is flushed to the img directory mid-flight and stays 'img'. */
-    private async _downloadPages(jobId: number, pages: string[], source: SourceAdapter, paths: ChapterPaths, zip: JSZip | undefined): Promise<'cbz' | 'img'> {
-        const leadingZeroes = String(pages.length).length;
+     *   memory guard is flushed to the img directory mid-flight and stays 'img'.
+     *   Pages served through signed URLs that expire mid-chapter are recovered
+     *   by refreshing the page list (fresh URLs) and retrying the same index. */
+    private async _downloadPages(
+        row: JobRow,
+        pages: string[],
+        source: SourceAdapter,
+        paths: ChapterPaths,
+        zip: JSZip | undefined
+    ): Promise<{ mode: 'cbz' | 'img'; pageCount: number }> {
+        let leadingZeroes = String(pages.length).length;
         const startedAt = Date.now();
         let pausedMs = 0;
         let archive = zip;
         let archiveBytes = 0;
+        let refreshesLeft = PAGE_LIST_REFRESHES;
         for (let index = 0; index < pages.length; index++) {
-            this._checkCancel(jobId);
+            this._checkCancel(row.id);
             const pauseStart = Date.now();
             await this._waitWhilePaused();
             pausedMs += Date.now() - pauseStart;
-            this._checkCancel(jobId);
+            this._checkCancel(row.id);
             if (Date.now() - startedAt - pausedMs > CHAPTER_DEADLINE_MS) {
                 throw new Error(`chapter download timed out after ${Math.round(CHAPTER_DEADLINE_MS / 60000)}min (${index}/${pages.length} pages)`);
             }
 
-            const { mime, data } = await this._fetchPageWithRetries(pages[index], source);
+            let page: { mime: string; data: Uint8Array };
+            try {
+                page = await this._fetchPageWithRetries(pages[index], source);
+            } catch (error) {
+                // Signed image URLs (connector:// payloads carrying ?acc=…&expires=…)
+                // go stale while the chapter downloads: the CDN then answers with a
+                // tiny HTML error page that retrying the same URL can never fix.
+                // Refresh the page list for a fresh set of URLs and retry once.
+                if (refreshesLeft <= 0) {
+                    throw error;
+                }
+                refreshesLeft--;
+                let fresh: string[];
+                try {
+                    fresh = await this._getPageListWithRetries(source, row);
+                } catch (refreshError) {
+                    if ((refreshError as Error)?.message === 'cancelled') {
+                        throw refreshError;
+                    }
+                    throw new Error(`${(error as Error).message} (page-list refresh failed: ${(refreshError as Error).message})`);
+                }
+                if (index >= fresh.length) {
+                    throw error; // the chapter shrank server-side: don't guess a mapping
+                }
+                if (fresh.length !== pages.length) {
+                    this._update(row.id, { pages_total: fresh.length });
+                }
+                pages = fresh;
+                // the refreshed list may be longer: keep zero-padding in step
+                leadingZeroes = String(pages.length).length;
+                page = await this._fetchPageWithRetries(pages[index], source);
+            }
+            const { mime, data } = page;
             const fileName = pageFileName(index + 1, mime, leadingZeroes);
             if (archive) {
                 archiveBytes += data.length;
                 if (archiveBytes > CBZ_MEMORY_GUARD_BYTES) {
-                    await this._spillArchiveToDirectory(archive, paths, jobId);
+                    await this._spillArchiveToDirectory(archive, paths, row.id);
                     archive = undefined;
                 }
             }
@@ -482,12 +621,12 @@ export class DownloadQueue {
                 fs.writeFileSync(path.join(paths.directory, fileName), Buffer.from(data));
             }
 
-            this._update(jobId, {
+            this._update(row.id, {
                 pages_done: index + 1,
                 progress: Math.round(((index + 1) / pages.length) * 100)
             });
         }
-        return archive ? 'cbz' : 'img';
+        return { mode: archive ? 'cbz' : 'img', pageCount: pages.length };
     }
 
     /** Memory guard tripped: write every buffered zip entry to the img directory
@@ -595,7 +734,7 @@ export class DownloadQueue {
                 }
             }
         }
-        throw new Error(`Failed to download page "${url}": ${String((lastError as Error)?.message || lastError)}`);
+        throw new Error(`Failed to download page "${describePageUrl(url)}": ${String((lastError as Error)?.message || lastError)}`);
     }
 
     private async _fetchPage(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {

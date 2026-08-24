@@ -219,7 +219,7 @@ export function registerLibraryRoutes(
         }
     });
 
-    // Enqueue all chapters with status 'new' for this entry
+    // Enqueue every not-yet-downloaded chapter ('new' + failed retries) for this entry
     app.post<{ Params: { entryId: string } }>('/api/library/:entryId/download-new', async (request, reply) => {
         const { entryId } = request.params;
         if (!requireEntry(reply, store, Number(entryId))) {
@@ -229,16 +229,13 @@ export function registerLibraryRoutes(
         return { queued };
     });
 
-    // Enqueue every already-detected new chapter across all visible entries
+    // Enqueue every already-detected new or failed chapter across all visible
     // (no source re-check, no auto-download flag required)
     app.post('/api/library/download-new', async () => {
         const entries = await store.listEntries('visible');
         let queued = 0;
         let affected = 0;
         for (const entry of entries) {
-            if (entry.newCount === 0) {
-                continue;
-            }
             const count = store.enqueueNewChapters(entry.id, queue);
             if (count > 0) {
                 queued += count;
@@ -319,7 +316,13 @@ export function registerLibraryRoutes(
             return reply.code(404).send({ error: 'Aucune suggestion en attente' });
         }
         if (request.body?.apply) {
+            // migrating under running downloads would orphan their files and
+            // double-queue the requeued chapters — let the jobs settle first
+            if (queue.hasPendingJobs(Number(entryId))) {
+                return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+            }
             const result = await store.migrateEntry(Number(entryId), entry.migrationSuggestion);
+            store.requeueFailedAfterMigration(Number(entryId), queue);
             const updated = publishEntry(Number(entryId));
             return { applied: true, ...result, entry: updated };
         }

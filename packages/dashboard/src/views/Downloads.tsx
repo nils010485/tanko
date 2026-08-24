@@ -8,7 +8,7 @@ import type { DownloadJobDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
-import { IconDownload, IconPause, IconPlay, IconTrash, IconX } from '../components/icons.js';
+import { IconDownload, IconPause, IconPlay, IconRefresh, IconTrash, IconX } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ProgressBar, SectionTitle, Skeleton } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -57,6 +57,7 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
     const toast = useToast();
     const [confirmClear, setConfirmClear] = useState(false);
     const [clearing, setClearing] = useState(false);
+    const [retrying, setRetrying] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -131,6 +132,28 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
         }
     };
 
+    const retryJob = async (job: DownloadJobDto) => {
+        try {
+            await api.retryJob(job.id);
+            await load();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
+    const retryFailed = async () => {
+        setRetrying(true);
+        try {
+            const result = await api.retryFailed();
+            toast.info(t('downloads.retryFailedDone', { n: result.retried }));
+            await load();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setRetrying(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <SectionTitle
@@ -145,6 +168,9 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                                 <IconPause size={13} /> {t('downloads.pauseAll')}
                             </Button>
                         )}
+                        <Button small variant="ghost" onClick={retryFailed} loading={retrying} disabled={!counts.failed} title={t('downloads.retryFailedHint')}>
+                            <IconRefresh size={13} /> {t('downloads.retryFailed')}
+                        </Button>
                         <Button
                             small
                             variant="ghost"
@@ -252,8 +278,13 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                                     <IconX size={13} />
                                 </Button>
                             )}
+                            {(job.status === 'failed' || job.status === 'cancelled') && (
+                                <Button small variant="ghost" onClick={() => retryJob(job)} title={t('downloads.retry')}>
+                                    <IconRefresh size={13} />
+                                </Button>
+                            )}
                         </div>
-                        {job.error && <div className="mt-2 text-xs text-red-400">{job.error}</div>}
+                        {job.error && <div className="mt-2 text-xs break-all text-red-400">{job.error}</div>}
                     </Card>
                 ))}
             </div>

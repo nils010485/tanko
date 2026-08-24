@@ -8,7 +8,7 @@ import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
 import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
-import { INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
 import { type NotificationSettings, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
@@ -63,6 +63,9 @@ export class Scheduler {
             /** Optional source failover: invoked after repeated check failures. */
             failover?: {
                 maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto?: boolean): Promise<'migrated' | 'suggested' | 'none'>;
+                /** Shared probe guard: false when a probe already crawls for the entry. */
+                tryBeginProbe(entryId: number): boolean;
+                endProbe(entryId: number): void;
                 /** Opt-in starved-source detection (Settings toggle). */
                 suggestIfIncomplete?(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<boolean>;
             };
@@ -130,27 +133,36 @@ export class Scheduler {
                     newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
                 }
             }
-            // entries whose downloads keep failing on a source that still answers
-            // checks (reachable site, broken pages) deserve a failover too
+            // backstop for download failures that did not trip the immediate
+            // probe (index.ts): same threshold, on the scheduler cadence
             if (this.opts.failover) {
-                for (const entry of this.opts.store.listDownloadFailing(3)) {
-                    if (!failoverProbed.has(entry.id)) {
-                        failoverProbed.add(entry.id);
-                        try {
-                            const outcome = await this.opts.failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-                            this.opts.events.publish({
-                                type: 'log',
-                                level: outcome === 'migrated' ? 'info' : 'warn',
-                                message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`,
-                                at: new Date().toISOString()
-                            });
-                        } catch (error) {
-                            console.warn(`[failover] "${entry.title}":`, (error as Error).message);
-                        }
+                for (const entry of this.opts.store.listDownloadFailing(DOWNLOAD_FAILOVER_FAILURES)) {
+                    if (failoverProbed.has(entry.id) || this.opts.queue.hasPendingJobs(entry.id)) {
+                        continue; // already probed in this run, or the immediate probe owns it once the running jobs settle
                     }
-                    // reset even when nothing was found: implicit backoff, the
-                    // failover will only re-arm after 3 fresh download failures
-                    this.opts.store.resetDownloadFailures(entry.id);
+                    failoverProbed.add(entry.id);
+                    if (!this.opts.failover.tryBeginProbe(entry.id)) {
+                        continue; // an immediate probe is already crawling for this entry
+                    }
+                    try {
+                        const outcome = await this.opts.failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+                        this.opts.events.publish({
+                            type: 'log',
+                            level: outcome === 'migrated' ? 'info' : 'warn',
+                            message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`,
+                            at: new Date().toISOString()
+                        });
+                        if (outcome === 'migrated') {
+                            this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
+                        }
+                    } catch (error) {
+                        console.warn(`[failover] "${entry.title}":`, (error as Error).message);
+                    } finally {
+                        // implicit backoff: the probe only re-arms after as
+                        // many fresh download failures (DOWNLOAD_FAILOVER_FAILURES)
+                        this.opts.store.resetDownloadFailures(entry.id);
+                        this.opts.failover.endProbe(entry.id);
+                    }
                 }
             }
 
@@ -339,6 +351,9 @@ export class Scheduler {
             return; // already probed in this run (download-failure loop)
         }
         failoverProbed?.add(entry.id);
+        if (!this.opts.failover.tryBeginProbe(entry.id)) {
+            return; // an immediate or backstop probe already crawls for this entry
+        }
         try {
             const outcome = await this.opts.failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
             this.opts.events.publish({
@@ -350,6 +365,8 @@ export class Scheduler {
             this._publishEntryUpdated(entry.id);
         } catch (migrationError) {
             console.warn(`[failover] "${entry.title}":`, (migrationError as Error).message);
+        } finally {
+            this.opts.failover.endProbe(entry.id);
         }
     }
 

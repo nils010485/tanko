@@ -6,6 +6,20 @@ import type { LibraryStore } from '../library/store.js';
 export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry, store?: LibraryStore): void {
     // List jobs (active first, then recent history) — paginated & filterable
     const KNOWN_STATUSES = new Set(['queued', 'downloading', 'completed', 'failed', 'cancelled']);
+    // Requeued jobs must flip their library chapter status back to 'queued'
+    // ('failed' chapters would otherwise never leave the failed filter).
+    const syncChapterStatuses = (chapters: Array<{ entryId: number; chapterId: string }>) => {
+        const byEntry = new Map<number, string[]>();
+        for (const { entryId, chapterId } of chapters) {
+            const list = byEntry.get(entryId) ?? [];
+            list.push(chapterId);
+            byEntry.set(entryId, list);
+        }
+        for (const [entryId, chapterIds] of byEntry) {
+            store?.markChaptersQueued(entryId, chapterIds);
+        }
+    };
+
     app.get<{ Querystring: { limit?: string; offset?: string; status?: string; q?: string } }>('/api/downloads', async request =>
         queue.list({
             limit: request.query.limit ? Number(request.query.limit) : undefined,
@@ -68,6 +82,24 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
             return reply.code(404).send({ error: 'Job not found or not cancellable' });
         }
         return { ok: true };
+    });
+
+    // Requeue every failed job
+    app.post('/api/downloads/retry', async () => {
+        const result = queue.retryFailed();
+        syncChapterStatuses(result.chapters);
+        return result;
+    });
+
+    // Requeue one finished job (failed or cancelled)
+    app.post<{ Params: { jobId: string } }>('/api/downloads/:jobId/retry', async (request, reply) => {
+        const { jobId } = request.params as { jobId: string };
+        const result = queue.retryJob(Number(jobId));
+        if (result.retried === 0) {
+            return reply.code(404).send({ error: 'Job not found or not retryable' });
+        }
+        syncChapterStatuses(result.chapters);
+        return result;
     });
 
     // Pause / resume the whole queue

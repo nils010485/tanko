@@ -55,7 +55,38 @@ const gatedSource = (id: string, label: string) => ({
 });
 const gatedA = gatedSource('gated-a', 'Gated A');
 const gatedB = gatedSource('gated-b', 'Gated B');
-const sourcesById: Record<string, unknown> = { 'test-source': fakeSource, 'gated-a': gatedA, 'gated-b': gatedB };
+// Signed-URL source: the first page list points at an expired token (the
+// server answers with an HTML error page); refreshed lists return a working
+// URL — exercises the mid-chapter page-list recovery.
+let signedCalls = 0;
+const signedSource = {
+    ...fakeSource,
+    id: 'signed-source',
+    label: 'Signed Source',
+    getPages: async () => {
+        signedCalls++;
+        return signedCalls <= 1 ? [`${baseUrl}/stale/page.webp?acc=token&expires=1`] : [`${baseUrl}/fresh/page.webp`];
+    }
+};
+// connector:// source: the engine fetch-wrapper is not installed in tests, so
+// fetching the pseudo-protocol fails instantly — enough to assert the decoded
+// URL ends up in the error message.
+const connectorPayload = Buffer.from(JSON.stringify('https://s8.example.xyz/res/manga/solo/chapter-0/254886.webp?acc=abc&expires=1787453307')).toString(
+    'base64'
+);
+const connectorSource = {
+    ...fakeSource,
+    id: 'connector-source',
+    label: 'Connector Source',
+    getPages: async () => [`connector://manhuascan?payload=${connectorPayload}`]
+};
+const sourcesById: Record<string, unknown> = {
+    'test-source': fakeSource,
+    'gated-a': gatedA,
+    'gated-b': gatedB,
+    'signed-source': signedSource,
+    'connector-source': connectorSource
+};
 const fakeRegistry: any = {
     get: async (id: string) => sourcesById[id],
     list: async () => [fakeSource]
@@ -79,7 +110,13 @@ function waitForJob(jobId: number, statuses: string[], timeoutMs = 20000): Promi
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 beforeAll(async () => {
-    server = http.createServer((_, response) => {
+    server = http.createServer((request, response) => {
+        if (request.url?.startsWith('/stale')) {
+            // stands in for a CDN rejecting an expired signed URL with an HTML error page
+            response.writeHead(200, { 'Content-Type': 'text/html' });
+            response.end('<html>expired token</html>');
+            return;
+        }
         response.writeHead(200, { 'Content-Type': 'image/png' });
         response.end(PNG);
     });
@@ -329,5 +366,58 @@ describe('DownloadQueue', () => {
         for (const row of database.db.prepare("SELECT id FROM download_jobs WHERE chapter_id LIKE 'g%'").all() as any[]) {
             await waitForJob(row.id, ['completed']);
         }
+    });
+
+    it('recovers from expired signed page URLs by refreshing the page list', async () => {
+        queue.enqueue([
+            { sourceId: 'signed-source', mangaId: 'manga-signed', mangaTitle: 'Signed Manga', chapterId: 'chapter-signed', chapterTitle: 'Chapter Signed' }
+        ]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-signed') as any[];
+        // the stale URL serves HTML: three attempts fail, then the refreshed
+        // list's URL must go through (~6s of retry backoff)
+        const row = await waitForJob(rows[0].id, ['completed'], 30000);
+        expect(row.pages_done).toBe(1);
+        expect(signedCalls).toBeGreaterThanOrEqual(2);
+        const directory = path.join(tmpDir, 'downloads', 'Signed Source', 'Signed Manga', 'Chapter Signed');
+        expect(fs.readdirSync(directory)).toEqual(['1.png']);
+    });
+
+    it('decodes connector:// payloads in the error message', async () => {
+        queue.enqueue([
+            { sourceId: 'connector-source', mangaId: 'manga-conn', mangaTitle: 'Conn Manga', chapterId: 'chapter-conn', chapterTitle: 'Chapter Conn' }
+        ]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-conn') as any[];
+        const row = await waitForJob(rows[0].id, ['failed'], 30000);
+        expect(row.error).toContain('https://s8.example.xyz/res/manga/solo/chapter-0/254886.webp');
+        expect(row.error).not.toContain('payload');
+    });
+
+    it('retryJob requeues a failed job with its entry link', async () => {
+        queue.enqueue([{ sourceId: 'unknown-retry', mangaId: 'm-r', mangaTitle: 'R Manga', chapterId: 'c-retry', chapterTitle: 'CR', entryId: 7 }]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('c-retry') as any[];
+        await waitForJob(rows[0].id, ['failed']);
+        const result = queue.retryJob(rows[0].id);
+        expect(result.retried).toBe(1);
+        expect(result.chapters).toEqual([{ entryId: 7, chapterId: 'c-retry' }]);
+        await waitForJob(rows[0].id, ['failed']); // still an unknown source: fails again
+        expect(queue.retryJob(999999)).toMatchObject({ retried: 0 });
+    });
+
+    it('retryFailed requeues every failed job', () => {
+        const failed = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE status = 'failed'").get() as any;
+        const result = queue.retryFailed();
+        expect(result.retried).toBe(failed.n);
+        expect(result.retried).toBeGreaterThan(0);
+    });
+
+    it('hasPendingJobs tracks an entry queued or downloading jobs', async () => {
+        queue.pause();
+        queue.enqueue([{ sourceId: 'test-source', mangaId: 'm-pending', mangaTitle: 'P Manga', chapterId: 'c-pending', chapterTitle: 'CP', entryId: 42 }]);
+        expect(queue.hasPendingJobs(42)).toBe(true);
+        expect(queue.hasPendingJobs(4242)).toBe(false);
+        queue.resume();
+        const rows = database.db.prepare('SELECT id FROM download_jobs WHERE chapter_id = ?').all('c-pending') as any[];
+        await waitForJob(rows[0].id, ['completed']);
+        expect(queue.hasPendingJobs(42)).toBe(false);
     });
 });

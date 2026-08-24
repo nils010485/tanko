@@ -101,7 +101,7 @@ describe('scheduler failover dedup', () => {
             listDownloadFailing: () => [entry],
             resetDownloadFailures: () => {}
         };
-        await buildScheduler(store, { maybeMigrate }).runNow();
+        await buildScheduler(store, { maybeMigrate, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
         expect(maybeMigrate).toHaveBeenCalledTimes(1);
         expect(maybeMigrate).toHaveBeenCalledWith({ id: 7, sourceId: 'src', title: 'Series' });
     });

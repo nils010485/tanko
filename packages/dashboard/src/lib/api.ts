@@ -213,6 +213,8 @@ export const api = {
     enqueue: (payload: { sourceId: string; mangaId: string; mangaTitle?: string; chapters: Array<{ id: string; title: string }> }) =>
         request<{ added: number; skipped: number; retried: number }>('/api/downloads', { method: 'POST', body: JSON.stringify(payload) }),
     cancelJob: (jobId: number) => request<{ ok: boolean }>(`/api/downloads/${jobId}`, { method: 'DELETE' }),
+    retryJob: (jobId: number) => request<{ retried: number }>(`/api/downloads/${jobId}/retry`, { method: 'POST' }),
+    retryFailed: () => request<{ retried: number }>('/api/downloads/retry', { method: 'POST' }),
     clearHistory: () => request<{ removed: number }>('/api/downloads/history', { method: 'DELETE' }),
     pauseQueue: () => request<QueueStatusDto>('/api/downloads/pause', { method: 'POST' }),
     resumeQueue: () => request<QueueStatusDto>('/api/downloads/resume', { method: 'POST' }),
