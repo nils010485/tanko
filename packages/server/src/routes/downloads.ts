@@ -72,16 +72,23 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         return result;
     });
 
-    // Wipe the finished-job history (completed/failed/cancelled)
-    app.delete('/api/downloads/history', async () => ({ removed: queue.clearHistory() }));
-    // Cancel a job (queued or downloading)
-    app.delete('/api/downloads/:jobId', async (request, reply) => {
+    // Wipe the finished-job history (completed/failed/cancelled), optionally scoped to one status
+    app.delete<{ Querystring: { status?: string } }>('/api/downloads/history', async request => {
+        const { status } = request.query;
+        const scoped = status === 'completed' || status === 'failed' || status === 'cancelled' ? status : undefined;
+        return { removed: queue.clearHistory(scoped) };
+    });
+    // Cancel a job (queued or downloading) or dismiss a finished one from history
+    app.delete<{ Params: { jobId: string } }>('/api/downloads/:jobId', async (request, reply) => {
         const { jobId } = request.params as { jobId: string };
-        const ok = queue.cancel(Number(jobId));
-        if (!ok) {
-            return reply.code(404).send({ error: 'Job not found or not cancellable' });
+        const id = Number(jobId);
+        if (!Number.isFinite(id)) {
+            return reply.code(400).send({ error: 'Invalid job id' });
         }
-        return { ok: true };
+        if (queue.cancel(id) || queue.dismiss(id)) {
+            return { ok: true };
+        }
+        return reply.code(404).send({ error: 'Job not found' });
     });
 
     // Requeue every failed job

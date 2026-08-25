@@ -256,6 +256,18 @@ export const en = {
     'downloads.previous': '‹ Previous',
     'downloads.next': 'Next ›',
     'downloads.pageSummary': 'page {a} / {b} — {n} jobs',
+    'downloads.groupHistory': 'History',
+    'downloads.dismiss': 'Remove from history',
+    'downloads.clean': 'Clean',
+    'downloads.cleanHint': 'Empty the queue or clear part of the history',
+    'downloads.clearFailed': 'Clear failed',
+    'downloads.clearCompleted': 'Clear completed',
+    'downloads.clearAllHistory': 'Clear everything',
+    'downloads.clearHistoryTitle': 'Clear history?',
+    'downloads.clearFailedConfirm': 'Every failed job will be removed from the history. They will not be re-downloaded.',
+    'downloads.clearCompletedConfirm': 'Every completed job will be removed from the history. Downloaded files are kept.',
+    'downloads.clearAllConfirm': 'The whole history (completed, failed, cancelled) will be removed. Downloaded files are kept.',
+    'downloads.clearHistoryDone': '{n} job(s) removed from history.',
 
     // schedule
     'schedule.title': 'Schedule',

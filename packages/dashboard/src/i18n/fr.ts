@@ -257,6 +257,18 @@ export const fr: typeof import('./en.js').en = {
     'downloads.previous': '‹ Précédent',
     'downloads.next': 'Suivant ›',
     'downloads.pageSummary': 'page {a} / {b} — {n} travaux',
+    'downloads.groupHistory': 'Historique',
+    'downloads.dismiss': 'Retirer de l’historique',
+    'downloads.clean': 'Nettoyer',
+    'downloads.cleanHint': 'Vider la file ou effacer une partie de l’historique',
+    'downloads.clearFailed': 'Effacer les échoués',
+    'downloads.clearCompleted': 'Effacer les terminés',
+    'downloads.clearAllHistory': 'Tout effacer',
+    'downloads.clearHistoryTitle': 'Effacer l’historique ?',
+    'downloads.clearFailedConfirm': 'Tous les jobs en échec seront supprimés de l’historique. Ils ne seront pas retéléchargés.',
+    'downloads.clearCompletedConfirm': 'Tous les jobs terminés seront supprimés de l’historique. Les fichiers déjà téléchargés sont conservés.',
+    'downloads.clearAllConfirm': 'Tout l’historique (terminés, échoués, annulés) sera supprimé. Les fichiers déjà téléchargés sont conservés.',
+    'downloads.clearHistoryDone': '{n} job(s) effacé(s) de l’historique.',
 
     // schedule
     'schedule.title': 'Planification',

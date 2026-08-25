@@ -295,6 +295,29 @@ describe('DownloadQueue', () => {
         await waitForJob((database.db.prepare('SELECT id FROM download_jobs WHERE chapter_id = ?').get('chapter-queued') as any).id, ['completed']);
     });
 
+    it('clearHistory(status) only removes the scoped status; dismiss removes a single finished job', () => {
+        const now = new Date().toISOString();
+        const insert = (chapter: string, status: string) =>
+            database.db
+                .prepare(
+                    `INSERT INTO download_jobs
+                    (source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
+                 VALUES ('test-source', 'manga-scope', ?, 'Scope', ?, ?, 1, 1, 1, ?, ?)`
+                )
+                .run(chapter, chapter, status, now, now);
+        insert('scope-failed', 'failed');
+        insert('scope-completed', 'completed');
+
+        const scoped = queue.clearHistory('failed');
+        expect(scoped).toBeGreaterThanOrEqual(1);
+        expect((database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE chapter_id = ?').get('scope-failed') as any).n).toBe(0);
+        expect((database.db.prepare('SELECT COUNT(*) AS n FROM download_jobs WHERE chapter_id = ?').get('scope-completed') as any).n).toBe(1);
+
+        const row = database.db.prepare('SELECT id FROM download_jobs WHERE chapter_id = ?').get('scope-completed') as any;
+        expect(queue.dismiss(row.id)).toBe(true);
+        expect(queue.dismiss(row.id)).toBe(false); // already removed
+    });
+
     it('clearQueue removes queued jobs, flags downloading ones, keeps history', () => {
         queue.pause();
         queue.enqueue([

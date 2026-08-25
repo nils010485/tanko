@@ -424,9 +424,16 @@ export class DownloadQueue {
         return this.getSettings();
     }
 
-    /** Delete every finished job (completed/failed/cancelled); returns the number removed. */
-    clearHistory(): number {
-        return this._deleteFinished('1 = 1');
+    /** Delete finished jobs (completed/failed/cancelled), optionally scoped to
+     *  one finished status; returns the number removed. */
+    clearHistory(status?: DownloadStatus): number {
+        const scoped = status === 'completed' || status === 'failed' || status === 'cancelled' ? `status = '${status}'` : '1 = 1';
+        return this._deleteFinished(scoped);
+    }
+
+    /** Remove a single finished job from the history (per-row dismiss). */
+    dismiss(jobId: number): boolean {
+        return this._deleteFinished(`id = ${jobId}`) > 0;
     }
 
     stop(): void {
