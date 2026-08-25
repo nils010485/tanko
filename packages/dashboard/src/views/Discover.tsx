@@ -553,7 +553,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                             {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
                         </span>
                         {(currentSource.tags?.length ?? 0) > 0 && (
-                            <span className="ml-1 flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
+                            <span className="ml-2 flex flex-wrap items-center gap-1.5 border-l border-zinc-600 pl-4">
                                 {currentSource.tags.slice(0, 4).map((tag: string) => (
                                     <Badge key={tag}>{tag}</Badge>
                                 ))}
