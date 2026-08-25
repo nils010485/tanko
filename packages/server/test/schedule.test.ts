@@ -105,6 +105,21 @@ describe('scheduler failover dedup', () => {
         expect(maybeMigrate).toHaveBeenCalledTimes(1);
         expect(maybeMigrate).toHaveBeenCalledWith({ id: 7, sourceId: 'src', title: 'Series' });
     });
+
+    it('suspends the download-failure failover during a source-wide outage', async () => {
+        const maybeMigrate = vi.fn().mockResolvedValue('none');
+        const entry = { id: 9, sourceId: 'src', title: 'Outage Series', sourceLabel: 'Source' };
+        const store = {
+            listEntries: async () => [],
+            resetCheckFailures: () => {},
+            // several entries of the same source are failing at once -> outage
+            listDownloadFailing: () => [entry],
+            countRecentSourceFailures: () => 5,
+            resetDownloadFailures: () => {}
+        };
+        await buildScheduler(store, { maybeMigrate, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        expect(maybeMigrate).not.toHaveBeenCalled();
+    });
 });
 
 describe('scheduler auto-unfollow of stale series', () => {

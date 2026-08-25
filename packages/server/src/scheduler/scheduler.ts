@@ -8,7 +8,7 @@ import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
 import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
-import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, SOURCE_OUTAGE_ENTRIES, SOURCE_OUTAGE_WINDOW_MS } from '../library/failover.js';
 import { type NotificationSettings, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
@@ -139,6 +139,11 @@ export class Scheduler {
                 for (const entry of this.opts.store.listDownloadFailing(DOWNLOAD_FAILOVER_FAILURES)) {
                     if (failoverProbed.has(entry.id) || this.opts.queue.hasPendingJobs(entry.id)) {
                         continue; // already probed in this run, or the immediate probe owns it once the running jobs settle
+                    }
+                    // source-wide outage: the immediate path suspends migration
+                    // and the queue's auto-retry heals the failed jobs instead
+                    if (this.opts.store.countRecentSourceFailures(entry.sourceId, SOURCE_OUTAGE_WINDOW_MS) >= SOURCE_OUTAGE_ENTRIES) {
+                        continue;
                     }
                     failoverProbed.add(entry.id);
                     if (!this.opts.failover.tryBeginProbe(entry.id)) {

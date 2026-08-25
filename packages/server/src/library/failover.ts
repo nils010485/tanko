@@ -31,9 +31,20 @@ export const INCOMPLETE_SOURCE_CHAPTERS = 10;
 /** An alternative must offer at least this multiple of the current chapter
  *  count to be worth suggesting. */
 const IMPROVEMENT_FACTOR = 2;
-/** Consecutive download failures after which a source failover is probed
- *  immediately — without waiting for the next scheduler run (hours later). */
-export const DOWNLOAD_FAILOVER_FAILURES = 2;
+/** Download failures after which a source failover is probed immediately —
+ *  without waiting for the next scheduler run (hours later). One hard failure
+ *  is enough: the queue's retry ladder (per-page attempts × page-list
+ *  refreshes) has already weeded out timeouts and transient blips. */
+export const DOWNLOAD_FAILOVER_FAILURES = 1;
+/** Min delay between two migration probes for the same entry: a batch
+ *  download on a dead source fails once per chapter and must not crawl the
+ *  alternative sources for every single chapter. */
+export const PROBE_COOLDOWN_MS = 15 * 60 * 1000;
+/** Distinct entries of one source failing inside this window means a
+ *  source-wide outage (temporary): migration is suspended and the failed
+ *  jobs auto-retry instead — if the source comes back, it stays in use. */
+export const SOURCE_OUTAGE_ENTRIES = 3;
+export const SOURCE_OUTAGE_WINDOW_MS = 60 * 60 * 1000;
 
 export class FailoverService {
     /** Entries currently probed by suggestIfIncomplete (re-entry guard). */
@@ -42,6 +53,8 @@ export class FailoverService {
      *  download-failure path (index.ts), the scheduler backstop and the
      *  rematch actions, so at most one probe crawls for a given entry. */
     private readonly probing = new Set<number>();
+    /** When each entry was last probed (probe-storm cooldown). */
+    private readonly probeLastAt = new Map<number, number>();
 
     constructor(
         private readonly opts: {
@@ -194,12 +207,17 @@ export class FailoverService {
         }
     }
 
-    /** Mark an entry as being probed; false when a probe already runs. */
+    /** Mark an entry as being probed; false when a probe already runs or the
+     *  cooldown since the last probe has not elapsed. */
     tryBeginProbe(entryId: number): boolean {
         if (this.probing.has(entryId)) {
             return false;
         }
+        if (Date.now() - (this.probeLastAt.get(entryId) ?? 0) < PROBE_COOLDOWN_MS) {
+            return false;
+        }
         this.probing.add(entryId);
+        this.probeLastAt.set(entryId, Date.now());
         return true;
     }
 

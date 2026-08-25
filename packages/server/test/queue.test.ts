@@ -420,4 +420,29 @@ describe('DownloadQueue', () => {
         await waitForJob(rows[0].id, ['completed']);
         expect(queue.hasPendingJobs(42)).toBe(false);
     });
+
+    it('sweepFailedJobs requeues idle failed jobs within the retry budget', () => {
+        queue.pause();
+        const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        database.db
+            .prepare(
+                `INSERT INTO download_jobs
+                (source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, auto_retries, created_at, updated_at)
+             VALUES ('sweep-source', 'm', 'c-old', 'Sweep', 'Old', 'failed', 100, 1, 0, 0, ?, ?)`
+            )
+            .run(old, old);
+        const id = (database.db.prepare("SELECT id FROM download_jobs WHERE source_id = 'sweep-source'").get() as any).id;
+
+        expect(queue.sweepFailedJobs()).toBeGreaterThanOrEqual(1);
+        const requeued = database.db.prepare('SELECT status, auto_retries FROM download_jobs WHERE id = ?').get(id) as any;
+        expect(requeued.status).toBe('queued');
+        expect(requeued.auto_retries).toBe(1);
+
+        // just-refreshed jobs are left alone…
+        expect(queue.sweepFailedJobs()).toBe(0);
+        // …and so are exhausted ones
+        database.db.prepare('UPDATE download_jobs SET status = ?, auto_retries = ?, updated_at = ? WHERE id = ?').run('failed', 8, old, id);
+        expect(queue.sweepFailedJobs()).toBe(0);
+        queue.resume();
+    });
 });

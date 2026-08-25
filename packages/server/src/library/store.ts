@@ -287,7 +287,9 @@ export class LibraryStore {
     // source health / failover
     // ------------------------------------------------------------------
 
-    /** Consecutive download failures on an entry (reset by a success or a migration). */
+    /** Download failures since the last failover probe (the probe resets the
+     *  counter). Successes deliberately do not: a failing batch interleaved
+     *  with successes must still trip the failover. */
     recordDownloadFailure(entryId: number): number {
         this.opts.db.db.prepare('UPDATE library SET download_failures = download_failures + 1 WHERE id = ?').run(entryId);
         return Number((this._get('SELECT download_failures AS n FROM library WHERE id = ?', entryId) as { n: number } | undefined)?.n ?? 0);
@@ -295,6 +297,18 @@ export class LibraryStore {
 
     resetDownloadFailures(entryId: number): void {
         this.opts.db.db.prepare('UPDATE library SET download_failures = 0 WHERE id = ?').run(entryId);
+    }
+
+    /** Distinct entries of this source with a failed download job inside the
+     *  window — several at once is a source outage, not per-series rot. */
+    countRecentSourceFailures(sourceId: string, windowMs: number): number {
+        const cutoff = new Date(Date.now() - windowMs).toISOString();
+        const row = this._get(
+            "SELECT COUNT(DISTINCT entry_id) AS n FROM download_jobs WHERE source_id = ? AND status = 'failed' AND entry_id IS NOT NULL AND updated_at > ?",
+            sourceId,
+            cutoff
+        ) as { n: number } | undefined;
+        return Number(row?.n ?? 0);
     }
 
     /** Entries whose downloads keep failing (candidates for a source failover). */
@@ -385,16 +399,17 @@ export class LibraryStore {
             const number = parseChapterNumber(chapter.title);
             return chapter.status !== 'downloaded' && number !== null && numbers.has(number);
         });
-        const queued = this._enqueueSelected(entry, chapters, queue, () =>
+        // the consumed failures (and the still-queued old-source jobs, which
+        // would keep failing pointlessly) are purged before enqueuing, so a
+        // bulk "retry failed" cannot resurrect the dead source AND the fresh
+        // jobs are not caught by the DELETE themselves
+        this.opts.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status IN ('failed', 'queued')").run(entryId);
+        return this._enqueueSelected(entry, chapters, queue, () =>
             this.markChaptersQueued(
                 entryId,
                 chapters.map(chapter => chapter.chapter_id)
             )
         );
-        // the consumed failures point at the old source: purge them so a bulk
-        // "retry failed" cannot resurrect downloads from the dead source
-        this.opts.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status = 'failed'").run(entryId);
-        return queued;
     }
 
     /** Downloaded chapters of an entry keyed by chapter number (first occurrence wins). */

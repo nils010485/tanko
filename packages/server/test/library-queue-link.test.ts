@@ -152,4 +152,19 @@ describe('download retry flow', () => {
         const failedLeft = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE entry_id = ? AND status = 'failed'").get(entryId) as any;
         expect(failedLeft.n).toBe(0);
     });
+
+    it('countRecentSourceFailures counts distinct entries with fresh failures', () => {
+        const now = new Date().toISOString();
+        const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+        const insert = database.db.prepare(
+            `INSERT INTO download_jobs (entry_id, source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
+             VALUES (?, 's', 'm', ?, 'T', 'C', 'failed', 100, 1, 0, ?, ?)`
+        );
+        insert.run(entryId, 'c-recent', now, now);
+        insert.run(entryId, 'c-old', old, old);
+        insert.run(null, 'c-untracked', now, now);
+        // one distinct tracked entry, the stale row sits outside the window
+        expect(store.countRecentSourceFailures('s', 60 * 60 * 1000)).toBe(1);
+        expect(store.countRecentSourceFailures('other', 60 * 60 * 1000)).toBe(0);
+    });
 });

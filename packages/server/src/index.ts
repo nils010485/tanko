@@ -16,7 +16,7 @@ import { Database } from './db.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
 import { ImportService } from './import/service.js';
 import { CoverService } from './library/covers.js';
-import { DOWNLOAD_FAILOVER_FAILURES, FailoverService } from './library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, FailoverService, SOURCE_OUTAGE_ENTRIES, SOURCE_OUTAGE_WINDOW_MS } from './library/failover.js';
 import { LibraryStore } from './library/store.js';
 import { registerActivityRoutes } from './routes/activity.js';
 import { registerCoverRoutes } from './routes/covers.js';
@@ -120,8 +120,6 @@ const queue = new DownloadQueue({
         }
         if (job.status === 'failed') {
             handleDownloadFailure(job);
-        } else if (job.status === 'completed') {
-            library.resetDownloadFailures(job.entryId);
         }
         if (job.status === 'completed' && covers.isEnabled() && !covers.hasCover(job.entryId)) {
             // first downloaded chapter of this series: fill the cover cache in the background
@@ -136,7 +134,7 @@ const queue = new DownloadQueue({
     onJobsCleared: pairs => library.revertClearedChapters(pairs)
 });
 
-/** Repeated download failures on one entry: probe the alternative sources right
+/** A hard download failure on one entry: probe the alternative sources right
  *  away instead of waiting for the next scheduler run (hours later). When a
  *  migration is applied, the failed chapters are re-queued on the new source
  *  so the interrupted download resumes by itself. */
@@ -151,9 +149,26 @@ function handleDownloadFailure(job: DownloadJobDto): void {
     if (!entry) {
         return;
     }
+
+    // several entries of the same source failing together = temporary outage,
+    // not per-series rot: suspend migration, the queue's auto-retry will heal
+    // the failed jobs when the source comes back
+    const outageEntries = library.countRecentSourceFailures(entry.sourceId, SOURCE_OUTAGE_WINDOW_MS);
+    if (outageEntries >= SOURCE_OUTAGE_ENTRIES) {
+        if (failover.tryBeginProbe(entryId)) {
+            events.publish({
+                type: 'log',
+                level: 'warn',
+                message: `"${entry.title}" : panne de la source ${entry.sourceLabel} (${outageEntries} séries en échec) — migration suspendue, les échecs seront retentés automatiquement`,
+                at: new Date().toISOString()
+            });
+            failover.endProbe(entryId);
+        }
+        return;
+    }
     const failures = library.recordDownloadFailure(entryId);
-    // below the threshold, sibling jobs may still settle (their own finish
-    // events re-arm the probe), or a probe already crawls for this entry
+    // sibling jobs may still settle (their own finish events re-arm the probe)
+    // or the entry sits in its probe cooldown
     if (failures < DOWNLOAD_FAILOVER_FAILURES || queue.hasPendingJobs(entryId) || !failover.tryBeginProbe(entryId)) {
         return;
     }
@@ -177,8 +192,8 @@ function handleDownloadFailure(job: DownloadJobDto): void {
         } catch (error) {
             console.warn(`[failover] "${entry.title}":`, (error as Error).message);
         } finally {
-            // implicit backoff (same idea as the scheduler loop): the probe
-            // only re-arms after as many fresh download failures
+            // implicit backoff: the cooldown in tryBeginProbe plus this reset
+            // keep a dead source from re-arming a probe on every failure
             library.resetDownloadFailures(entryId);
             failover.endProbe(entryId);
             const updated = library.getEntry(entryId);

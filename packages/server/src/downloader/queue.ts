@@ -85,6 +85,12 @@ const PAGE_ATTEMPTS = 3;
 /** Max page-list refreshes per chapter: pages fetched through signed URLs
  *  (connector:// payloads with ?expires=…) can go stale mid-chapter. */
 const PAGE_LIST_REFRESHES = 2;
+/** Auto-retry of failed jobs: a failed job sits idle at least this long before
+ *  the sweep requeues it (temporary source outages / late timeouts heal
+ *  themselves; permanent rot stays failed — the failover owns that). */
+const AUTO_RETRY_DELAY_MS = 30 * 60 * 1000;
+const AUTO_RETRY_MAX = 8;
+const AUTO_RETRY_SWEEP_MS = 5 * 60 * 1000;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
 const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
@@ -130,6 +136,7 @@ export class DownloadQueue {
     private readonly activePerSource = new Map<string, number>();
     private timer: ReturnType<typeof setInterval> | undefined;
     private pruneTimer: ReturnType<typeof setInterval> | undefined;
+    private retryTimer: ReturnType<typeof setInterval> | undefined;
 
     constructor(
         private readonly opts: {
@@ -150,6 +157,7 @@ export class DownloadQueue {
         this._pruneHistory();
         this.pruneTimer = setInterval(() => this._pruneHistory(), PRUNE_INTERVAL_MS);
         this.timer = setInterval(() => this._schedule(), 1000);
+        this.retryTimer = setInterval(() => this.sweepFailedJobs(), AUTO_RETRY_SWEEP_MS);
     }
 
     // ------------------------------------------------------------------
@@ -187,7 +195,7 @@ export class DownloadQueue {
                 // failed/cancelled job -> requeue (and link it to the library entry if it wasn't)
                 this.opts.db.db
                     .prepare(
-                        'UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, entry_id = COALESCE(?, entry_id), updated_at = ? WHERE id = ?'
+                        'UPDATE download_jobs SET status = ?, error = NULL, progress = 0, pages_done = 0, auto_retries = 0, entry_id = COALESCE(?, entry_id), updated_at = ? WHERE id = ?'
                     )
                     .run('queued', chapter.entryId ?? null, now, existing.id);
                 retried++;
@@ -300,6 +308,26 @@ export class DownloadQueue {
     /** Whether the entry still has queued or downloading jobs. The immediate
      *  download-failure failover defers until they settle so a migration does
      *  not race chapters being rebuilt under running downloads. */
+    /** Requeue failed jobs that sat idle past the auto-retry delay (bounded by
+     *  AUTO_RETRY_MAX, reset by a manual retry): temporary source outages and
+     *  late timeouts self-heal without a click. */
+    sweepFailedJobs(): number {
+        const now = new Date().toISOString();
+        const cutoff = new Date(Date.now() - AUTO_RETRY_DELAY_MS).toISOString();
+        const changed = Number(
+            this.opts.db.db
+                .prepare(
+                    "UPDATE download_jobs SET status = 'queued', error = NULL, progress = 0, pages_done = 0, auto_retries = auto_retries + 1, updated_at = ? WHERE status = 'failed' AND auto_retries < ? AND updated_at < ?"
+                )
+                .run(now, AUTO_RETRY_MAX, cutoff).changes
+        );
+        if (changed > 0) {
+            this._schedule();
+            this._publishStatus();
+        }
+        return changed;
+    }
+
     hasPendingJobs(entryId: number): boolean {
         const row = this.opts.db.db
             .prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE entry_id = ? AND status IN ('queued', 'downloading')")
@@ -410,6 +438,10 @@ export class DownloadQueue {
             clearInterval(this.pruneTimer);
             this.pruneTimer = undefined;
         }
+        if (this.retryTimer) {
+            clearInterval(this.retryTimer);
+            this.retryTimer = undefined;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -433,12 +465,18 @@ export class DownloadQueue {
                 pages_done    INTEGER NOT NULL DEFAULT 0,
                 error         TEXT,
                 path          TEXT,
+                auto_retries  INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL,
                 UNIQUE(source_id, manga_id, chapter_id)
             );
             CREATE INDEX IF NOT EXISTS idx_download_jobs_status ON download_jobs(status);
         `);
+        // older installs: add the auto-retry counter
+        const columns = this.opts.db.db.prepare('PRAGMA table_info(download_jobs)').all() as Array<{ name: string }>;
+        if (!columns.some(column => column.name === 'auto_retries')) {
+            this.opts.db.db.exec('ALTER TABLE download_jobs ADD COLUMN auto_retries INTEGER NOT NULL DEFAULT 0');
+        }
     }
 
     /** After a crash/restart, jobs stuck in queued/downloading go back to queued. */
