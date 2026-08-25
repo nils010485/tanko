@@ -36,6 +36,7 @@ export const fr: typeof import('./en.js').en = {
     'discover.recheckAllHint': 'Relance une sonde sur toutes les sources et réaffiche les sources masquées',
     'discover.source': 'Source',
     'discover.native': 'natif',
+    'discover.outOfLanguages': 'hors de vos langues',
     'discover.pickSource': 'Choisir une source…',
     'discover.filterSources': 'Filtrer les sources…',
     'discover.noSourceMatch': 'Aucune source ne correspond.',

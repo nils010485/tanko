@@ -241,7 +241,8 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         if (!globalStatus) {
             return [];
         }
-        const rank = (group: GlobalSearchSourceResultDto) => (group.status === 'ok' ? (group.mangas.length > 0 ? 0 : 1) : 2);
+        // preferred-language matches first, then out-of-language hits, then the rest
+        const rank = (group: GlobalSearchSourceResultDto) => (group.outOfLanguages ? 1 : group.status === 'ok' ? (group.mangas.length > 0 ? 0 : 2) : 3);
         return [...globalStatus.results].sort((a, b) => rank(a) - rank(b) || b.mangas.length - a.mangas.length || a.sourceLabel.localeCompare(b.sourceLabel));
     }, [globalStatus]);
     // sources with hits render as cards; the rest (empty/failed/skipped)
@@ -542,7 +543,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                 </div>
 
                 {currentSource && scope === 'source' && (
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                         {healthDot(currentSource.health, t)}
                         <span>
                             {currentSource.health === 'ok' && t('discover.statusOk')}
@@ -551,9 +552,13 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                             {currentSource.health === 'untested' && t('discover.statusUntested')}
                             {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
                         </span>
-                        {currentSource.tags?.slice(0, 4).map((tag: string) => (
-                            <Badge key={tag}>{tag}</Badge>
-                        ))}
+                        {(currentSource.tags?.length ?? 0) > 0 && (
+                            <span className="ml-1 flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
+                                {currentSource.tags.slice(0, 4).map((tag: string) => (
+                                    <Badge key={tag}>{tag}</Badge>
+                                ))}
+                            </span>
+                        )}
                     </div>
                 )}
             </Card>
@@ -628,8 +633,13 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                                         {t('discover.globalResultsCount', { n: group.mangas.length })}
                                         {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
                                     </span>
+                                    {group.outOfLanguages && (
+                                        <Badge tone="orange">
+                                            <IconGlobe size={12} /> {t('discover.outOfLanguages')}
+                                        </Badge>
+                                    )}
                                 </div>
-                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                <div className={`mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3${group.outOfLanguages ? ' opacity-60' : ''}`}>
                                     {group.mangas.map(manga => {
                                         const key = `${manga.sourceId}:${manga.id}`;
                                         return (

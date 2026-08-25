@@ -87,3 +87,12 @@ export function chapterAllowed(language: string | undefined, preferred: string[]
     const iso = normalizeLanguage(language);
     return iso === undefined || preferred.includes(iso);
 }
+
+/** A search result is kept when its languages are unknown or intersect the
+ *  preferred ones. Sources that can't tell (legacy) return undefined and pass. */
+export function mangaLanguagesAllowed(languages: string[] | undefined, preferred: string[]): boolean {
+    if (preferred.length === 0 || !languages || languages.length === 0) {
+        return true;
+    }
+    return languages.some(language => preferred.includes(normalizeLanguage(language) || ''));
+}

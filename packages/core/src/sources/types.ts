@@ -11,6 +11,10 @@ export interface MangaInfo {
     /** Absolute resource URL when known. */
     url?: string;
     thumbnail?: string;
+    /** Languages the manga is available in on this source, when the source
+     *  knows it up-front (native MangaDex search). Lets callers drop titles
+     *  with no chapter in the preferred languages before they look broken. */
+    languages?: string[];
 }
 
 export interface ChapterInfo {

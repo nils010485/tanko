@@ -215,11 +215,12 @@ const importer = new ImportService({
 
 const globalSearch = new GlobalSearchService({
     getAdapter: id => sourceRegistry.get(id),
+    getPreferredLanguages: preferredLanguages,
     listSources: async () => {
         const hidden = healthService.getHiddenSet();
         return (await sourceRegistry.list())
             .filter(source => !hidden.has(source.id))
-            .map(source => ({ id: source.id, label: source.label, kind: source.kind }));
+            .map(source => ({ id: source.id, label: source.label, kind: source.kind, tags: source.tags }));
     }
 });
 

@@ -21,6 +21,7 @@ interface MangadexLocalizedString {
 interface MangadexMangaAttributes {
     title?: MangadexLocalizedString;
     altTitles?: MangadexLocalizedString[];
+    availableTranslatedLanguages?: string[];
 }
 interface MangadexChapterAttributes {
     chapter?: string;
@@ -73,7 +74,8 @@ export class MangaDexConnector implements SourceAdapter {
                     id: manga.id,
                     title,
                     url: `${this.url}/title/${manga.id}`,
-                    thumbnail: this._coverUrl(manga)
+                    thumbnail: this._coverUrl(manga),
+                    languages: attributes.availableTranslatedLanguages?.filter(Boolean)
                 });
             }
         }

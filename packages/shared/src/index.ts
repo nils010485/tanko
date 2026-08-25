@@ -69,6 +69,9 @@ export interface GlobalSearchSourceResultDto {
     status: 'ok' | 'error' | 'timeout' | 'skipped';
     tookMs?: number;
     error?: string;
+    /** True when the source declares languages and none is preferred: results
+     *  are shown de-emphasized instead of hidden (the title may still be wanted). */
+    outOfLanguages?: boolean;
     mangas: MangaDto[];
 }
 

@@ -110,3 +110,51 @@ describe('GlobalSearchService', () => {
         expect(status.results.filter(result => result.status === 'skipped').length).toBeGreaterThanOrEqual(2);
     });
 });
+
+describe('GlobalSearchService language preference', () => {
+    it('drops titles without a chapter in the preferred languages', async () => {
+        const service = makeService(
+            [
+                fakeAdapter('dex', async () => [
+                    { id: 'm1', title: 'EN title', languages: ['en', 'fr'] },
+                    { id: 'm2', title: 'FR/PL only', languages: ['fr', 'pl'] },
+                    { id: 'm3', title: 'unknown languages' }
+                ])
+            ],
+            [{ id: 'dex', label: 'Dex', kind: 'native' }],
+            { getPreferredLanguages: () => ['en'] }
+        );
+        const { jobId } = await service.start('x');
+        const status = await waitForDone(service, jobId);
+        const group = status.results[0];
+        expect(group?.status).toBe('ok');
+        expect(group?.mangas.map(manga => manga.id)).toEqual(['m1', 'm3']);
+        expect(group?.outOfLanguages).toBeUndefined();
+    });
+
+    it('flags sources without any preferred language instead of hiding them', async () => {
+        const service = makeService(
+            [fakeAdapter('lelscan', async () => [{ id: 'm1', title: 'Titre FR' }])],
+            [{ id: 'lelscan', label: 'LELSCAN-VF', kind: 'legacy', tags: ['french'] }],
+            { getPreferredLanguages: () => ['en'] }
+        );
+        const { jobId } = await service.start('x');
+        const status = await waitForDone(service, jobId);
+        const group = status.results[0];
+        expect(group?.status).toBe('ok');
+        expect(group?.outOfLanguages).toBe(true);
+        expect(group?.mangas).toHaveLength(1);
+    });
+
+    it('no preference disables both filtering and flagging', async () => {
+        const service = makeService(
+            [fakeAdapter('dex', async () => [{ id: 'm1', title: 'FR/PL only', languages: ['fr', 'pl'] }])],
+            [{ id: 'dex', label: 'Dex', kind: 'native', tags: ['multi-lingual'] }],
+            { getPreferredLanguages: () => [] }
+        );
+        const { jobId } = await service.start('x');
+        const status = await waitForDone(service, jobId);
+        expect(status.results[0]?.mangas).toHaveLength(1);
+        expect(status.results[0]?.outOfLanguages).toBeUndefined();
+    });
+});

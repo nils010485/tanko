@@ -36,6 +36,7 @@ export const en = {
     'discover.recheckAllHint': 'Re-probes every source and unhides hidden sources',
     'discover.source': 'Source',
     'discover.native': 'native',
+    'discover.outOfLanguages': 'not in your languages',
     'discover.pickSource': 'Pick a source…',
     'discover.filterSources': 'Filter sources…',
     'discover.noSourceMatch': 'No source matches.',

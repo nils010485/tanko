@@ -11,6 +11,7 @@
 
 import type { MangaInfo, SourceAdapter } from '@tanko/core';
 import type { GlobalSearchSourceResultDto, GlobalSearchStatusDto } from '@tanko/shared';
+import { mangaLanguagesAllowed, sourceUsable } from '../languages.js';
 
 const CONCURRENCY = 16;
 /** Per-source wall-clock budget (clamped to the remaining overall deadline). */
@@ -27,6 +28,8 @@ export interface GlobalSearchTarget {
     id: string;
     label: string;
     kind: 'legacy' | 'native';
+    /** Source tags, used to detect preferred-language mismatches. */
+    tags?: string[];
 }
 
 interface GlobalSearchJob {
@@ -45,6 +48,8 @@ export class GlobalSearchService {
         private readonly opts: {
             listSources: () => Promise<GlobalSearchTarget[]>;
             getAdapter: (id: string) => Promise<SourceAdapter | undefined>;
+            /** Preferred chapter languages (ISO codes); empty = no filter (all). */
+            getPreferredLanguages?: () => string[];
             /** Timing overrides for tests (fast budgets); defaults are production-tuned. */
             concurrency?: number;
             sourceTimeoutMs?: number;
@@ -139,19 +144,28 @@ export class GlobalSearchService {
                     unique.set(String(manga.id), manga);
                 }
             }
+            const preferred = this.opts.getPreferredLanguages?.() || [];
             job.results.push({
                 sourceId: target.id,
                 sourceLabel: target.label,
                 kind: target.kind,
                 status: 'ok',
                 tookMs: Date.now() - startedAt,
-                mangas: [...unique.values()].slice(0, RESULTS_PER_SOURCE).map((manga): GlobalSearchSourceResultDto['mangas'][number] => ({
-                    sourceId: target.id,
-                    id: manga.id,
-                    title: manga.title,
-                    url: manga.url,
-                    thumbnail: manga.thumbnail
-                }))
+                // titles known to lack chapters in the preferred languages
+                // (native MangaDex metadata) are dropped instead of looking
+                // empty later; sources without the preferred language at all
+                // are flagged so the UI can de-emphasize rather than hide them
+                outOfLanguages: (preferred.length > 0 && !sourceUsable(target.tags || [], preferred)) || undefined,
+                mangas: [...unique.values()]
+                    .filter(manga => mangaLanguagesAllowed(manga.languages, preferred))
+                    .slice(0, RESULTS_PER_SOURCE)
+                    .map((manga): GlobalSearchSourceResultDto['mangas'][number] => ({
+                        sourceId: target.id,
+                        id: manga.id,
+                        title: manga.title,
+                        url: manga.url,
+                        thumbnail: manga.thumbnail
+                    }))
             });
         } catch (error) {
             job.results.push({

@@ -1,7 +1,7 @@
 import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { chapterAllowed } from '../languages.js';
+import { chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
     if (error instanceof SourceError) {
@@ -143,10 +143,13 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
             const mangas = await source.searchMangas(query);
+            // drop titles known (native MangaDex metadata) to lack chapters in
+            // the preferred languages — they would list 0 chapters later
+            const allowed = mangas.filter(manga => mangaLanguagesAllowed(manga.languages, getPreferredLanguages()));
             // native MangaDex emits one entry per title/alt-title (import matching
             // relies on it): display keeps a single card per manga
             const unique = new Map<string, MangaInfo>();
-            for (const manga of mangas) {
+            for (const manga of allowed) {
                 if (!unique.has(String(manga.id))) {
                     unique.set(String(manga.id), manga);
                 }
