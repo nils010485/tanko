@@ -86,9 +86,11 @@ export const fr: typeof import('./en.js').en = {
     'discover.globalResultsCount': '{n} résultat(s)',
     'discover.globalSourceError': 'échec',
     'discover.globalSourceTimeout': 'expirée',
-    'discover.globalSourceSkipped': 'non interrogée (budget)',
+    'discover.globalSourceSkipped': 'non atteinte',
     'discover.globalNoResults': 'Aucun résultat nulle part',
-    'discover.globalNoResultsHint': 'Seules les sources en cache répondent au premier passage — relancez la recherche pour en couvrir davantage.',
+    'discover.globalNoResultsHint':
+        'Toutes les sources visibles sont interrogées ; certaines peuvent être lentes ou indisponibles — dépliez le résumé ci-dessous pour le détail.',
+    'discover.globalMissSummary': '{empty} source(s) sans résultat · {failed} en échec ou non atteintes',
 
     // library
     'library.title': 'Librairie',

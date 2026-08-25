@@ -12,12 +12,12 @@
 import type { MangaInfo, SourceAdapter } from '@tanko/core';
 import type { GlobalSearchSourceResultDto, GlobalSearchStatusDto } from '@tanko/shared';
 
-/** Parallel workers hitting distinct sources. */
-const CONCURRENCY = 8;
+const CONCURRENCY = 16;
 /** Per-source wall-clock budget (clamped to the remaining overall deadline). */
 const SOURCE_TIMEOUT_MS = 12_000;
-/** Overall budget after which remaining sources are skipped. */
-const OVERALL_DEADLINE_MS = 30_000;
+/** Overall budget after which remaining sources are skipped. Generous on
+ *  purpose: "search everywhere" must actually reach every visible source. */
+const OVERALL_DEADLINE_MS = 180_000;
 /** Result cap per source (the UI groups by source, 20 cards is plenty). */
 const RESULTS_PER_SOURCE = 20;
 /** Finished jobs stay pollable for a while, then are purged. */
@@ -83,7 +83,9 @@ export class GlobalSearchService {
     private async _run(job: GlobalSearchJob): Promise<void> {
         const deadline = Date.now() + (this.opts.overallDeadlineMs ?? OVERALL_DEADLINE_MS);
         const sourceTimeout = this.opts.sourceTimeoutMs ?? SOURCE_TIMEOUT_MS;
-        const pending = [...job.targets];
+        // native adapters answer fast and reliably: schedule them first so
+        // useful results appear early in the progressive UI
+        const pending = [...job.targets].sort((a, b) => Number(b.kind === 'native') - Number(a.kind === 'native'));
         const worker = async (): Promise<void> => {
             for (;;) {
                 if (Date.now() >= deadline) {
@@ -129,13 +131,21 @@ export class GlobalSearchService {
                     }
                 );
             });
+            // native MangaDex search emits one entry per title/alt-title (import
+            // matching relies on it): display dedupes back to one card per manga
+            const unique = new Map<string, (typeof mangas)[number]>();
+            for (const manga of mangas) {
+                if (!unique.has(String(manga.id))) {
+                    unique.set(String(manga.id), manga);
+                }
+            }
             job.results.push({
                 sourceId: target.id,
                 sourceLabel: target.label,
                 kind: target.kind,
                 status: 'ok',
                 tookMs: Date.now() - startedAt,
-                mangas: mangas.slice(0, RESULTS_PER_SOURCE).map((manga): GlobalSearchSourceResultDto['mangas'][number] => ({
+                mangas: [...unique.values()].slice(0, RESULTS_PER_SOURCE).map((manga): GlobalSearchSourceResultDto['mangas'][number] => ({
                     sourceId: target.id,
                     id: manga.id,
                     title: manga.title,

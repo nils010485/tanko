@@ -11,6 +11,8 @@ import type { BadgeTone } from './ui.js';
 export interface ChapterListItem {
     key: string;
     title: string;
+    /** Small trailing annotation (e.g. chapter language badge). */
+    badge?: ReactNode;
     node?: ReactNode;
 }
 
@@ -94,6 +96,7 @@ export function ChapterList({ items, selection, resetKey }: { items: ChapterList
                         <span className="min-w-0 flex-1 truncate text-zinc-300" title={item.title}>
                             {item.title}
                         </span>
+                        {item.badge && <span className="flex-none">{item.badge}</span>}
                     </span>
                     {item.node}
                 </div>

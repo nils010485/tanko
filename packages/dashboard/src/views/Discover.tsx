@@ -117,6 +117,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
     const [globalSearching, setGlobalSearching] = useState(false);
     const [globalError, setGlobalError] = useState('');
     const globalStopped = useRef(false);
+    const [showMisses, setShowMisses] = useState(false);
     const [selected, setSelected] = useState<MangaDto | null>(null);
     const [chapters, setChapters] = useState<ChapterDto[] | null>(null);
     const [chaptersError, setChaptersError] = useState('');
@@ -234,6 +235,8 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
 
     // global (all visible sources) search: start then poll; sources answer as
     // their cache/endpoint allows and groups render progressively
+    // global (all visible sources) search: start then poll; sources answer as
+    // their cache/endpoint allows and groups render progressively
     const globalGroups = useMemo(() => {
         if (!globalStatus) {
             return [];
@@ -241,7 +244,14 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
         const rank = (group: GlobalSearchSourceResultDto) => (group.status === 'ok' ? (group.mangas.length > 0 ? 0 : 1) : 2);
         return [...globalStatus.results].sort((a, b) => rank(a) - rank(b) || b.mangas.length - a.mangas.length || a.sourceLabel.localeCompare(b.sourceLabel));
     }, [globalStatus]);
-
+    // sources with hits render as cards; the rest (empty/failed/skipped)
+    // collapses into a single summary row instead of a wall of empty boxes
+    const hitGroups = globalGroups.filter(group => group.mangas.length > 0);
+    const missGroups = globalGroups.filter(group => group.mangas.length === 0);
+    const missEmptyCount = missGroups.filter(group => group.status === 'ok').length;
+    const missFailedCount = missGroups.length - missEmptyCount;
+    /** Distinct languages among the listed chapters (drives the per-chapter language badge). */
+    const chapterLanguages = useMemo(() => new Set((chapters ?? []).map(chapter => chapter.language).filter(Boolean)), [chapters]);
     const runGlobalSearch = async () => {
         if (globalSearching || !query.trim()) return;
         globalStopped.current = false;
@@ -606,7 +616,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                             <span>{t('discover.globalDone', { total: globalStatus.total })}</span>
                         )}
                     </Card>
-                    {globalGroups.map(group => {
+                    {hitGroups.map(group => {
                         const source = sources.find(item => item.id === group.sourceId);
                         return (
                             <Card key={group.sourceId} className="p-4">
@@ -614,38 +624,63 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                                     {healthDot(source?.health, t)}
                                     <span className="text-sm font-medium">{group.sourceLabel}</span>
                                     {group.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
-                                    {group.status === 'ok' ? (
-                                        <span className="text-xs text-zinc-500">
-                                            {group.mangas.length > 0 ? t('discover.globalResultsCount', { n: group.mangas.length }) : t('discover.noResults')}
-                                            {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
-                                        </span>
-                                    ) : (
-                                        <Badge tone={group.status === 'skipped' ? undefined : 'red'}>{t(GLOBAL_STATUS_KEYS[group.status])}</Badge>
-                                    )}
+                                    <span className="text-xs text-zinc-500">
+                                        {t('discover.globalResultsCount', { n: group.mangas.length })}
+                                        {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
+                                    </span>
                                 </div>
-                                {group.mangas.length > 0 && (
-                                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                        {group.mangas.map(manga => {
-                                            const key = `${manga.sourceId}:${manga.id}`;
-                                            return (
-                                                <MangaResultCard
-                                                    key={key}
-                                                    manga={manga}
-                                                    sourceLabel={group.sourceLabel}
-                                                    isAdded={added.has(key)}
-                                                    isAdding={addingKey === key}
-                                                    followDisabled={addingKey !== null}
-                                                    onChapters={openChapters}
-                                                    onFollow={openFollowChoice}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    {group.mangas.map(manga => {
+                                        const key = `${manga.sourceId}:${manga.id}`;
+                                        return (
+                                            <MangaResultCard
+                                                key={key}
+                                                manga={manga}
+                                                sourceLabel={group.sourceLabel}
+                                                isAdded={added.has(key)}
+                                                isAdding={addingKey === key}
+                                                followDisabled={addingKey !== null}
+                                                onChapters={openChapters}
+                                                onFollow={openFollowChoice}
+                                            />
+                                        );
+                                    })}
+                                </div>
                             </Card>
                         );
                     })}
-                    {!globalSearching && globalStatus.completed > 0 && globalGroups.every(group => group.mangas.length === 0) && (
+                    {missGroups.length > 0 && (
+                        <Card className="p-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowMisses(open => !open)}
+                                className="flex w-full items-center gap-2 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+                            >
+                                <IconChevronDown size={14} className={`flex-none transition-transform ${showMisses ? 'rotate-180' : ''}`} />
+                                <span>{t('discover.globalMissSummary', { empty: missEmptyCount, failed: missFailedCount })}</span>
+                            </button>
+                            {showMisses && (
+                                <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                                    {missGroups.map(group => (
+                                        <div key={group.sourceId} className="flex min-w-0 items-center gap-2 text-xs text-zinc-500">
+                                            <span
+                                                className="min-w-0 flex-1 truncate"
+                                                title={group.error ? `${group.sourceLabel} — ${group.error}` : group.sourceLabel}
+                                            >
+                                                {group.sourceLabel}
+                                            </span>
+                                            {group.status === 'ok' ? (
+                                                <span className="flex-none text-zinc-600">{t('discover.noResults')}</span>
+                                            ) : (
+                                                <Badge tone={group.status === 'skipped' ? undefined : 'red'}>{t(GLOBAL_STATUS_KEYS[group.status])}</Badge>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </Card>
+                    )}
+                    {!globalSearching && globalStatus.completed > 0 && hitGroups.length === 0 && (
                         <EmptyState title={t('discover.globalNoResults')} hint={t('discover.globalNoResultsHint')} />
                     )}
                 </div>
@@ -688,8 +723,8 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                                 <ChapterList
                                     items={chapters.map(chapter => ({
                                         key: chapter.id,
-
                                         title: chapter.title,
+                                        badge: chapterLanguages.size > 1 && chapter.language ? <Badge>{chapter.language}</Badge> : undefined,
                                         node: (
                                             <div className="flex flex-none items-center gap-1">
                                                 <Button small variant="ghost" title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>

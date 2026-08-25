@@ -99,7 +99,10 @@ export class MangaDexConnector implements SourceAdapter {
                 }
                 const chapter = attributes.chapter || '';
                 const language = attributes.translatedLanguage || undefined;
-                const key = `${language}:${chapter}:${attributes.title || ''}`;
+                // dedupe on language+number (NOT title: scanlation groups name
+                // the same chapter differently) — titled chapters without a
+                // number (oneshots, extras) dedupe on their title instead
+                const key = chapter ? `${language}:c${chapter}` : `${language}:t:${attributes.title || item.id}`;
                 if (seen.has(key)) {
                     continue;
                 }

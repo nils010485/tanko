@@ -1,6 +1,7 @@
 import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { chapterAllowed } from '../languages.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
     if (error instanceof SourceError) {
@@ -106,8 +107,7 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
     });
 }
 
-export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: SourceRegistry): void {
-    // List all available sources (native + legacy), enriched with health + hidden flags
+export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: SourceRegistry, getPreferredLanguages: () => string[] = () => []): void {
     app.get('/api/sources', async (): Promise<SourceDto[]> => {
         const sources = await sourceRegistry.list();
         const health = app.healthService ? app.healthService.getAll() : {};
@@ -143,7 +143,15 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
             const mangas = await source.searchMangas(query);
-            const sliced = mangas.slice(0, 50);
+            // native MangaDex emits one entry per title/alt-title (import matching
+            // relies on it): display keeps a single card per manga
+            const unique = new Map<string, MangaInfo>();
+            for (const manga of mangas) {
+                if (!unique.has(String(manga.id))) {
+                    unique.set(String(manga.id), manga);
+                }
+            }
+            const sliced = [...unique.values()].slice(0, 50);
             if (sourceId === 'mangadex') {
                 await enrichMangaDexCovers(sliced);
             }
@@ -187,8 +195,12 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
             return reply.code(400).send({ error: 'Query parameter "mangaId" is required' });
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
+            const preferred = getPreferredLanguages();
             const chapters = await source.getChapters({ id: mangaId, title });
-            return chapters.map(
+            // multi-lingual sources (MangaDex, ...) carry the same chapter in
+            // many languages: keep only the preferred ones, like library ingestion
+            const filtered = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));
+            return filtered.map(
                 (chapter): ChapterDto => ({
                     sourceId,
                     mangaId,

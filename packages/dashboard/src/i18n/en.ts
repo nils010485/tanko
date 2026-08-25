@@ -86,9 +86,10 @@ export const en = {
     'discover.globalResultsCount': '{n} result(s)',
     'discover.globalSourceError': 'failed',
     'discover.globalSourceTimeout': 'timed out',
-    'discover.globalSourceSkipped': 'not reached (budget)',
+    'discover.globalSourceSkipped': 'not reached',
     'discover.globalNoResults': 'No results anywhere',
-    'discover.globalNoResultsHint': 'Only sources with a warm cache answer on the first run — search again to reach more of them.',
+    'discover.globalNoResultsHint': 'Every visible source is queried; some can be slow or unavailable — expand the summary below for details.',
+    'discover.globalMissSummary': '{empty} source(s) without result · {failed} failed or unreachable',
 
     // library
     'library.title': 'Library',

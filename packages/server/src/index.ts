@@ -235,7 +235,7 @@ app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
 registerActivityRoutes(app, activity);
-registerSourceRoutes(app, sourceRegistry);
+registerSourceRoutes(app, sourceRegistry, preferredLanguages);
 registerSourceHealthRoutes(app, healthService);
 registerSourceUpdateRoutes(app, config, database);
 registerDownloadRoutes(app, queue, sourceRegistry, library);
