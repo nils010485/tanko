@@ -70,8 +70,13 @@ export class Scheduler {
                 /** Shared probe guard: false when a probe already crawls for the entry. */
                 tryBeginProbe(entryId: number): boolean;
                 endProbe(entryId: number): void;
-                /** Opt-in starved-source detection (Settings toggle). */
-                suggestIfIncomplete?(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<boolean>;
+                /** Starved-source detection: opt-in via the Settings toggle,
+                 *  manual bulk runs pass their own threshold. */
+                suggestIfIncomplete?(
+                    entry: { id: number; sourceId: string; title: string },
+                    chapterCount: number,
+                    opts?: { manual?: boolean; maxChapters?: number }
+                ): Promise<boolean>;
             };
         }
     ) {

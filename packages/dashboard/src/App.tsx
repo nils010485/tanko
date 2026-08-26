@@ -7,7 +7,7 @@ import { type ComponentType, useEffect, useState } from 'react';
 
 declare const __APP_VERSION__: string;
 
-import { IconActivity, IconClock, IconDownload, IconImport, IconLibrary, IconMenu, type IconProps, IconSearch, IconSettings } from './components/icons.js';
+import { IconActivity, IconDownload, IconImport, IconLibrary, IconMenu, type IconProps, IconSearch, IconSettings, IconTasks } from './components/icons.js';
 import { Badge } from './components/ui.js';
 import { useI18n } from './i18n/index.js';
 import { useLiveState } from './lib/live.js';
@@ -17,18 +17,18 @@ import Discover from './views/Discover.js';
 import Downloads from './views/Downloads.js';
 import Import from './views/Import.js';
 import Library from './views/Library.js';
-import Schedule from './views/Schedule.js';
 import Series from './views/Series.js';
 import Settings from './views/Settings.js';
+import Tasks from './views/Tasks.js';
 
-type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'schedule' | 'settings' | 'activity';
+type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'tasks' | 'settings' | 'activity';
 
 const TABS: Array<{ id: Tab; icon: ComponentType<IconProps> }> = [
     { id: 'discover', icon: IconSearch },
     { id: 'library', icon: IconLibrary },
     { id: 'downloads', icon: IconDownload },
     { id: 'import', icon: IconImport },
-    { id: 'schedule', icon: IconClock },
+    { id: 'tasks', icon: IconTasks },
     { id: 'activity', icon: IconActivity },
     { id: 'settings', icon: IconSettings }
 ];
@@ -171,7 +171,7 @@ export default function App() {
                         )}
                         {tab === 'downloads' && <Downloads library={live.library} />}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
-                        {tab === 'schedule' && <Schedule schedule={live.schedule} />}
+                        {tab === 'tasks' && <Tasks schedule={live.schedule} library={live.library} />}
                         {tab === 'activity' && <Activity logs={live.logs} />}
                         {tab === 'settings' && <Settings />}
                     </div>

@@ -2,7 +2,7 @@ import type { LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseD
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { DownloadQueue } from '../downloader/queue.js';
 import type { CoverService } from '../library/covers.js';
-import type { FailoverService } from '../library/failover.js';
+import { type FailoverService, INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
 import type { LibraryStore } from '../library/store.js';
 import type { Scheduler, ScheduleSettings } from '../scheduler/scheduler.js';
 import type { EventBus } from '../ws.js';
@@ -148,63 +148,112 @@ export function registerLibraryRoutes(
         return reply.code(400).send({ error: 'Body must contain boolean "autoDownload" or "hidden"' });
     });
 
-    // Re-match every entry whose source keeps failing (bulk failover, cached catalogs)
-    let rematchAllRunning = false;
-    app.post('/api/library/rematch-failed', async (_request, reply) => {
-        if (!failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
-        }
-        if (rematchAllRunning) {
+    /** Sequential bulk failover loop shared by the rematch tools: one
+     *  activity log per entry (outcome/level from the action), 250 ms pacing,
+     *  a recap line and a single-run guard so two bulk scans never crawl the
+     *  sources concurrently. Returns immediately; the loop runs in the
+     *  background. */
+    let bulkFailoverRunning = false;
+    const runBulkFailover = (
+        label: string,
+        recapHits: string,
+        entries: LibraryEntryDto[],
+        action: (entry: LibraryEntryDto) => Promise<{ outcome: string; hit?: boolean; level?: 'info' | 'warn' }>
+    ): { started: boolean; count: number; reason?: string } => {
+        if (bulkFailoverRunning) {
             return { started: false, count: 0, reason: 'already-running' };
         }
-        const entries = (await store.listEntries()).filter(entry => (entry.checkFailures ?? 0) > 0);
         if (entries.length === 0) {
             return { started: false, count: 0 };
         }
-        rematchAllRunning = true;
+        bulkFailoverRunning = true;
         void (async () => {
-            let migrated = 0;
+            let hits = 0;
             try {
                 for (const entry of entries) {
-                    // migrating under running downloads would orphan their files
-                    // and double-queue the requeued chapters — leave the entry
-                    // failed so the next bulk run picks it up again
-                    if (queue.hasPendingJobs(entry.id)) {
-                        continue;
-                    }
                     try {
-                        const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-                        if (outcome === 'migrated') {
-                            migrated++;
-                            store.requeueFailedAfterMigration(entry.id, queue);
+                        const result = await action(entry);
+                        if (result.hit) {
+                            hits++;
                         }
                         events.publish({
                             type: 'log',
-                            level: outcome === 'migrated' ? 'info' : 'warn',
-                            message: `Re-match : « ${entry.title} » → ${outcome === 'migrated' ? 'migré vers une nouvelle source' : outcome === 'suggested' ? 'migration suggérée (à confirmer)' : 'aucune source de rechange'}`,
+                            level: result.level ?? 'info',
+                            message: `${label} : « ${entry.title} » → ${result.outcome}`,
                             at: new Date().toISOString()
                         });
                     } catch (error) {
                         events.publish({
                             type: 'log',
                             level: 'warn',
-                            message: `Re-match « ${entry.title} » : ${(error as Error).message}`,
+                            message: `${label} « ${entry.title} » : ${(error as Error).message}`,
                             at: new Date().toISOString()
                         });
                     }
                     await new Promise(resolve => setTimeout(resolve, 250));
                 }
             } finally {
-                rematchAllRunning = false;
+                bulkFailoverRunning = false;
                 events.publish({
                     type: 'log',
                     level: 'info',
-                    message: `Re-match terminé : ${entries.length} série(s) traitée(s), ${migrated} migration(s)`,
+                    message: `${label} terminé : ${entries.length} série(s) traitée(s), ${hits} ${recapHits}`,
                     at: new Date().toISOString()
                 });
             }
         })();
         return { started: true, count: entries.length };
+    };
+
+    // Re-match every entry whose source keeps failing (bulk failover, cached catalogs)
+    app.post('/api/library/rematch-failed', async (_request, reply) => {
+        if (!failover) {
+            return reply.code(501).send({ error: 'Failover non disponible' });
+        }
+        const entries = (await store.listEntries()).filter(entry => (entry.checkFailures ?? 0) > 0);
+        return runBulkFailover('Re-match', 'migration(s)', entries, async entry => {
+            // migrating under running downloads would orphan their files
+            // and double-queue the requeued chapters — leave the entry
+            // failed so the next bulk run picks it up again
+            if (queue.hasPendingJobs(entry.id)) {
+                return { outcome: 'ignorée (téléchargements en cours)' };
+            }
+            const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            if (outcome === 'migrated') {
+                store.requeueFailedAfterMigration(entry.id, queue);
+            }
+            return {
+                hit: outcome === 'migrated',
+                level: outcome === 'migrated' ? 'info' : 'warn',
+                outcome:
+                    outcome === 'migrated'
+                        ? 'migré vers une nouvelle source'
+                        : outcome === 'suggested'
+                          ? 'migration suggérée (à confirmer)'
+                          : 'aucune source de rechange'
+            };
+        });
+    });
+
+    // Bulk tool (dashboard "better sources" scan): probe healthier sources for
+    // every visible entry with at most `maxChapters` chapters. Matches become
+    // migration suggestions awaiting confirmation — nothing is applied here.
+    app.post<{ Body: { maxChapters?: number } }>('/api/library/rematch-incomplete', async (request, reply) => {
+        if (!failover) {
+            return reply.code(501).send({ error: 'Failover non disponible' });
+        }
+        const maxChapters = Number(request.body?.maxChapters ?? INCOMPLETE_SOURCE_CHAPTERS);
+        if (!Number.isInteger(maxChapters) || maxChapters < 1 || maxChapters > 50) {
+            return reply.code(400).send({ error: 'maxChapters doit être un entier entre 1 et 50' });
+        }
+        const entries = (await store.listEntries('visible')).filter(entry => !entry.migrationSuggestion && entry.chapterCount <= maxChapters);
+        return runBulkFailover('Meilleures sources', 'suggestion(s)', entries, async entry => {
+            const done = await failover.suggestIfIncomplete(entry, entry.chapterCount, { manual: true, maxChapters });
+            if (done) {
+                publishEntry(entry.id);
+            }
+            return { hit: done, outcome: done ? 'migration suggérée (à confirmer)' : 'aucune source plus complète' };
+        });
     });
 
     // Chapters of one entry

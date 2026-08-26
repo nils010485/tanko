@@ -182,6 +182,11 @@ export const api = {
         request<{ ok: boolean }>(`/api/library/${entryId}/chapters/${encodeURIComponent(chapterId)}/rollback`, { method: 'POST' }),
     rematchFailed: () =>
         request<{ started: boolean; count: number; reason?: string }>('/api/library/rematch-failed', { method: 'POST', body: JSON.stringify({}) }),
+    rematchIncomplete: (maxChapters: number) =>
+        request<{ started: boolean; count: number; reason?: string }>('/api/library/rematch-incomplete', {
+            method: 'POST',
+            body: JSON.stringify({ maxChapters })
+        }),
     rematchEntry: (entryId: number) => request<{ outcome: string; entry: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch`, { method: 'POST' }),
     confirmRematch: (entryId: number, apply: boolean) =>
         request<{ applied: boolean; kept?: number; total?: number; entry?: LibraryEntryDto | null }>(`/api/library/${entryId}/rematch/confirm`, {

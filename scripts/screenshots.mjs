@@ -245,12 +245,12 @@ await shot('discover.png', '/discover', async page => {
     });
     await page.type('main input', 'planet');
     await page.evaluate(() => {
-        [...document.querySelectorAll('button')].find(btn => btn.textContent.match(/Search|Rechercher/))?.click();
+        [...document.querySelectorAll('button')].find(btn => `${btn.textContent} ${btn.title}`.match(/Search|Rechercher/))?.click();
     });
     await page.waitForFunction(() => document.querySelectorAll('main .grid img').length >= 6, { timeout: 15000 });
 });
 
-await shot('schedule.png', '/schedule', page => page.waitForFunction(() => document.body.textContent.length > 500, { timeout: 15000 }));
+await shot('tasks.png', '/tasks', page => page.waitForFunction(() => document.body.textContent.length > 500, { timeout: 15000 }));
 
 await browser.close();
 server.close();

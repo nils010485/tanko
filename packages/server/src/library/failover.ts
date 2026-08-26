@@ -189,17 +189,22 @@ export class FailoverService {
     }
 
     /**
-     * Opt-in starved-source detection: after a check that found nothing new,
-     * an entry carrying at most INCOMPLETE_SOURCE_CHAPTERS chapters is searched
-     * on the other sources; when one offers at least twice as many, it is
-     * stored as a migration suggestion (existing banner flow). Returns true
-     * when a suggestion was stored.
+     * Probe healthier sources when the current one carries very few chapters
+     * and store a migration suggestion when an alternative offers at least
+     * twice as many (existing banner flow). `manual` runs (dashboard bulk
+     * tool) pass their own `maxChapters` and bypass the opt-in setting;
+     * automatic runs keep the default. Returns true when a suggestion was
+     * stored.
      */
-    async suggestIfIncomplete(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<boolean> {
-        if (!this.opts.isDetectionEnabled?.()) {
+    async suggestIfIncomplete(
+        entry: { id: number; sourceId: string; title: string },
+        chapterCount: number,
+        opts: { manual?: boolean; maxChapters?: number } = {}
+    ): Promise<boolean> {
+        if (!opts.manual && !this.opts.isDetectionEnabled?.()) {
             return false;
         }
-        if (chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
+        if (chapterCount > (opts.maxChapters ?? INCOMPLETE_SOURCE_CHAPTERS)) {
             return false;
         }
         if (this.detectionRunning.has(entry.id)) {

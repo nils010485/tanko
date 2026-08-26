@@ -10,7 +10,7 @@ automatically, and get notified.
 | | |
 |---|---|
 | ![Library view with followed series and covers](docs/screenshots/library.png) | ![Discover view for searching sources](docs/screenshots/discover.png) |
-| ![Schedule view with cron settings and notifications](docs/screenshots/schedule.png) | |
+ | ![Tasks view with scheduled checks, maintenance tools and better-source scan](docs/screenshots/tasks.png) | |
 
 ## Features
 
