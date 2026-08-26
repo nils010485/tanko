@@ -43,9 +43,8 @@ Podman works too: the image is OCI-compatible, `podman build -t tanko .` or
 
 Chapter format, download parallelism (parallel sources × chapters per
 source), throttle and preferred languages are user settings: change them
-anytime in the dashboard's Settings tab, they are persisted in the database.
-user settings: change them anytime in the dashboard's Settings tab, they
-are persisted in the database.
+anytime in the dashboard's Settings tab, they are persisted in the
+database.
 
 Environment variables, set in `docker-compose.yml` (deployment only):
 
