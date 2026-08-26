@@ -32,6 +32,7 @@ export const fr: typeof import('./en.js').en = {
     'discover.healthUntested': 'Non testée',
     'discover.hideBroken': 'Masquer les sources HS',
     'discover.hideBrokenHint': 'Masque les sources en erreur jusqu’à la prochaine revérification totale',
+    'discover.githubHint': 'Code source et releases sur GitHub',
     'discover.recheckAll': 'Tout revérifier',
     'discover.recheckAllHint': 'Relance une sonde sur toutes les sources et réaffiche les sources masquées',
     'discover.source': 'Source',

@@ -32,6 +32,7 @@ export const en = {
     'discover.healthUntested': 'Untested',
     'discover.hideBroken': 'Hide broken',
     'discover.hideBrokenHint': 'Hides erroring sources until the next full recheck',
+    'discover.githubHint': 'Source code and releases on GitHub',
     'discover.recheckAll': 'Recheck all',
     'discover.recheckAllHint': 'Re-probes every source and unhides hidden sources',
     'discover.source': 'Source',

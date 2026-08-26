@@ -15,6 +15,7 @@ import {
     IconDownload,
     IconEye,
     IconEyeOff,
+    IconGitHub,
     IconGlobe,
     IconLibrary,
     IconPlus,
@@ -31,6 +32,9 @@ import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { useEscapeKey } from '../lib/hooks.js';
+
+/** Injected by vite at build time from package.json (see vite.config.ts). */
+declare const __APP_VERSION__: string;
 
 function healthDot(health: string | undefined, t: TFunction) {
     switch (health) {
@@ -401,6 +405,15 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
             <SectionTitle
                 right={
                     <div className="flex flex-wrap items-center gap-2">
+                        <a
+                            href="https://github.com/nils010485/tanko"
+                            target="_blank"
+                            rel="noreferrer"
+                            title={t('discover.githubHint')}
+                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-faint transition-colors hover:bg-surface hover:text-zinc-200"
+                        >
+                            <IconGitHub size={14} /> v{__APP_VERSION__}
+                        </a>
                         <Button variant="ghost" small onClick={hideBroken} title={t('discover.hideBrokenHint')}>
                             <IconEyeOff size={14} /> {t('discover.hideBroken')} {brokenCount > 0 && `(${brokenCount})`}
                         </Button>
