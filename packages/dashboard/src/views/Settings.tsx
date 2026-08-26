@@ -53,6 +53,7 @@ export default function Settings() {
     const [savedLanguages, setSavedLanguages] = useState<string[]>([]);
     const [useCovers, setUseCovers] = useState(false);
     const [detectIncomplete, setDetectIncomplete] = useState(false);
+    const [detectStalled, setDetectStalled] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
     const [updateStatus, setUpdateStatus] = useState<ConnectorsUpdateStatus | null>(null);
@@ -70,6 +71,7 @@ export default function Settings() {
         setSavedLanguages(data.preferredLanguages || []);
         setUseCovers(data.useFirstChapterCovers ?? false);
         setDetectIncomplete(data.incompleteSourceDetection ?? false);
+        setDetectStalled(data.stalledSourceDetection ?? false);
         setUpdateStatus(await api.sourcesUpdateStatus());
     }, []);
 
@@ -117,6 +119,17 @@ export default function Settings() {
             await api.updateSettings({ incompleteSourceDetection: value });
         } catch (error) {
             setDetectIncomplete(!value);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Stalled-source detection is applied server-side on toggle. */
+    const toggleStalledDetection = async (value: boolean) => {
+        setDetectStalled(value);
+        try {
+            await api.updateSettings({ stalledSourceDetection: value });
+        } catch (error) {
+            setDetectStalled(!value);
             toast.error((error as Error).message);
         }
     };
@@ -240,6 +253,9 @@ export default function Settings() {
                             </SettingRow>
                             <SettingRow label={t('settings.incompleteSourceDetection')} hint={t('settings.incompleteSourceDetectionHint')}>
                                 <Toggle checked={detectIncomplete} onChange={toggleDetection} />
+                            </SettingRow>
+                            <SettingRow label={t('settings.stalledSourceDetection')} hint={t('settings.stalledSourceDetectionHint')}>
+                                <Toggle checked={detectStalled} onChange={toggleStalledDetection} />
                             </SettingRow>
                         </>
                     )}

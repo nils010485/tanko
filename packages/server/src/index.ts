@@ -33,7 +33,13 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerImageRoutes } from './routes/images.js';
 import { registerImportRoutes } from './routes/import.js';
 import { registerLibraryRoutes } from './routes/library.js';
-import { createIncompleteDetectionPref, createLanguagePreference, loadPersistedQueueSettings, registerSettingsRoutes } from './routes/settings.js';
+import {
+    createIncompleteDetectionPref,
+    createLanguagePreference,
+    createStalledDetectionPref,
+    loadPersistedQueueSettings,
+    registerSettingsRoutes
+} from './routes/settings.js';
 import { registerSourceHealthRoutes } from './routes/source-health.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { registerSourceUpdateRoutes } from './routes/sources-update.js';
@@ -105,6 +111,7 @@ const failover = new FailoverService({
     listSources: listSourceInfos,
     getPreferredLanguages: preferredLanguages,
     isDetectionEnabled: createIncompleteDetectionPref(database),
+    isStalledDetectionEnabled: createStalledDetectionPref(database),
     // late-bound: `scheduler` is declared below — suggestions only fire long after init
     onSuggestion: (entry, target, currentChapters) =>
         scheduler.notify(

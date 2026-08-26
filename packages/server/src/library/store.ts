@@ -27,6 +27,29 @@ const SQL_INSERT_NEW_CHAPTER = `INSERT OR IGNORE INTO library_chapters (entry_id
 const SQL_INSERT_CHAPTER_FULL = `INSERT OR IGNORE INTO library_chapters (entry_id, chapter_id, title, language, status, path, discovered_at, downloaded_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
+/** Stalled-series detection (failover's "stalled" regime): an entry becomes a
+ *  probe candidate when its last new chapter is older than
+ *  max(STALE_RHYTHM_FACTOR × its own observed rhythm, STALE_FLOOR_DAYS). The
+ *  rhythm is learned from the gaps between distinct chapter-discovery events
+ *  (a check that finds several chapters counts as one event); too few events
+ *  (series imported in bulk) falls back to a fixed STALE_FALLBACK_DAYS. A
+ *  probe that finds no richer source (probable hiatus) backs off
+ *  exponentially before probing again. */
+const DAY_MS = 86_400_000;
+/** Rhythm multiplier: stalled = idle for 3 × the series' own median gap. */
+const STALE_RHYTHM_FACTOR = 3;
+/** Floor: even a fast series must be idle this long before looking stalled. */
+const STALE_FLOOR_DAYS = 14;
+/** Fallback when too few distinct discovery events exist to learn a rhythm. */
+const STALE_FALLBACK_DAYS = 30;
+/** Distinct discovery events used to learn the rhythm (their ~12 gaps). */
+const STALE_CADENCE_EVENTS = 13;
+/** Minimum distinct gaps before the learned rhythm is trusted. */
+const STALE_CADENCE_MIN_GAPS = 4;
+/** Back-off after a probe that found no richer source: 7d, 14d, 28d… */
+const STALE_BACKOFF_BASE_MS = 7 * DAY_MS;
+/** …capped so a probable hiatus stops costing probes. */
+const STALE_BACKOFF_MAX_MS = 45 * DAY_MS;
 /** Case/punctuation-insensitive title key for cross-source duplicate
  *  detection (keeps letters of any script and digits, drops the rest). */
 function normalizeTitle(title: string): string {
@@ -52,6 +75,10 @@ interface EntryRow {
     /** Date the last new chapter was discovered (drives the stale-series auto-unfollow). */
     last_chapter_at: string | null;
     added_at: string;
+    /** Stalled-probe back-off: consecutive probes without a richer source
+     *  found, and the earliest date the next probe may run (null = any time). */
+    staleness_misses: number;
+    staleness_next_probe_at: string | null;
 }
 
 /** A source-wide download outage (≥ SOURCE_OUTAGE_ENTRIES distinct entries
@@ -103,6 +130,14 @@ export interface MigrationTarget {
     mangaTitle: string;
     url?: string;
     score?: number;
+}
+
+/** Probe candidate of the stalled-source failover regime. */
+export interface StalledCandidate {
+    id: number;
+    sourceId: string;
+    title: string;
+    chapterCount: number;
 }
 
 export class LibraryStore {
@@ -451,6 +486,74 @@ export class LibraryStore {
         ).map(row => ({ id: row.id, title: row.title, lastChapterAt: row.last_chapter_at }));
     }
 
+    /** Entries whose series looks stalled relative to its own release rhythm
+     *  (see the STALE_* constants): probe candidates for the stalled-source
+     *  failover regime. Excludes entries with pending check failures — an
+     *  unreachable source is the failure regime's job (maybeMigrate), not a
+     *  stalled series. Most-stale first. */
+    listStalledCandidates(): StalledCandidate[] {
+        const now = new Date();
+        const rows = this._all<{ id: number; source_id: string; title: string; last_chapter_at: string }>(
+            `SELECT id, source_id, title, last_chapter_at FROM library
+             WHERE hidden = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL
+               AND migration_suggestion IS NULL
+               AND (staleness_next_probe_at IS NULL OR staleness_next_probe_at <= ?)
+             ORDER BY last_chapter_at ASC`,
+            now.toISOString()
+        );
+        const candidates: StalledCandidate[] = [];
+        for (const row of rows) {
+            if (now.getTime() - Date.parse(row.last_chapter_at) < this._stalenessThresholdMs(row.id)) {
+                continue;
+            }
+            const count = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM library_chapters WHERE entry_id = ?', row.id);
+            candidates.push({ id: row.id, sourceId: row.source_id, title: row.title, chapterCount: Number(count?.n ?? 0) });
+        }
+        return candidates;
+    }
+
+    /** Record the outcome of a stalled-source probe: a hit (suggestion stored)
+     *  resets the back-off; a miss (probable hiatus) spaces the next probe out
+     *  exponentially — 7d, 14d, 28d… capped at STALE_BACKOFF_MAX_MS. */
+    recordStalenessProbe(entryId: number, hit: boolean): void {
+        if (hit) {
+            this.opts.db.db.prepare('UPDATE library SET staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?').run(entryId);
+            return;
+        }
+        const row = this._get<{ n: number }>('SELECT staleness_misses AS n FROM library WHERE id = ?', entryId);
+        const misses = Number(row?.n ?? 0) + 1;
+        const delay = Math.min(STALE_BACKOFF_BASE_MS * 2 ** (misses - 1), STALE_BACKOFF_MAX_MS);
+        this.opts.db.db
+            .prepare('UPDATE library SET staleness_misses = ?, staleness_next_probe_at = ? WHERE id = ?')
+            .run(misses, new Date(Date.now() + delay).toISOString(), entryId);
+    }
+
+    /** Idle time after which a series looks stalled, learned from its own
+     *  release rhythm (gaps between distinct discovery events); falls back to
+     *  a fixed delay when too few events are on record. */
+    private _stalenessThresholdMs(entryId: number): number {
+        const events = this._all<{ discovered_at: string }>(
+            'SELECT DISTINCT discovered_at FROM library_chapters WHERE entry_id = ? ORDER BY discovered_at DESC LIMIT ?',
+            entryId,
+            STALE_CADENCE_EVENTS
+        )
+            .map(row => Date.parse(row.discovered_at))
+            .filter(timestamp => Number.isFinite(timestamp));
+        const gaps: number[] = [];
+        for (let index = 1; index < events.length; index++) {
+            const gap = events[index - 1] - events[index];
+            if (gap > 0) {
+                gaps.push(gap);
+            }
+        }
+        if (gaps.length < STALE_CADENCE_MIN_GAPS) {
+            return STALE_FALLBACK_DAYS * DAY_MS;
+        }
+        const sorted = [...gaps].sort((a, b) => a - b);
+        const medianGap = sorted[Math.floor(sorted.length / 2)];
+        return Math.max(STALE_RHYTHM_FACTOR * medianGap, STALE_FLOOR_DAYS * DAY_MS);
+    }
+
     recordCheckFailure(entryId: number): number {
         this.opts.db.db.prepare('UPDATE library SET check_failures = check_failures + 1 WHERE id = ?').run(entryId);
         const row = this._get<{ n: number }>('SELECT check_failures AS n FROM library WHERE id = ?', entryId);
@@ -563,7 +666,8 @@ export class LibraryStore {
         this.opts.db.db
             .prepare(
                 `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,
-                    migration_suggestion = NULL, migration_dismissed = NULL, check_failures = 0, last_checked_at = ? WHERE id = ?`
+                    migration_suggestion = NULL, migration_dismissed = NULL, check_failures = 0, last_checked_at = ?,
+                    staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?`
             )
             .run(target.sourceId, source.label, target.mangaId, target.mangaTitle, target.url || null, now, entryId);
 
@@ -665,8 +769,11 @@ export class LibraryStore {
         }
         if (fresh.length > 0) {
             // a new chapter just arrived: refresh the date that arms the
-            // stale-series auto-unfollow
-            this.opts.db.db.prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ? WHERE id = ?').run(now, now, entryId);
+            // stale-series auto-unfollow and clear the stalled-probe
+            // back-off — the series is fresh again
+            this.opts.db.db
+                .prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ?, staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?')
+                .run(now, now, entryId);
         } else {
             this.opts.db.db.prepare('UPDATE library SET last_checked_at = ? WHERE id = ?').run(now, entryId);
         }
@@ -1001,6 +1108,8 @@ export class LibraryStore {
         this._addColumn('library', columns, 'hidden', 'hidden INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'download_failures', 'download_failures INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'last_chapter_at', 'last_chapter_at TEXT');
+        this._addColumn('library', columns, 'staleness_misses', 'staleness_misses INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'staleness_next_probe_at', 'staleness_next_probe_at TEXT');
         // unknown last-new-chapter date (existing databases, imports, or rows
         // created between the ALTER and a crash): start from today so the
         // auto-unfollow cannot fire right on startup — runs on every boot, a

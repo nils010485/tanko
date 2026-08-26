@@ -473,6 +473,9 @@ export const en = {
     'settings.incompleteSourceDetection': 'Detect incomplete sources',
     'settings.incompleteSourceDetectionHint':
         'After each check, series with very few chapters are searched on the other sources and a migration is suggested when one offers far more',
+    'settings.stalledSourceDetection': 'Detect stalled sources',
+    'settings.stalledSourceDetectionHint':
+        'Series without a new chapter for unusually long given their own rhythm are searched on the other sources; a source with more chapters is suggested. An unfruitful probe (probable hiatus) backs off before retrying',
 
     'schedule.maintenance': 'Maintenance',
     'schedule.coversTitle': 'Thumbnail cache',

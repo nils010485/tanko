@@ -31,6 +31,12 @@ export const INCOMPLETE_SOURCE_CHAPTERS = 10;
 /** An alternative must offer at least this multiple of the current chapter
  *  count to be worth suggesting. */
 const IMPROVEMENT_FACTOR = 2;
+/** Stalled-source detection: an alternative must offer at least this many
+ *  MORE chapters than the current source to be worth suggesting — not a
+ *  multiple: a series stalled at ch. 150 must be matched by ch. 152, never
+ *  ch. 300. The margin absorbs sources counting prologues/.5/bonus
+ *  chapters differently. */
+const STALLED_MARGIN_CHAPTERS = 2;
 /** Download failures after which a source failover is probed immediately —
  *  without waiting for the next scheduler run (hours later). Content
  *  failures only (chapter gone server-side): infra failures feed the
@@ -75,7 +81,7 @@ export function classifyFailure(error: string | null | undefined): FailureClass 
 }
 
 export class FailoverService {
-    /** Entries currently probed by suggestIfIncomplete (re-entry guard). */
+    /** Entries currently probed by a suggestion detection (re-entry guard). */
     private readonly detectionRunning = new Set<number>();
     /** Entries with a migration probe in flight — shared by the immediate
      *  download-failure path (index.ts), the scheduler backstop and the
@@ -92,6 +98,8 @@ export class FailoverService {
             getPreferredLanguages: () => string[];
             /** Opt-in starved-source detection (Settings); absent = disabled. */
             isDetectionEnabled?: () => boolean;
+            /** Opt-in stalled-source detection (Settings); absent = disabled. */
+            isStalledDetectionEnabled?: () => boolean;
             /** Webhook hook: a migration suggestion was stored (banner flow). */
             onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
         }
@@ -195,20 +203,70 @@ export class FailoverService {
      * and store a migration suggestion when an alternative offers at least
      * twice as many (existing banner flow). `manual` runs (dashboard bulk
      * tool) pass their own `maxChapters` and bypass the opt-in setting;
-     * automatic runs keep the default. Returns true when a suggestion was
-     * stored.
+     * automatic runs keep the default. Returns the outcome for the caller's
+     * budget bookkeeping: 'skipped' (detection disabled, threshold exceeded,
+     * probe already running, suggestion pending) crawled nothing and must
+     * cost nothing.
      */
     async suggestIfIncomplete(
         entry: { id: number; sourceId: string; title: string },
         chapterCount: number,
         opts: { manual?: boolean; maxChapters?: number } = {}
-    ): Promise<boolean> {
+    ): Promise<'suggested' | 'miss' | 'skipped'> {
         if (!opts.manual && !this.opts.isDetectionEnabled?.()) {
-            return false;
+            return 'skipped';
         }
         if (chapterCount > (opts.maxChapters ?? INCOMPLETE_SOURCE_CHAPTERS)) {
-            return false;
+            return 'skipped';
         }
+        if (this.detectionRunning.has(entry.id) || this.opts.store.getEntry(entry.id)?.migrationSuggestion) {
+            return 'skipped';
+        }
+        const suggested = await this._probeAndSuggest(
+            entry,
+            chapterCount,
+            alternative => alternative.chapterCount >= Math.max(chapterCount, 2) * IMPROVEMENT_FACTOR,
+            'source incomplète'
+        );
+        return suggested ? 'suggested' : 'miss';
+    }
+
+    /**
+     * Probe the other sources when a series looks stalled relative to its
+     * own release rhythm (candidates come from the store's staleness
+     * tracking) and store a migration suggestion when an alternative offers
+     * at least STALLED_MARGIN_CHAPTERS more chapters. Suggestion only: the
+     * current source still answers, and a wrong migration costs more than a
+     * late one. Returns the outcome for the caller's back-off bookkeeping:
+     * 'skipped' (detection disabled, probe already running, suggestion
+     * pending) probed nothing and must move nothing.
+     */
+    async suggestIfStalled(entry: { id: number; sourceId: string; title: string }, chapterCount: number): Promise<'suggested' | 'miss' | 'skipped'> {
+        if (!this.opts.isStalledDetectionEnabled?.()) {
+            return 'skipped';
+        }
+        if (this.detectionRunning.has(entry.id) || this.opts.store.getEntry(entry.id)?.migrationSuggestion) {
+            return 'skipped';
+        }
+        const suggested = await this._probeAndSuggest(
+            entry,
+            chapterCount,
+            alternative => alternative.chapterCount >= chapterCount + STALLED_MARGIN_CHAPTERS,
+            'source sans nouveautés'
+        );
+        return suggested ? 'suggested' : 'miss';
+    }
+
+    /** Shared probe core of the suggestion regimes: crawl the alternatives,
+     *  keep the first one satisfying the regime's predicate (never a target
+     *  the user dismissed), store the suggestion and notify. Returns true
+     *  when a suggestion was stored. */
+    private async _probeAndSuggest(
+        entry: { id: number; sourceId: string; title: string },
+        chapterCount: number,
+        isBetter: (alternative: SourceAlternativeDto) => boolean,
+        reason: string
+    ): Promise<boolean> {
         if (this.detectionRunning.has(entry.id)) {
             return false;
         }
@@ -227,16 +285,14 @@ export class FailoverService {
             // never re-suggest a target the user explicitly dismissed
             const dismissed = current.dismissedMigration;
             const better = alternatives.find(
-                alternative =>
-                    alternative.chapterCount >= Math.max(chapterCount, 2) * IMPROVEMENT_FACTOR &&
-                    !(dismissed && dismissed.sourceId === alternative.sourceId && dismissed.mangaId === alternative.mangaId)
+                alternative => isBetter(alternative) && !(dismissed && dismissed.sourceId === alternative.sourceId && dismissed.mangaId === alternative.mangaId)
             );
             if (!better) {
                 return false;
             }
             this.opts.store.setMigrationSuggestion(entry.id, better);
             this.opts.onSuggestion?.(entry, better, chapterCount);
-            console.log(`[failover] "${entry.title}" : source incomplète (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
+            console.log(`[failover] "${entry.title}" : ${reason} (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
             return true;
         } finally {
             this.detectionRunning.delete(entry.id);

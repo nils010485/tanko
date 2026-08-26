@@ -85,25 +85,25 @@ describe('manual source picker (listAlternatives)', () => {
 describe('opt-in starved-source detection (suggestIfIncomplete)', () => {
     it('does nothing while the setting is off', async () => {
         detectionEnabled = false;
-        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe(false);
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('skipped');
         expect(store.getEntry(entryId)?.migrationSuggestion).toBeUndefined();
     });
 
     it('suggests a source with at least twice the chapters when enabled', async () => {
         detectionEnabled = true;
-        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe(true);
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
         const suggestion = store.getEntry(entryId)?.migrationSuggestion;
         expect(suggestion?.sourceId).toBe('richer');
         expect(suggestion?.chapterCount ?? 0).toBeGreaterThanOrEqual(16);
     });
 
     it('skips entries that already have a pending suggestion', async () => {
-        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe(false);
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('skipped');
     });
 
     it('skips entries with more chapters than the threshold', async () => {
         store.setMigrationSuggestion(entryId, null);
-        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 42)).toBe(false);
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 42)).toBe('skipped');
         expect(store.getEntry(entryId)?.migrationSuggestion).toBeUndefined();
     });
 
@@ -111,7 +111,70 @@ describe('opt-in starved-source detection (suggestIfIncomplete)', () => {
         store.setMigrationSuggestion(entryId, null);
         // the user rejected the richer source: only that exact target is barred
         store.dismissMigrationSuggestion(entryId, { sourceId: 'richer', sourceLabel: 'Richer', mangaId: 'm1', mangaTitle: 'Starved Series', score: 1 });
-        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe(true);
+        expect(await failover.suggestIfIncomplete({ id: entryId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
         expect(store.getEntry(entryId)?.migrationSuggestion?.sourceId).toBe('stranger');
+    });
+});
+
+describe('opt-in stalled-source detection (suggestIfStalled)', () => {
+    let stalledEnabled = false;
+    let stalledFailover: FailoverService;
+    let stalledId = 0;
+
+    beforeAll(async () => {
+        // own adapters: a long series stalled at ch. 150, alternatives at
+        // 152 (enough), 151 (one short) and 12 (way behind)
+        const adapters = {
+            current: adapterWith(150, 'Stalled Series'),
+            ahead: adapterWith(152, 'Stalled Series'),
+            barely: adapterWith(151, 'Stalled Series'),
+            poorer: adapterWith(12, 'Stalled Series')
+        };
+        stalledFailover = new FailoverService({
+            registry: { get: async (id: string) => adapters[id], list: async () => [] } as never,
+            store,
+            listSources: async () => [
+                { id: 'current', label: 'Current', tags: ['English'], kind: 'native' },
+                { id: 'ahead', label: 'Ahead', tags: ['English'], kind: 'native' },
+                { id: 'barely', label: 'Barely', tags: ['English'], kind: 'native' },
+                { id: 'poorer', label: 'Poorer', tags: ['English'], kind: 'native' }
+            ],
+            getPreferredLanguages: () => ['en'],
+            isStalledDetectionEnabled: () => stalledEnabled
+        });
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'sm', title: 'Stalled Series', backlog: 'ignore' });
+        stalledId = entry.id;
+    });
+
+    it("returns 'skipped' and stores nothing while the setting is off", async () => {
+        expect(await stalledFailover.suggestIfStalled({ id: stalledId, sourceId: 'current', title: 'Stalled Series' }, 150)).toBe('skipped');
+        expect(store.getEntry(stalledId)?.migrationSuggestion).toBeUndefined();
+    });
+
+    it('suggests a source with at least two more chapters — not twice as many', async () => {
+        stalledEnabled = true;
+        expect(await stalledFailover.suggestIfStalled({ id: stalledId, sourceId: 'current', title: 'Stalled Series' }, 150)).toBe('suggested');
+        const suggestion = store.getEntry(stalledId)?.migrationSuggestion;
+        expect(suggestion?.sourceId).toBe('ahead'); // 152 = 150 + 2; the starved 2× rule would demand 300
+        expect(suggestion?.chapterCount).toBe(152);
+    });
+
+    it('never migrates by itself: the entry stays on its current source', () => {
+        const entry = store.getEntry(stalledId);
+        expect(entry?.sourceId).toBe('current');
+        expect(entry?.canRollbackMigration).toBe(false);
+    });
+
+    it("returns 'skipped' while a suggestion is pending", async () => {
+        expect(await stalledFailover.suggestIfStalled({ id: stalledId, sourceId: 'current', title: 'Stalled Series' }, 150)).toBe('skipped');
+    });
+
+    it("returns 'miss' when the best source is only one chapter ahead", async () => {
+        store.setMigrationSuggestion(stalledId, null);
+        // the user rejected the only source with ≥ +2 chapters…
+        store.dismissMigrationSuggestion(stalledId, { sourceId: 'ahead', sourceLabel: 'Ahead', mangaId: 'm1', mangaTitle: 'Stalled Series', score: 1 });
+        // …leaving barely (151 = 150 + 1): a real probe, but not enough chapters
+        expect(await stalledFailover.suggestIfStalled({ id: stalledId, sourceId: 'current', title: 'Stalled Series' }, 150)).toBe('miss');
+        expect(store.getEntry(stalledId)?.migrationSuggestion).toBeUndefined();
     });
 });

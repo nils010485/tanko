@@ -254,6 +254,10 @@ export interface AppSettingsResponseDto {
      *  sources after a check; a migration suggestion is stored when one of
      *  them offers far more chapters. */
     incompleteSourceDetection: boolean;
+    /** Opt-in: stalled series (no new chapter for abnormally long given
+     *  their own rhythm) get searched on other sources; a migration
+     *  suggestion is stored when one of them carries more chapters. */
+    stalledSourceDetection: boolean;
     diskUsedBytes: number;
 }
 

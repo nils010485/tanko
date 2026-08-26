@@ -258,6 +258,7 @@ export const api = {
             uiLanguage?: 'en' | 'fr';
             useFirstChapterCovers?: boolean;
             incompleteSourceDetection?: boolean;
+            stalledSourceDetection?: boolean;
         }
     ) =>
         request<{
@@ -266,6 +267,7 @@ export const api = {
             uiLanguage: 'en' | 'fr';
             useFirstChapterCovers: boolean;
             incompleteSourceDetection: boolean;
+            stalledSourceDetection: boolean;
         }>('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify(patch)

@@ -503,6 +503,9 @@ export const fr: typeof import('./en.js').en = {
     'settings.incompleteSourceDetection': 'Détecter les sources incomplètes',
     'settings.incompleteSourceDetectionHint':
         'Après chaque vérification, les séries à très peu de chapitres sont cherchées sur les autres sources et une migration est suggérée quand l’une en propose bien plus',
+    'settings.stalledSourceDetection': 'Détecter les sources stagnantes',
+    'settings.stalledSourceDetectionHint':
+        'Les séries sans nouveau chapitre depuis anormalement longtemps vu leur rythme sont cherchées sur les autres sources ; une source avec davantage de chapitres est suggérée. Un sondage infructueux (pause probable de la série) espace les prochaines tentatives',
 
     'schedule.maintenance': 'Maintenance',
     'schedule.coversTitle': 'Cache des vignettes',

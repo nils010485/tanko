@@ -10,6 +10,7 @@ const QUEUE_SETTINGS_KEY = 'queue-settings';
 const LANGUAGES_KEY = 'preferred-languages';
 const UI_LANGUAGE_KEY = 'ui-language';
 const INCOMPLETE_DETECTION_KEY = 'incomplete-detection';
+const STALLED_DETECTION_KEY = 'stalled-detection';
 
 export type UiLanguage = 'en' | 'fr';
 
@@ -45,6 +46,14 @@ export function createLanguagePreference(db: Database): () => string[] {
  *  stored when one of them offers far more chapters. Persisted in the KV store. */
 export function createIncompleteDetectionPref(db: Database): () => boolean {
     return () => readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false);
+}
+
+/** Opt-in stalled-source detection: series with no new chapter for
+ *  abnormally long given their own release rhythm get searched on the other
+ *  sources; a migration suggestion is stored when one of them carries more
+ *  chapters. Persisted in the KV store. */
+export function createStalledDetectionPref(db: Database): () => boolean {
+    return () => readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false);
 }
 
 /** Dashboard interface language; English until the user picks otherwise. */
@@ -90,7 +99,8 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
-            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false)
+            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false),
+            stalledSourceDetection: readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false)
         };
     });
 
@@ -100,6 +110,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             uiLanguage?: string;
             useFirstChapterCovers?: boolean;
             incompleteSourceDetection?: boolean;
+            stalledSourceDetection?: boolean;
         };
     }>('/api/settings', async (request, reply) => {
         const body = request.body;
@@ -124,6 +135,9 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         if (body.incompleteSourceDetection !== undefined && typeof body.incompleteSourceDetection !== 'boolean') {
             return reply.code(400).send({ error: 'incompleteSourceDetection must be a boolean' });
         }
+        if (body.stalledSourceDetection !== undefined && typeof body.stalledSourceDetection !== 'boolean') {
+            return reply.code(400).send({ error: 'stalledSourceDetection must be a boolean' });
+        }
         if (body.dataDirectory !== undefined) {
             if (typeof body.dataDirectory !== 'string' || !body.dataDirectory.trim()) {
                 return reply.code(400).send({ error: 'dataDirectory must be a non-empty path' });
@@ -144,6 +158,9 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         if (body.incompleteSourceDetection !== undefined) {
             db.kvSet(INCOMPLETE_DETECTION_KEY, JSON.stringify(body.incompleteSourceDetection));
         }
+        if (body.stalledSourceDetection !== undefined) {
+            db.kvSet(STALLED_DETECTION_KEY, JSON.stringify(body.stalledSourceDetection));
+        }
         if (body.useFirstChapterCovers !== undefined && covers) {
             const previous = covers.isEnabled();
             covers.setEnabled(body.useFirstChapterCovers);
@@ -160,7 +177,8 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
-            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false)
+            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false),
+            stalledSourceDetection: readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false)
         };
     });
 }

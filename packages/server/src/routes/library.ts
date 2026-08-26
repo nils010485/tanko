@@ -214,7 +214,8 @@ export function registerLibraryRoutes(
                     `${summary.cancelled ? 'Annulée' : 'Terminée'} : ${summary.done}/${summary.total} série(s) traitée(s), ${summary.hits} suggestion(s)`
                 ),
             action: async entry => {
-                const done = await failover.suggestIfIncomplete(entry, entry.chapterCount, { manual: true, maxChapters });
+                const outcome = await failover.suggestIfIncomplete(entry, entry.chapterCount, { manual: true, maxChapters });
+                const done = outcome === 'suggested';
                 if (done) {
                     publishEntry(entry.id);
                 }
@@ -246,8 +247,8 @@ export function registerLibraryRoutes(
                 if (checked && !checked.hidden) {
                     void failover
                         .suggestIfIncomplete({ id: checked.id, sourceId: checked.sourceId, title: checked.title }, checked.chapterCount)
-                        .then(suggested => {
-                            if (suggested) {
+                        .then(outcome => {
+                            if (outcome === 'suggested') {
                                 publishEntry(checked.id);
                             }
                         })

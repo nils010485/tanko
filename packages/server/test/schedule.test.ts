@@ -36,7 +36,9 @@ function buildScheduler(store?: object, failover?: unknown): Scheduler {
         enqueueChapters: () => undefined,
         getEntry: () => undefined,
         listStaleEntries: () => [],
-        setHidden: () => undefined
+        setHidden: () => undefined,
+        listStalledCandidates: () => [],
+        recordStalenessProbe: () => undefined
     };
     const effective = store
         ? new Proxy(store, {
@@ -286,5 +288,82 @@ describe('scheduler check-failure wave', () => {
         await scheduler.runNow();
         expect(scheduler.status().lastRunResult).toContain('checked');
         expect(maybeMigrate).toHaveBeenCalledTimes(1); // content removal -> probe, no suspension
+    });
+});
+
+describe('scheduler stalled-source detection pass', () => {
+    it('probes stalled candidates and records the back-off outcome', async () => {
+        const suggestIfStalled = vi.fn().mockResolvedValueOnce('miss').mockResolvedValueOnce('suggested');
+        const recordStalenessProbe = vi.fn();
+        const found = { id: 31, sourceId: 'src', title: 'Found', sourceLabel: 'Source' } as unknown as LibraryEntryDto;
+        const store = {
+            listEntries: async () => [],
+            listStalledCandidates: () => [
+                { id: 21, sourceId: 'src', title: 'Hiatus Series', chapterCount: 40 },
+                { id: 31, sourceId: 'src', title: 'Found', chapterCount: 90 }
+            ],
+            recordStalenessProbe,
+            getEntry: () => found
+        };
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        // the detection pass runs in the background after the run itself
+        await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(2), { timeout: 4000 });
+        expect(recordStalenessProbe).toHaveBeenCalledWith(21, false);
+        expect(recordStalenessProbe).toHaveBeenCalledWith(31, true);
+        expect(suggestIfStalled).toHaveBeenCalledWith({ id: 31, sourceId: 'src', title: 'Found' }, 90);
+    });
+
+    it("moves no back-off and consumes no budget while probes are 'skipped'", async () => {
+        const suggestIfStalled = vi.fn().mockResolvedValue('skipped');
+        const recordStalenessProbe = vi.fn();
+        const store = {
+            listEntries: async () => [],
+            listStalledCandidates: () =>
+                Array.from({ length: 12 }, (_, index) => ({ id: 40 + index, sourceId: 'src', title: `Stalled ${index}`, chapterCount: 10 })),
+            recordStalenessProbe
+        };
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        // 12 candidates — more than DETECTION_PROBES — yet 'skipped' costs nothing
+        await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(12), { timeout: 4000 });
+        expect(recordStalenessProbe).not.toHaveBeenCalled();
+    });
+
+    it('backs off a probe that errored instead of guessing a hiatus', async () => {
+        const suggestIfStalled = vi.fn().mockRejectedValue(new Error('crawl failed'));
+        const recordStalenessProbe = vi.fn();
+        const store = {
+            listEntries: async () => [],
+            listStalledCandidates: () => [{ id: 55, sourceId: 'src', title: 'Flaky', chapterCount: 30 }],
+            recordStalenessProbe
+        };
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await vi.waitFor(() => expect(recordStalenessProbe).toHaveBeenCalledWith(55, false), { timeout: 4000 });
+    });
+
+    it('does not let a disabled starved pass burn the shared probe budget', async () => {
+        // 12 entries are eligible for the starved regime, but its toggle is
+        // off: every call is 'skipped' and must cost nothing — the stalled
+        // candidates still get their probes (regression: the shared budget
+        // used to be drained by probes that never crawled)
+        const suggestIfIncomplete = vi.fn().mockResolvedValue('skipped');
+        const suggestIfStalled = vi.fn().mockResolvedValue('miss');
+        const recordStalenessProbe = vi.fn();
+        const store = {
+            listEntries: async () =>
+                Array.from({ length: 12 }, (_, index) => ({
+                    id: 60 + index,
+                    sourceId: 'src',
+                    title: `Starved ${index}`,
+                    chapterCount: 5,
+                    migrationSuggestion: undefined,
+                    hidden: false
+                })),
+            listStalledCandidates: () => [{ id: 80, sourceId: 'src', title: 'Stalled', chapterCount: 40 }],
+            recordStalenessProbe
+        };
+        await buildScheduler(store, { suggestIfIncomplete, suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(1), { timeout: 4000 });
+        expect(suggestIfIncomplete).toHaveBeenCalledTimes(12);
+        expect(recordStalenessProbe).toHaveBeenCalledWith(80, false);
     });
 });
