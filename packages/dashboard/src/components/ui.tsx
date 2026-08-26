@@ -20,7 +20,7 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
 
 export type BadgeTone = 'zinc' | 'green' | 'orange' | 'red' | 'blue' | 'purple';
 
-export function Badge({ children, tone = 'zinc' }: { children: ReactNode; tone?: BadgeTone }) {
+export function Badge({ children, tone = 'zinc', solid = false }: { children: ReactNode; tone?: BadgeTone; solid?: boolean }) {
     const tones: Record<BadgeTone, string> = {
         zinc: 'bg-zinc-800 text-zinc-300 border-zinc-700',
         green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
@@ -29,8 +29,18 @@ export function Badge({ children, tone = 'zinc' }: { children: ReactNode; tone?:
         blue: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
         purple: 'bg-violet-500/10 text-violet-400 border-violet-500/30'
     };
+    const solidTones: Record<BadgeTone, string> = {
+        zinc: 'bg-zinc-400 text-zinc-950 border-zinc-400',
+        green: 'bg-emerald-500 text-white border-emerald-500',
+        orange: 'bg-accent text-zinc-950 border-accent',
+        red: 'bg-red-500 text-white border-red-500',
+        blue: 'bg-sky-500 text-white border-sky-500',
+        purple: 'bg-violet-500 text-white border-violet-500'
+    };
     return (
-        <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+        <span
+            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${solid ? solidTones[tone] : tones[tone]}`}
+        >
             {children}
         </span>
     );

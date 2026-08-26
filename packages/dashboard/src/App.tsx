@@ -107,8 +107,8 @@ export default function App() {
                                 onClick={() => navigate(item.id)}
                                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${tab === item.id ? 'bg-accent/10 font-medium text-accent-soft' : 'text-muted hover:bg-surface hover:text-zinc-200'}`}
                             >
-                                <Icon size={16} />
-                                <span className="flex-1 text-left">{t(`nav.${item.id}`)}</span>
+                                <Icon size={16} className="shrink-0" />
+                                <span className="min-w-0 flex-1 truncate text-left">{t(`nav.${item.id}`)}</span>
                                 {item.id === 'downloads' && live.queueStatus && live.queueStatus.active > 0 && (
                                     <span title={t('downloads.activeCount', { n: live.queueStatus.active })}>
                                         <Badge tone="blue">{live.queueStatus.active}</Badge>

@@ -634,7 +634,11 @@ export default function Library({
     const statusBadges = (entry: LibraryEntryDto) => (
         <>
             {entry.newCount > 0 && <Badge tone="orange">+{entry.newCount}</Badge>}
-            {(entry.checkFailures ?? 0) > 0 && <Badge tone="red">{t('library.failuresShort', { n: entry.checkFailures ?? 0 })}</Badge>}
+            {(entry.checkFailures ?? 0) > 0 && (
+                <Badge tone="red" solid>
+                    {t('library.failuresShort', { n: entry.checkFailures ?? 0 })}
+                </Badge>
+            )}
         </>
     );
 
