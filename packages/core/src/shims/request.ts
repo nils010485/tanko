@@ -346,16 +346,24 @@ export class HeadlessRequest {
         // fetch — connectors like MangaHere/MangaFox rely on $.ajax, so provide
         // a minimal promise-based subset (inline page scripts may overwrite it)
         const ajax = async (settings: unknown) => {
-            const options = typeof settings === 'string' ? { url: settings } : ((settings ?? {}) as Record<string, any>);
-            const method = String(options.type ?? options.method ?? 'GET').toUpperCase();
+            const options = (typeof settings === 'string' ? { url: settings } : (settings ?? {})) as {
+                type?: unknown;
+                method?: unknown;
+                url?: unknown;
+                data?: unknown;
+                headers?: HeadersInit;
+                error?: (jqXHR: undefined, textStatus: string, error: Error) => void;
+                success?: (data: string, textStatus: string, jqXHR: unknown) => void;
+            };
             const target = new URL(String(options.url ?? location.href), location.href);
+            const method = String(options.type ?? options.method ?? 'GET').toUpperCase();
             const data = options.data;
             let body: string | undefined;
             if (data !== undefined && data !== null) {
                 if (method === 'GET') {
                     const params = new URLSearchParams(target.search);
                     // data may be a plain object or a pre-serialized query string
-                    const entries = typeof data === 'string' ? new URLSearchParams(data) : Object.entries(data);
+                    const entries = typeof data === 'string' ? new URLSearchParams(data) : Object.entries(data as Record<string, unknown>);
                     for (const [key, value] of entries) {
                         params.append(key, String(value));
                     }

@@ -43,6 +43,13 @@ container.
 Podman works too: the image is OCI-compatible, `podman build -t tanko .` or
 `podman-compose up -d` with the same compose file.
 
+Building from GitHub without cloning:
+
+```bash
+docker build -t tanko:v0.1.0 github.com/nils010485/tanko#v0.1.0   # pinned release
+docker build -t tanko:nightly github.com/nils010485/tanko         # latest main
+```
+
 ## Configuration
 
 Chapter format, download parallelism (parallel sources × chapters per
