@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { chapterFileNames, chapterPaths, detectMime, outputExists, pageFileName, sanitizeName } from '../src/downloader/paths.js';
@@ -32,6 +34,24 @@ describe('chapterPaths', () => {
     it('builds the flat series layout when requested', () => {
         const paths = chapterPaths('/base', 'MangaDex', 'One Piece', 'Ch.12', 'series');
         expect(paths.cbzFile).toBe(path.join('/base', 'One Piece', 'Chapter 12.cbz'));
+    });
+
+    it('accepts a series folder spelled with the other apostrophe', () => {
+        // sources title with a typographic apostrophe, the NAS folder is ASCII — and vice versa
+        for (const [folderTitle, entryTitle] of [
+            ["Can't Level Up", 'Can’t Level Up'],
+            ['Can’t Level Up', "Can't Level Up"]
+        ] as const) {
+            const base = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-paths-'));
+            try {
+                const folder = path.join(base, folderTitle);
+                fs.mkdirSync(folder, { recursive: true });
+                const paths = chapterPaths(base, 'MangaDex', entryTitle, 'Ch.1', 'series');
+                expect(paths.cbzFile.startsWith(folder)).toBe(true);
+            } finally {
+                fs.rmSync(base, { recursive: true, force: true });
+            }
+        }
     });
 });
 

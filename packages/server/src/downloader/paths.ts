@@ -74,6 +74,22 @@ export function chapterFileNames(chapterTitle: string): string[] {
     return names;
 }
 
+/** Resolve the series folder: keep the exact sanitized spelling, but accept
+ *  a folder spelled with the other apostrophe — sources title series with a
+ *  typographic « Can’t » while NAS folders are usually ASCII « Can't » (and
+ *  vice versa). Downloads, counts and deletions then share the real folder. */
+function resolveSeriesDirectory(directory: string): string {
+    if (fs.existsSync(directory)) {
+        return directory;
+    }
+    for (const variant of [directory.replaceAll('’', "'"), directory.replaceAll("'", '’')]) {
+        if (variant !== directory && fs.existsSync(variant)) {
+            return variant;
+        }
+    }
+    return directory;
+}
+
 export function chapterPaths(
     baseDirectory: string,
     sourceLabel: string,
@@ -81,10 +97,9 @@ export function chapterPaths(
     chapterTitle: string,
     layout: DirectoryLayout = 'source'
 ): ChapterPaths {
-    const seriesDir =
-        layout === 'series'
-            ? path.join(baseDirectory, sanitizeName(mangaTitle))
-            : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle));
+    const seriesDir = resolveSeriesDirectory(
+        layout === 'series' ? path.join(baseDirectory, sanitizeName(mangaTitle)) : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle))
+    );
     const names = chapterFileNames(chapterTitle);
     const chapterName = names[0] ?? sanitizeName(chapterTitle);
     let existing: string | undefined;
