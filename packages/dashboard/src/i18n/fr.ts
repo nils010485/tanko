@@ -154,7 +154,7 @@ export const fr: typeof import('./en.js').en = {
     'library.rematch': 'Re-matcher',
     'library.moreActions': 'Plus d’actions',
     'library.rollbackMigrationHint': 'Revenir à la source précédente',
-    'library.rollbackMigration': '⟲ migration',
+    'library.rollbackMigration': 'Annuler la migration',
     'library.rollbackMigrationDone': 'Source précédente restaurée',
     'library.reestablish': 'Rétablir',
     'library.remove': 'Retirer',

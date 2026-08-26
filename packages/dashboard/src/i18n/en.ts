@@ -153,7 +153,7 @@ export const en = {
     'library.rematch': 'Rematch',
     'library.moreActions': 'More actions',
     'library.rollbackMigrationHint': 'Go back to the previous source',
-    'library.rollbackMigration': '⟲ migration',
+    'library.rollbackMigration': 'Undo migration',
     'library.rollbackMigrationDone': 'Previous source restored',
     'library.reestablish': 'Restore',
     'library.remove': 'Remove',

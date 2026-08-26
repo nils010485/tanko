@@ -320,38 +320,40 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                 </Card>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
                             <div className="text-sm font-medium">{t('tasks.rematchFailedTitle')}</div>
                             <div className="mt-0.5 text-xs text-zinc-500">{t('library.rematchFailedHint')}</div>
                         </div>
-                        <Button small variant="ghost" onClick={runRematchFailed} loading={rematchBusy} disabled={failingCount === 0}>
-                            <IconRefresh size={13} /> {t('library.rematchFailed', { n: failingCount })}
-                        </Button>
+                        <div className="mt-auto flex justify-end">
+                            <Button small variant="ghost" onClick={runRematchFailed} loading={rematchBusy} disabled={failingCount === 0}>
+                                <IconRefresh size={13} /> {t('library.rematchFailed', { n: failingCount })}
+                            </Button>
+                        </div>
                     </Card>
 
-                    <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
                             <div className="text-sm font-medium">{t('schedule.coversTitle')}</div>
                             <div className="mt-0.5 text-xs text-zinc-500">{t('schedule.coversHint')}</div>
                         </div>
-                        <div className="flex flex-col items-end gap-1.5">
+                        {covers && (
+                            <div className="flex items-center gap-2 text-xs text-zinc-400">
+                                {covers.running ? (
+                                    <>
+                                        <Spinner size={12} /> {t('schedule.coversProgress', { done: covers.done, total: covers.total })}
+                                    </>
+                                ) : covers.enabled ? (
+                                    covers.total > 0 && t('schedule.coversResult', { done: covers.done, skipped: covers.skipped, failed: covers.failed })
+                                ) : (
+                                    t('schedule.coversDisabled')
+                                )}
+                            </div>
+                        )}
+                        <div className="mt-auto flex justify-end">
                             <Button small variant="ghost" onClick={regenCovers} loading={regenBusy} disabled={covers?.running || covers?.enabled === false}>
                                 <IconRefresh size={13} /> {t('schedule.regenCovers')}
                             </Button>
-                            {covers && (
-                                <div className="flex items-center gap-2 text-xs text-zinc-400">
-                                    {covers.running ? (
-                                        <>
-                                            <Spinner size={12} /> {t('schedule.coversProgress', { done: covers.done, total: covers.total })}
-                                        </>
-                                    ) : covers.enabled ? (
-                                        covers.total > 0 && t('schedule.coversResult', { done: covers.done, skipped: covers.skipped, failed: covers.failed })
-                                    ) : (
-                                        t('schedule.coversDisabled')
-                                    )}
-                                </div>
-                            )}
                         </div>
                     </Card>
                 </div>

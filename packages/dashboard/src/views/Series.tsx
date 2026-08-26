@@ -351,6 +351,7 @@ export default function Series({
                         {entry.lastChapterAt && <span className="text-faint">{t('library.lastChapterAt', { date: formatDate(entry.lastChapterAt) })}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        {/* suivi + téléchargements */}
                         <Toggle
                             checked={entry.autoDownload}
                             onChange={toggleFollow}
@@ -373,6 +374,8 @@ export default function Series({
                             <IconDownload size={13} /> {t('series.downloadMissing')}
                             {missingCount > 0 ? ` (${missingCount})` : ''}
                         </Button>
+                        {/* gestion de la source */}
+                        <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
                         <Button small variant="ghost" onClick={rematch} loading={busy.rematch} title={t('library.rematchHint')}>
                             <IconSearch size={13} /> {t('library.rematch')}
                         </Button>
