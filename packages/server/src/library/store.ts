@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { Database } from '../db.js';
-import { chapterPaths, countLocalChapters, outputExists } from '../downloader/paths.js';
+import { chapterPaths, countLocalChapters, listChapterEntries, outputExists } from '../downloader/paths.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
@@ -282,6 +282,51 @@ export class LibraryStore {
         const settings = this.opts.queueSettings;
         const target = chapterPaths(settings.dataDirectory, entry.source_label, entry.title, 'Chapter 0', settings.directoryLayout).cbzFile;
         return path.dirname(target);
+    }
+
+    /** Disk sync pass: re-attach local chapter files to the database. Every
+     *  entry's series folder is matched against its chapters by number and a
+     *  matching file marks its chapter downloaded (a check that ran while the
+     *  files lived elsewhere, a manual move, a restore…). Entries with no
+     *  chapter rows at all (import whose sync failed, files pre-dating the
+     *  database) get a source check first so there are rows to attach to;
+     *  chapters that stay unattached are genuinely missing from disk. */
+    async resyncLocalFiles(): Promise<{ attached: number; entries: number; checked: number }> {
+        let attached = 0;
+        let entries = 0;
+        let checked = 0;
+        for (const row of this._all<EntryRow>('SELECT * FROM library')) {
+            const directory = this.seriesDirectory(row.id, row);
+            if (!directory) {
+                continue;
+            }
+            const byNumber = new Map<number, string>();
+            for (const file of listChapterEntries(directory)) {
+                const number = parseChapterNumber(file.replace(/\.cbz$/i, ''));
+                if (number !== null && !byNumber.has(number)) {
+                    byNumber.set(number, path.join(directory, file));
+                }
+            }
+            if (byNumber.size === 0) {
+                continue;
+            }
+            const count = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM library_chapters WHERE entry_id = ?', row.id);
+            if (Number(count?.n ?? 0) === 0) {
+                try {
+                    await this.checkForNewChapters(row.id);
+                    checked++;
+                } catch {
+                    // source unreachable: keep the disk-only pass — the
+                    // display counts local files even without DB rows
+                }
+            }
+            const matched = this.markDownloadedByNumber(row.id, byNumber);
+            if (matched > 0) {
+                attached += matched;
+                entries++;
+            }
+        }
+        return { attached, entries, checked };
     }
 
     /** Sync helper for the dashboard: entries whose files vanished from disk

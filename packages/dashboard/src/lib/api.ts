@@ -170,7 +170,7 @@ export const api = {
     library: (hidden = false) => request<LibraryEntryDto[]>(`/api/library${hidden ? '?hidden=1' : ''}`),
     removeFromLibrary: (entryId: number, disk = false) =>
         request<{ ok: boolean; deletedPath: string | null }>(`/api/library/${entryId}${disk ? '?disk=1' : ''}`, { method: 'DELETE' }),
-    rescanLibrary: () => request<{ dead: DeadSeriesDto[] }>('/api/library/rescan', { method: 'POST' }),
+    rescanLibrary: () => request<{ dead: DeadSeriesDto[]; attached: number; entries: number; checked: number }>('/api/library/rescan', { method: 'POST' }),
     pruneLibrary: (ids: number[]) => request<{ removed: number }>('/api/library/prune', { method: 'POST', body: JSON.stringify({ ids }) }),
     setHidden: (entryId: number, hidden: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ hidden }) }),

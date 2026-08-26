@@ -430,16 +430,20 @@ export default function Library({
         }
     };
 
-    // Compare the database against the files actually on disk; dead entries
-    // (series folder deleted outside Tanko) are pruned after confirmation.
+    // Disk sync: re-attach local files to their chapters (toast), then dead
+    // entries (series folder deleted outside Tanko) are pruned after confirm.
     const rescan = async () => {
         setRescanBusy(true);
         try {
-            const { dead } = await api.rescanLibrary();
-            if (dead.length === 0) {
+            const result = await api.rescanLibrary();
+            if (result.attached > 0) {
+                toast.success(t('library.resyncAttached', { n: result.attached, entries: result.entries }));
+                await refreshLibrary();
+            }
+            if (result.dead.length === 0) {
                 toast.info(t('library.rescanNone'));
             } else {
-                setPendingRescan(dead);
+                setPendingRescan(result.dead);
             }
         } catch (error) {
             toast.error((error as Error).message);
