@@ -410,6 +410,9 @@ export class Scheduler {
                 message: this._failoverMessage(entry.title, outcome),
                 at: new Date().toISOString()
             });
+            if (outcome === 'migrated') {
+                this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
+            }
             this._publishEntryUpdated(entry.id);
         } catch (migrationError) {
             console.warn(`[failover] "${entry.title}":`, (migrationError as Error).message);

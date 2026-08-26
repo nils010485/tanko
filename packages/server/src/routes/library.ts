@@ -166,10 +166,17 @@ export function registerLibraryRoutes(
             let migrated = 0;
             try {
                 for (const entry of entries) {
+                    // migrating under running downloads would orphan their files
+                    // and double-queue the requeued chapters — leave the entry
+                    // failed so the next bulk run picks it up again
+                    if (queue.hasPendingJobs(entry.id)) {
+                        continue;
+                    }
                     try {
                         const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
                         if (outcome === 'migrated') {
                             migrated++;
+                            store.requeueFailedAfterMigration(entry.id, queue);
                         }
                         events.publish({
                             type: 'log',
@@ -403,6 +410,7 @@ export function registerLibraryRoutes(
                 url: target.url,
                 score: target.score
             });
+            store.requeueFailedAfterMigration(entry.id, queue);
             const updated = publishEntry(entry.id);
             return { ...result, entry: updated };
         } catch (error) {
