@@ -249,25 +249,42 @@ describe('scheduler auto-unfollow of stale series', () => {
         enabled.updateSettings({ autoUnfollow: false });
     });
 });
-
 describe('scheduler check-failure wave', () => {
-    it('opens the outage when several entries of a source fail their checks, suspending migration', async () => {
+    it('opens the outage on a wave of thrown errors, suspending migration', async () => {
         const maybeMigrate = vi.fn().mockResolvedValue('none');
         const entry = { id: 11, sourceId: 'src', title: 'Wave Series', sourceLabel: 'Source' };
         const suspended = { sourceId: 'src', startedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), failures: 1, escalatedAt: null };
         const store = {
             listEntries: async () => [entry],
             checkForNewChapters: async () => {
-                throw new Error('la source ne référence plus aucun chapitre dans les langues préférées');
+                throw new Error('fetch failed');
             },
             recordCheckFailure: () => 3,
             // three entries of the source are failing their checks -> wave
             countEntriesWithCheckFailures: () => 3,
-            noteSourceFailure: () => suspended
+            noteSourceFailure: (_sourceId: string, open: boolean) => (open ? suspended : undefined)
         };
         const scheduler = buildScheduler(store, { maybeMigrate, tryBeginProbe: () => true, endProbe: () => {} });
         await scheduler.runNow();
         expect(scheduler.status().lastRunResult).toContain('checked');
         expect(maybeMigrate).not.toHaveBeenCalled(); // suspended, not probed
+    });
+
+    it('still migrates a takedown wave (listing OK, zero usable chapters)', async () => {
+        const maybeMigrate = vi.fn().mockResolvedValue('none');
+        const entry = { id: 12, sourceId: 'src', title: 'Takedown Series', sourceLabel: 'Source' };
+        const store = {
+            listEntries: async () => [entry],
+            checkForNewChapters: async () => {
+                throw new Error('la source ne référence plus aucun chapitre dans les langues préférées');
+            },
+            recordCheckFailure: () => 3,
+            countEntriesWithCheckFailures: () => 3,
+            noteSourceFailure: (_sourceId: string, open: boolean) => (open ? { escalatedAt: null } : undefined)
+        };
+        const scheduler = buildScheduler(store, { maybeMigrate, tryBeginProbe: () => true, endProbe: () => {} });
+        await scheduler.runNow();
+        expect(scheduler.status().lastRunResult).toContain('checked');
+        expect(maybeMigrate).toHaveBeenCalledTimes(1); // content removal -> probe, no suspension
     });
 });

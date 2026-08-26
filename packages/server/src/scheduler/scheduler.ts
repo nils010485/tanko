@@ -23,6 +23,10 @@ const RETRY_DELAY_MS = 12 * 60 * 1000;
 const DETECTION_PROBES = 10;
 /** Retry rounds after a run: t0 + 12min + 24min reaches the 3-failure threshold. */
 const MAX_RETRY_ROUNDS = 2;
+/** Raised when the source still answers but lists zero chapters in the
+ *  preferred languages (license takedown typically) — a per-series CONTENT
+ *  signal: it must keep migrating at its own pace, never open an outage. */
+const NO_USABLE_CHAPTERS = 'la source ne référence plus aucun chapitre dans les langues préférées';
 /** A series with no new chapter for this long is hidden (autoUnfollow). 120
  *  days: monthly series publish every ~30 days, quarterly ones every ~92. */
 const UNFOLLOW_STALE_DAYS = 120;
@@ -330,12 +334,7 @@ export class Scheduler {
             // (retrait pour licence typiquement) alors que la série est suivie —
             // déjà téléchargée ou en attente de nouveautés : compter comme un échec
             // pour armer le failover au lieu de rester silencieusement à « 0 nouveau ».
-            await this._handleCheckFailure(
-                entry,
-                new Error('la source ne référence plus aucun chapitre dans les langues préférées'),
-                failoverProbed,
-                failedIds
-            );
+            await this._handleCheckFailure(entry, new Error(NO_USABLE_CHAPTERS), failoverProbed, failedIds);
             return [];
         }
         this.opts.store.resetCheckFailures(entry.id);
@@ -381,11 +380,11 @@ export class Scheduler {
         // repeated failures -> the source is probably dead for this series: try a failover
         const failures = this.opts.store.recordCheckFailure(entry.id);
         // a source-wide outage suspends migration on this path too (same
-        // policy as the download path — probes resume once it escalates). The
-        // failing check refreshes the outage's last_seen_at, and a wave of
-        // failing checks (API change, block) OPENS it: checks have no download
-        // jobs to trip the download-side detection
-        const open = this.opts.store.countEntriesWithCheckFailures(entry.sourceId) >= SOURCE_OUTAGE_ENTRIES;
+        // policy as the download path — probes resume once it escalates).
+        // Only thrown errors (network, API) may OPEN the outage: a listing
+        // that succeeds with zero usable chapters is a per-series takedown
+        // and keeps migrating at its own 3-strike pace, outage or not
+        const open = (error as Error).message !== NO_USABLE_CHAPTERS && this.opts.store.countEntriesWithCheckFailures(entry.sourceId) >= SOURCE_OUTAGE_ENTRIES;
         const outage = this.opts.store.noteSourceFailure(entry.sourceId, open);
         if (outage && !outage.escalatedAt) {
             return;
