@@ -8,7 +8,7 @@ import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
 import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
-import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, OUTAGE_SILENCE_MS } from '../library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, OUTAGE_SILENCE_MS, SOURCE_OUTAGE_ENTRIES } from '../library/failover.js';
 import { type NotificationSettings, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
@@ -381,9 +381,12 @@ export class Scheduler {
         // repeated failures -> the source is probably dead for this series: try a failover
         const failures = this.opts.store.recordCheckFailure(entry.id);
         // a source-wide outage suspends migration on this path too (same
-        // policy as the download path — probes resume once it escalates);
-        // the failing check refreshes the outage's last_seen_at
-        const outage = this.opts.store.noteSourceFailure(entry.sourceId, false);
+        // policy as the download path — probes resume once it escalates). The
+        // failing check refreshes the outage's last_seen_at, and a wave of
+        // failing checks (API change, block) OPENS it: checks have no download
+        // jobs to trip the download-side detection
+        const open = this.opts.store.countEntriesWithCheckFailures(entry.sourceId) >= SOURCE_OUTAGE_ENTRIES;
+        const outage = this.opts.store.noteSourceFailure(entry.sourceId, open);
         if (outage && !outage.escalatedAt) {
             return;
         }

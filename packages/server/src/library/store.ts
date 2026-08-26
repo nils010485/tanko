@@ -352,6 +352,14 @@ export class LibraryStore {
         return Number(row?.n ?? 0);
     }
 
+    /** Entries of this source currently failing their checks (the counter
+     *  resets on the first success). Several at once means the source itself
+     *  is broken (API change, block) — not per-series rot. */
+    countEntriesWithCheckFailures(sourceId: string): number {
+        const row = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM library WHERE source_id = ? AND hidden = 0 AND check_failures > 0', sourceId);
+        return Number(row?.n ?? 0);
+    }
+
     /** Note a failure on the source-outage record. `open` creates the row
      *  (INSERT OR IGNORE keeps the original started_at of the wave); a refresh
      *  only bumps an existing one. A closed record is reactivated on open: a

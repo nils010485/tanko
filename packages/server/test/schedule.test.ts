@@ -26,6 +26,7 @@ function buildScheduler(store?: object, failover?: unknown): Scheduler {
         listSourceOutages: () => [],
         getSourceOutage: () => undefined,
         noteSourceFailure: () => undefined,
+        countEntriesWithCheckFailures: () => 0,
         closeSourceOutage: () => false,
         armOutageEscalation: () => undefined,
         listDownloadFailing: () => [],
@@ -236,6 +237,7 @@ describe('scheduler auto-unfollow of stale series', () => {
             }
         };
         const disabled = buildScheduler(store);
+
         await disabled.runNow();
         expect(hidden).toEqual([]);
 
@@ -245,5 +247,27 @@ describe('scheduler auto-unfollow of stale series', () => {
         expect(hidden).toEqual([1]);
         // restore the shared persisted setting so later suites start clean
         enabled.updateSettings({ autoUnfollow: false });
+    });
+});
+
+describe('scheduler check-failure wave', () => {
+    it('opens the outage when several entries of a source fail their checks, suspending migration', async () => {
+        const maybeMigrate = vi.fn().mockResolvedValue('none');
+        const entry = { id: 11, sourceId: 'src', title: 'Wave Series', sourceLabel: 'Source' };
+        const suspended = { sourceId: 'src', startedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), failures: 1, escalatedAt: null };
+        const store = {
+            listEntries: async () => [entry],
+            checkForNewChapters: async () => {
+                throw new Error('la source ne référence plus aucun chapitre dans les langues préférées');
+            },
+            recordCheckFailure: () => 3,
+            // three entries of the source are failing their checks -> wave
+            countEntriesWithCheckFailures: () => 3,
+            noteSourceFailure: () => suspended
+        };
+        const scheduler = buildScheduler(store, { maybeMigrate, tryBeginProbe: () => true, endProbe: () => {} });
+        await scheduler.runNow();
+        expect(scheduler.status().lastRunResult).toContain('checked');
+        expect(maybeMigrate).not.toHaveBeenCalled(); // suspended, not probed
     });
 });
