@@ -15,6 +15,9 @@ import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
 import { withTimeout } from '../util/timeout.js';
+// runtime constants only — failover imports *types* from this module, and a
+// type-only import is erased at compile time, so no runtime cycle is created
+import { OUTAGE_ESCALATION_MS, OUTAGE_SILENCE_MS } from './failover.js';
 
 /** Shared INSERT statements for chapter rows (6-column snapshot, 6-column forced 'new', full 8-column). */
 const SQL_INSERT_CHAPTER = `INSERT OR IGNORE INTO library_chapters (entry_id, chapter_id, title, language, status, discovered_at)
@@ -43,6 +46,36 @@ interface EntryRow {
     added_at: string;
 }
 
+/** A source-wide download outage (≥ SOURCE_OUTAGE_ENTRIES distinct entries
+ *  failing inside the window). escalatedAt non-null = the suspension of
+ *  migration is lifted: the outage is old enough to look permanent. */
+export interface SourceOutage {
+    sourceId: string;
+    startedAt: string;
+    lastSeenAt: string;
+    failures: number;
+    escalatedAt: string | null;
+}
+
+/** Raw row of the source_outages table. */
+interface OutageRow {
+    source_id: string;
+    started_at: string;
+    last_seen_at: string;
+    failures: number;
+    escalated_at: string | null;
+    closed_at: string | null;
+}
+
+function toOutage(row: OutageRow): SourceOutage {
+    return {
+        sourceId: row.source_id,
+        startedAt: row.started_at,
+        lastSeenAt: row.last_seen_at,
+        failures: row.failures,
+        escalatedAt: row.escalated_at
+    };
+}
 export interface ChapterRow {
     id: number;
     entry_id: number;
@@ -303,12 +336,83 @@ export class LibraryStore {
      *  window — several at once is a source outage, not per-series rot. */
     countRecentSourceFailures(sourceId: string, windowMs: number): number {
         const cutoff = new Date(Date.now() - windowMs).toISOString();
-        const row = this._get(
+        const row = this._get<{ n: number }>(
             "SELECT COUNT(DISTINCT entry_id) AS n FROM download_jobs WHERE source_id = ? AND status = 'failed' AND entry_id IS NOT NULL AND updated_at > ?",
             sourceId,
             cutoff
-        ) as { n: number } | undefined;
+        );
         return Number(row?.n ?? 0);
+    }
+
+    /** Note a failure on the source-outage record. `open` creates the row
+     *  (INSERT OR IGNORE keeps the original started_at of the wave); a refresh
+     *  only bumps an existing one. A closed record is reactivated on open: a
+     *  quick reopen (flap) resumes the previous wave — escalation included —
+     *  while a stale close starts a fresh clock. Arms the escalation stamp
+     *  when the outage has lasted long enough — idempotent. Returns undefined
+     *  when no outage row exists (refresh without a prior open). */
+    noteSourceFailure(sourceId: string, open: boolean): SourceOutage | undefined {
+        const now = new Date();
+        const iso = now.toISOString();
+        if (open) {
+            this.opts.db.db
+                .prepare('INSERT OR IGNORE INTO source_outages (source_id, started_at, last_seen_at, failures) VALUES (?, ?, ?, 0)')
+                .run(sourceId, iso, iso);
+        }
+        const row = this._get<OutageRow>('SELECT * FROM source_outages WHERE source_id = ?', sourceId);
+        if (!row) {
+            return undefined;
+        }
+        if (row.closed_at !== null) {
+            const flap = Date.parse(row.closed_at) + OUTAGE_SILENCE_MS > now.getTime();
+            const startedAt = flap ? row.started_at : iso;
+            const escalatedAt = flap ? row.escalated_at : null;
+            this.opts.db.db
+                .prepare('UPDATE source_outages SET closed_at = NULL, started_at = ?, last_seen_at = ?, failures = 1, escalated_at = ? WHERE source_id = ?')
+                .run(startedAt, iso, escalatedAt, sourceId);
+            return toOutage({ source_id: sourceId, started_at: startedAt, last_seen_at: iso, failures: 1, escalated_at: escalatedAt, closed_at: null });
+        }
+        const escalatedAt = row.escalated_at ?? (Date.parse(row.started_at) + OUTAGE_ESCALATION_MS <= now.getTime() ? iso : null);
+        this.opts.db.db
+            .prepare('UPDATE source_outages SET last_seen_at = ?, failures = failures + 1, escalated_at = ? WHERE source_id = ?')
+            .run(iso, escalatedAt, sourceId);
+        return toOutage({ ...row, last_seen_at: iso, failures: row.failures + 1, escalated_at: escalatedAt });
+    }
+
+    getSourceOutage(sourceId: string): SourceOutage | undefined {
+        const row = this._get<OutageRow>('SELECT * FROM source_outages WHERE source_id = ? AND closed_at IS NULL', sourceId);
+        return row ? toOutage(row) : undefined;
+    }
+
+    /** Every open outage (scheduler maintenance: silence-close, escalation). */
+    listSourceOutages(): SourceOutage[] {
+        return this._all<OutageRow>('SELECT * FROM source_outages WHERE closed_at IS NULL').map(toOutage);
+    }
+
+    /** Close an outage (source healed). The row is kept with a closed_at
+     *  stamp: a quick reopen (flap) resumes the wave instead of restarting
+     *  the escalation clock from scratch. Returns whether an open outage was
+     *  closed. */
+    closeSourceOutage(sourceId: string): boolean {
+        return (
+            Number(
+                this.opts.db.db
+                    .prepare('UPDATE source_outages SET closed_at = ? WHERE source_id = ? AND closed_at IS NULL')
+                    .run(new Date().toISOString(), sourceId).changes
+            ) > 0
+        );
+    }
+
+    /** Arm the escalation stamp of an open outage whose started_at is old
+     *  enough — the arming also happens on noteSourceFailure; this entry
+     *  point covers outages whose jobs stopped retrying (silence) before the
+     *  escalation delay elapsed. No-op otherwise. */
+    armOutageEscalation(sourceId: string): SourceOutage | undefined {
+        const row = this._get<OutageRow>('SELECT * FROM source_outages WHERE source_id = ? AND closed_at IS NULL', sourceId);
+        if (row && !row.escalated_at && Date.parse(row.started_at) + OUTAGE_ESCALATION_MS <= Date.now()) {
+            this.opts.db.db.prepare('UPDATE source_outages SET escalated_at = ? WHERE source_id = ?').run(new Date().toISOString(), sourceId);
+        }
+        return this.getSourceOutage(sourceId);
     }
 
     /** Entries whose downloads keep failing (candidates for a source failover). */
@@ -822,7 +926,18 @@ export class LibraryStore {
                 data     TEXT NOT NULL,
                 at       TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS source_outages (
+                source_id    TEXT PRIMARY KEY,
+                started_at   TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                failures     INTEGER NOT NULL DEFAULT 0,
+                escalated_at TEXT,
+                closed_at    TEXT
+            );
         `);
+        // databases created before the soft-close redesign: add the closed_at stamp
+        const outageColumns = this.opts.db.db.prepare('PRAGMA table_info(source_outages)').all() as Array<{ name: string }>;
+        this._addColumn('source_outages', outageColumns, 'closed_at', 'closed_at TEXT');
 
         // existing databases: add columns when missing
         const columns = this.opts.db.db.prepare('PRAGMA table_info(library)').all() as Array<{ name: string }>;

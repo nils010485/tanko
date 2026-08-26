@@ -8,7 +8,7 @@ import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
 import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
-import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, SOURCE_OUTAGE_ENTRIES, SOURCE_OUTAGE_WINDOW_MS } from '../library/failover.js';
+import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, OUTAGE_SILENCE_MS } from '../library/failover.js';
 import { type NotificationSettings, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
@@ -133,6 +133,37 @@ export class Scheduler {
                     newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
                 }
             }
+            // outage maintenance, before the backstop: close outages whose
+            // last observed failure is stale (the source quietly recovered —
+            // restart the failed jobs' retry ladder) and arm the escalation
+            // of outages whose jobs stopped retrying before OUTAGE_ESCALATION_MS
+            for (const outage of this.opts.store.listSourceOutages()) {
+                if (Date.parse(outage.lastSeenAt) + OUTAGE_SILENCE_MS < Date.now()) {
+                    // deep backoff slots (up to 4 h) produce no failure events:
+                    // only close by silence once the source has nothing left to retry
+                    if (this.opts.queue.hasActiveJobs(outage.sourceId)) {
+                        continue;
+                    }
+                    this.opts.store.closeSourceOutage(outage.sourceId);
+                    this.opts.queue.resetRetryLadder(outage.sourceId);
+                    this.opts.events.publish({
+                        type: 'log',
+                        level: 'info',
+                        message: `La source ${outage.sourceId} n'échoue plus — clôture de la panne, reprise des téléchargements en échec`,
+                        at: new Date().toISOString()
+                    });
+                    continue;
+                }
+                const escalated = this.opts.store.armOutageEscalation(outage.sourceId);
+                if (escalated?.escalatedAt && !outage.escalatedAt) {
+                    this.opts.events.publish({
+                        type: 'log',
+                        level: 'warn',
+                        message: `Panne de la source ${outage.sourceId} persistante — migration de source réautorisée`,
+                        at: new Date().toISOString()
+                    });
+                }
+            }
             // backstop for download failures that did not trip the immediate
             // probe (index.ts): same threshold, on the scheduler cadence
             if (this.opts.failover) {
@@ -140,9 +171,11 @@ export class Scheduler {
                     if (failoverProbed.has(entry.id) || this.opts.queue.hasPendingJobs(entry.id)) {
                         continue; // already probed in this run, or the immediate probe owns it once the running jobs settle
                     }
-                    // source-wide outage: the immediate path suspends migration
-                    // and the queue's auto-retry heals the failed jobs instead
-                    if (this.opts.store.countRecentSourceFailures(entry.sourceId, SOURCE_OUTAGE_WINDOW_MS) >= SOURCE_OUTAGE_ENTRIES) {
+                    // source-wide outage: migration stays suspended until it is
+                    // escalated (persistent) — otherwise the queue's auto-retry
+                    // heals the failed jobs when the source comes back
+                    const outage = this.opts.store.getSourceOutage(entry.sourceId);
+                    if (outage && !outage.escalatedAt) {
                         continue;
                     }
                     failoverProbed.add(entry.id);
@@ -347,6 +380,14 @@ export class Scheduler {
         });
         // repeated failures -> the source is probably dead for this series: try a failover
         const failures = this.opts.store.recordCheckFailure(entry.id);
+        // a source-wide outage suspends migration on this path too (same
+        // policy as the download path — probes resume once it escalates);
+        // the failing check refreshes the outage's last_seen_at
+        const outage = this.opts.store.noteSourceFailure(entry.sourceId, false);
+        if (outage && !outage.escalatedAt) {
+            return;
+        }
+
         // attempt at the 3rd failure, then sparsely (every 20th): probing the
         // alternative sources is slow, it must not dominate every scheduled run
         if (failures < 3 || (failures !== 3 && failures % 20 !== 0) || !this.opts.failover) {

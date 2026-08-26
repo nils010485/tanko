@@ -32,19 +32,47 @@ export const INCOMPLETE_SOURCE_CHAPTERS = 10;
  *  count to be worth suggesting. */
 const IMPROVEMENT_FACTOR = 2;
 /** Download failures after which a source failover is probed immediately —
- *  without waiting for the next scheduler run (hours later). One hard failure
- *  is enough: the queue's retry ladder (per-page attempts × page-list
- *  refreshes) has already weeded out timeouts and transient blips. */
+ *  without waiting for the next scheduler run (hours later). Content
+ *  failures only (chapter gone server-side): infra failures feed the
+ *  source-outage state instead and reach the failover through the
+ *  scheduler backstop or once the outage escalates. */
 export const DOWNLOAD_FAILOVER_FAILURES = 1;
 /** Min delay between two migration probes for the same entry: a batch
  *  download on a dead source fails once per chapter and must not crawl the
  *  alternative sources for every single chapter. */
 export const PROBE_COOLDOWN_MS = 15 * 60 * 1000;
 /** Distinct entries of one source failing inside this window means a
- *  source-wide outage (temporary): migration is suspended and the failed
- *  jobs auto-retry instead — if the source comes back, it stays in use. */
+ *  source-wide outage: migration is suspended and the failed jobs
+ *  auto-retry instead — until the outage is escalated (below), the source
+ *  comes back, or the outage is closed by silence. */
 export const SOURCE_OUTAGE_ENTRIES = 3;
 export const SOURCE_OUTAGE_WINDOW_MS = 60 * 60 * 1000;
+/** A continuous outage older than this is escalated: per-entry failover
+ *  probes are re-allowed (the source is probably dead for good — chapters
+ *  must be delivered through a migration instead of waiting forever). */
+export const OUTAGE_ESCALATION_MS = 3 * 60 * 60 * 1000;
+/** An outage whose last observed failure is older than this is closed: the
+ *  source quietly recovered. Closing resets the retry ladder of its failed
+ *  jobs so they retry soon instead of waiting out their deep backoff slot. */
+export const OUTAGE_SILENCE_MS = 2 * 60 * 60 * 1000;
+
+/** Failure taxonomy for the failover policy. 'infra': the source (or its CDN,
+ *  or the network) is unhealthy — waiting/retrying makes sense and a blind
+ *  migration probe must not fire on the first casualty. 'content': the
+ *  chapter/series is gone server-side — retrying the same URL can never
+ *  succeed, so a failover probe is armed immediately. */
+export type FailureClass = 'infra' | 'content';
+/** Deterministic server-side-removal signals. Everything else — non-image
+ *  page (CDN error), HTTP 5xx, 429, timeouts, network errors — defaults to
+ *  'infra': the conservative choice (wait, don't migrate on ambiguity). */
+const CONTENT_FAILURES = [/HTTP 404/, /HTTP 410/, /not found/i, /Page list is empty/];
+
+export function classifyFailure(error: string | null | undefined): FailureClass {
+    if (!error) {
+        return 'infra';
+    }
+    return CONTENT_FAILURES.some(pattern => pattern.test(error)) ? 'content' : 'infra';
+}
 
 export class FailoverService {
     /** Entries currently probed by suggestIfIncomplete (re-entry guard). */

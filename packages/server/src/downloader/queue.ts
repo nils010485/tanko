@@ -85,11 +85,15 @@ const PAGE_ATTEMPTS = 3;
 /** Max page-list refreshes per chapter: pages fetched through signed URLs
  *  (connector:// payloads with ?expires=…) can go stale mid-chapter. */
 const PAGE_LIST_REFRESHES = 2;
-/** Auto-retry of failed jobs: a failed job sits idle at least this long before
- *  the sweep requeues it (temporary source outages / late timeouts heal
- *  themselves; permanent rot stays failed — the failover owns that). */
-const AUTO_RETRY_DELAY_MS = 30 * 60 * 1000;
-const AUTO_RETRY_MAX = 8;
+/** Auto-retry of failed jobs: after its n-th failure a job waits
+ *  min(AUTO_RETRY_BASE_MS × 2^n, AUTO_RETRY_CAP_MS) before the sweep requeues
+ *  it — a dead source is re-probed for ~31 h (30 min, 1 h, 2 h then 4-hourly)
+ *  with fewer and fewer requests instead of the old fixed 30 min × 8 (~4 h).
+ *  A manual retry resets the ladder; so does resetRetryLadder() when the
+ *  source outage closes. */
+const AUTO_RETRY_BASE_MS = 30 * 60 * 1000;
+const AUTO_RETRY_CAP_MS = 4 * 60 * 60 * 1000;
+const AUTO_RETRY_MAX = 10;
 const AUTO_RETRY_SWEEP_MS = 5 * 60 * 1000;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
@@ -122,6 +126,7 @@ interface JobRow {
     path: string | null;
     created_at: string;
     updated_at: string;
+    auto_retries: number;
 }
 
 export class DownloadQueue {
@@ -305,27 +310,57 @@ export class DownloadQueue {
         };
     }
 
-    /** Whether the entry still has queued or downloading jobs. The immediate
-     *  download-failure failover defers until they settle so a migration does
-     *  not race chapters being rebuilt under running downloads. */
-    /** Requeue failed jobs that sat idle past the auto-retry delay (bounded by
-     *  AUTO_RETRY_MAX, reset by a manual retry): temporary source outages and
-     *  late timeouts self-heal without a click. */
+    /** Requeue failed jobs that have waited out their backoff slot (bounded
+     *  by AUTO_RETRY_MAX, reset by a manual retry or an outage closure):
+     *  temporary source outages and late timeouts self-heal without a click,
+     *  and a permanent outage stays covered until the failover escalates. */
     sweepFailedJobs(): number {
-        const now = new Date().toISOString();
-        const cutoff = new Date(Date.now() - AUTO_RETRY_DELAY_MS).toISOString();
-        const changed = Number(
-            this.opts.db.db
-                .prepare(
-                    "UPDATE download_jobs SET status = 'queued', error = NULL, progress = 0, pages_done = 0, auto_retries = auto_retries + 1, updated_at = ? WHERE status = 'failed' AND auto_retries < ? AND updated_at < ?"
-                )
-                .run(now, AUTO_RETRY_MAX, cutoff).changes
-        );
+        const rows = this.opts.db.db
+            .prepare("SELECT id, auto_retries, updated_at FROM download_jobs WHERE status = 'failed' AND auto_retries < ?")
+            .all(AUTO_RETRY_MAX) as Array<{ id: number; auto_retries: number; updated_at: string }>;
+        let changed = 0;
+        for (const row of rows) {
+            const delay = Math.min(AUTO_RETRY_BASE_MS * 2 ** row.auto_retries, AUTO_RETRY_CAP_MS);
+            const cutoff = new Date(Date.now() - delay).toISOString();
+            changed += Number(
+                this.opts.db.db
+                    .prepare(
+                        "UPDATE download_jobs SET status = 'queued', error = NULL, progress = 0, pages_done = 0, auto_retries = auto_retries + 1, updated_at = ? WHERE id = ? AND status = 'failed' AND updated_at < ?"
+                    )
+                    .run(new Date().toISOString(), row.id, cutoff).changes
+            );
+        }
         if (changed > 0) {
             this._schedule();
             this._publishStatus();
         }
         return changed;
+    }
+
+    /** Whether the source still has queued/downloading jobs or failed jobs
+     *  the ladder can still requeue. A source in this state must not have its
+     *  outage closed by silence: the jobs may simply sit in a deep backoff
+     *  slot (up to AUTO_RETRY_CAP_MS without a failure event). */
+    hasActiveJobs(sourceId: string): boolean {
+        const row = this.opts.db.db
+            .prepare(
+                "SELECT COUNT(*) AS n FROM download_jobs WHERE source_id = ? AND (status IN ('queued', 'downloading') OR (status = 'failed' AND auto_retries < ?))"
+            )
+            .get(sourceId, AUTO_RETRY_MAX) as { n: number };
+        return row.n > 0;
+    }
+
+    /** A source outage just closed (source healed): restart the retry ladder
+     *  of its failed jobs and backdate their updated_at to the base delay so
+     *  the next sweep (≤ AUTO_RETRY_SWEEP_MS) picks them up immediately
+     *  instead of leaving them in a deep backoff slot earned while sick. */
+    resetRetryLadder(sourceId: string): number {
+        const cutoff = new Date(Date.now() - AUTO_RETRY_BASE_MS).toISOString();
+        return Number(
+            this.opts.db.db
+                .prepare("UPDATE download_jobs SET auto_retries = 0, updated_at = MIN(updated_at, ?) WHERE source_id = ? AND status = 'failed'")
+                .run(cutoff, sourceId).changes
+        );
     }
 
     hasPendingJobs(entryId: number): boolean {

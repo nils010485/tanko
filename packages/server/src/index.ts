@@ -16,7 +16,14 @@ import { Database } from './db.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
 import { ImportService } from './import/service.js';
 import { CoverService } from './library/covers.js';
-import { DOWNLOAD_FAILOVER_FAILURES, FailoverService, SOURCE_OUTAGE_ENTRIES, SOURCE_OUTAGE_WINDOW_MS } from './library/failover.js';
+import {
+    classifyFailure,
+    DOWNLOAD_FAILOVER_FAILURES,
+    FailoverService,
+    OUTAGE_ESCALATION_MS,
+    SOURCE_OUTAGE_ENTRIES,
+    SOURCE_OUTAGE_WINDOW_MS
+} from './library/failover.js';
 import { LibraryStore } from './library/store.js';
 import { registerActivityRoutes } from './routes/activity.js';
 import { registerCoverRoutes } from './routes/covers.js';
@@ -121,6 +128,17 @@ const queue = new DownloadQueue({
         if (job.status === 'failed') {
             handleDownloadFailure(job);
         }
+        // a download succeeded on a source with an open outage: the source
+        // healed — close the outage and fast-track the failed jobs' retries
+        if (job.status === 'completed' && library.closeSourceOutage(job.sourceId)) {
+            queue.resetRetryLadder(job.sourceId);
+            events.publish({
+                type: 'log',
+                level: 'info',
+                message: `La source ${job.sourceId} semble rétablie — nouvelle tentative rapide des téléchargements en échec`,
+                at: new Date().toISOString()
+            });
+        }
         if (job.status === 'completed' && covers.isEnabled() && !covers.hasCover(job.entryId)) {
             // first downloaded chapter of this series: fill the cover cache in the background
             void covers.generateForEntry(job.entryId).catch(() => undefined);
@@ -133,6 +151,10 @@ const queue = new DownloadQueue({
     /** "Clear queue" drops the jobs without finishing them — put the chapters back. */
     onJobsCleared: pairs => library.revertClearedChapters(pairs)
 });
+
+/** Throttle for the "source outage" log line: at most one per source per 15 min. */
+const SOURCE_OUTAGE_LOG_MS = 15 * 60 * 1000;
+const sourceOutageWarnAt = new Map<string, number>();
 
 /** A hard download failure on one entry: probe the alternative sources right
  *  away instead of waiting for the next scheduler run (hours later). When a
@@ -150,23 +172,38 @@ function handleDownloadFailure(job: DownloadJobDto): void {
         return;
     }
 
-    // several entries of the same source failing together = temporary outage,
-    // not per-series rot: suspend migration, the queue's auto-retry will heal
-    // the failed jobs when the source comes back
-    const outageEntries = library.countRecentSourceFailures(entry.sourceId, SOURCE_OUTAGE_WINDOW_MS);
-    if (outageEntries >= SOURCE_OUTAGE_ENTRIES) {
-        if (failover.tryBeginProbe(entryId)) {
-            events.publish({
-                type: 'log',
-                level: 'warn',
-                message: `"${entry.title}" : panne de la source ${entry.sourceLabel} (${outageEntries} séries en échec) — migration suspendue, les échecs seront retentés automatiquement`,
-                at: new Date().toISOString()
-            });
-            failover.endProbe(entryId);
-        }
-        return;
-    }
+    // failure accounting ALWAYS runs, outage or not: the scheduler backstop
+    // (listDownloadFailing) must keep seeing these entries once the outage
+    // closes or escalates — the old code skipped this while suspended, which
+    // left entries invisible after their auto-retries ran out
     const failures = library.recordDownloadFailure(entryId);
+
+    // infra failure (non-image CDN page, 5xx, timeout): feed the source
+    // outage state and never probe blind — a fresh outage suspends migration
+    // until escalation. Content failure (404, removed): probe at once, the
+    // same URL can never succeed again.
+    if (classifyFailure(job.error) === 'infra') {
+        const recentEntries = library.countRecentSourceFailures(entry.sourceId, SOURCE_OUTAGE_WINDOW_MS);
+        const outage = library.noteSourceFailure(entry.sourceId, recentEntries >= SOURCE_OUTAGE_ENTRIES);
+        // infra failures never probe on their own: an isolated one heals
+        // through the queue's retry ladder (or the scheduler backstop), a
+        // source-wide one suspends migration until it escalates
+        if (!outage?.escalatedAt) {
+            const lastWarnAt = sourceOutageWarnAt.get(entry.sourceId) ?? 0;
+            if (outage?.escalatedAt === null && Date.now() - lastWarnAt > SOURCE_OUTAGE_LOG_MS) {
+                sourceOutageWarnAt.set(entry.sourceId, Date.now());
+                events.publish({
+                    type: 'log',
+                    level: 'warn',
+                    message: `Panne de la source ${entry.sourceLabel} — migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`,
+                    at: new Date().toISOString()
+                });
+            }
+            return;
+        }
+        // escalated outage: probe below right away instead of waiting for the scheduler
+    }
+
     // sibling jobs may still settle (their own finish events re-arm the probe)
     // or the entry sits in its probe cooldown
     if (failures < DOWNLOAD_FAILOVER_FAILURES || queue.hasPendingJobs(entryId) || !failover.tryBeginProbe(entryId)) {
