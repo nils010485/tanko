@@ -521,16 +521,35 @@ export class ImportService {
         sourceChapters: number;
         mode: 'number' | 'ordinal';
         entryId: number;
+        reused?: boolean;
     }> {
         const { source_id: sourceId, manga_id: mangaId, manga_title: mangaTitle } = series;
         if (!sourceId || !mangaId || !mangaTitle) {
             throw new Error(`Series "${series.name}" has no confirmed source match`);
         }
+        const local = this._localChapters(series);
+        // duplicate guard: the series is already tracked (typically on another
+        // source — a re-import whose search matched differently): attach the
+        // local files to the existing entry instead of creating a duplicate
+        const existing = this.opts.store.findEntryByTitle(mangaTitle);
+        if (existing) {
+            const matched = this.opts.store.markDownloadedByNumber(existing.id, local.byNumber);
+            console.log(
+                `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) — fichiers rattachés à l'entrée existante (${matched} chapitres)`
+            );
+            return {
+                matched,
+                localChapters: local.total,
+                sourceChapters: this.opts.store.listChapters(existing.id).length,
+                mode: 'number' as const,
+                entryId: existing.id,
+                reused: true
+            };
+        }
         const source = await this.opts.registry.get(sourceId);
         if (!source) {
             throw new Error(`Source "${sourceId}" introuvable`);
         }
-        const local = this._localChapters(series);
         // fetch the source chapters BEFORE creating the library entry: a series
         // whose source is dead/emptied must not leave a ghost entry behind
         const { chapters, byNumber: sourceByNumber } = await this._sourceChapters({ id: mangaId, title: mangaTitle }, source, preferred);

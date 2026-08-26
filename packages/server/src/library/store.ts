@@ -27,6 +27,14 @@ const SQL_INSERT_NEW_CHAPTER = `INSERT OR IGNORE INTO library_chapters (entry_id
 const SQL_INSERT_CHAPTER_FULL = `INSERT OR IGNORE INTO library_chapters (entry_id, chapter_id, title, language, status, path, discovered_at, downloaded_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
+/** Case/punctuation-insensitive title key for cross-source duplicate
+ *  detection (keeps letters of any script and digits, drops the rest). */
+function normalizeTitle(title: string): string {
+    return title
+        .normalize('NFKD')
+        .toLowerCase()
+        .replace(/[\p{P}\p{S}\s]+/gu, '');
+}
 interface EntryRow {
     id: number;
     source_id: string;
@@ -701,6 +709,43 @@ export class LibraryStore {
     /** Find the library entry tracking a given manga on a source (null when untracked). */
     findEntryByManga(sourceId: string, mangaId: string): EntryRow | null {
         return this._get<EntryRow>('SELECT * FROM library WHERE source_id = ? AND manga_id = ?', sourceId, mangaId) ?? null;
+    }
+
+    /** Find a tracked entry by normalized title across every source (hidden
+     *  ones included): a follow or import must not silently create a second
+     *  entry for a series already tracked under a slightly different title
+     *  on another source (re-import matching drift). Null when untracked. */
+    findEntryByTitle(title: string): EntryRow | null {
+        const needle = normalizeTitle(title);
+        if (!needle) {
+            return null;
+        }
+        return this._all<EntryRow>('SELECT * FROM library').find(row => normalizeTitle(row.title) === needle) ?? null;
+    }
+
+    /** Attach local files to an already-tracked entry's chapters by number
+     *  (re-import of a series tracked elsewhere): each match not yet
+     *  'downloaded' is marked with its file path. Returns the matched count. */
+    markDownloadedByNumber(entryId: number, localByNumber: Map<number, string>): number {
+        const byNumber = new Map<number, { chapterId: string; status: string }>();
+        for (const chapter of this.listChapters(entryId)) {
+            const number = parseChapterNumber(chapter.title);
+            if (number !== null && !byNumber.has(number)) {
+                byNumber.set(number, { chapterId: chapter.chapterId, status: chapter.status });
+            }
+        }
+        let matched = 0;
+        for (const [number, localPath] of localByNumber) {
+            const chapter = byNumber.get(number);
+            if (!chapter) {
+                continue;
+            }
+            matched++;
+            if (chapter.status !== 'downloaded') {
+                this.markChapter(entryId, chapter.chapterId, 'downloaded', localPath, 'import');
+            }
+        }
+        return matched;
     }
 
     /** Flag tracked chapters as queued after an ad-hoc enqueue (covers failed retries

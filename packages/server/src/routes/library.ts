@@ -54,11 +54,30 @@ export function registerLibraryRoutes(
     );
 
     app.post<{
-        Body: { sourceId: string; mangaId: string; title: string; url?: string; thumbnail?: string; autoDownload?: boolean; backlog?: 'ignore' | 'grab' };
+        Body: {
+            sourceId: string;
+            mangaId: string;
+            title: string;
+            url?: string;
+            thumbnail?: string;
+            autoDownload?: boolean;
+            backlog?: 'ignore' | 'grab';
+            force?: boolean;
+        };
     }>('/api/library', async (request, reply) => {
         const body = request.body;
         if (!body?.sourceId || !body?.mangaId || !body?.title) {
             return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
+        }
+        // duplicate guard: the same series already tracked under another
+        // source (or another id on the same source) — refuse unless forced;
+        // the dashboard surfaces the message so the user can decide
+        const existing = store.findEntryByTitle(body.title);
+        if (existing && body.force !== true) {
+            return reply.code(409).send({
+                error: `Série déjà suivie via ${existing.source_label} (#${existing.id})`,
+                existingEntry: { id: existing.id, title: existing.title, sourceId: existing.source_id, sourceLabel: existing.source_label }
+            });
         }
         try {
             const backlog = body.backlog === 'ignore' || body.backlog === 'grab' ? body.backlog : undefined;
