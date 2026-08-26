@@ -128,11 +128,6 @@ export function registerLibraryRoutes(
         return { removed: store.pruneEntries(ids) };
     });
 
-    // Apply a rescan: drop the dead entries listed by a previous /rescan
-    app.post<{ Body: { ids?: number[] } }>('/api/library/prune', async request => {
-        const ids = Array.isArray(request.body?.ids) ? request.body.ids.filter(id => Number.isInteger(id)) : [];
-        return { removed: store.pruneEntries(ids) };
-    });
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/disk-path', async (request, reply) => {
         const { entryId } = request.params;
         if (!requireEntry(reply, store, Number(entryId))) {
