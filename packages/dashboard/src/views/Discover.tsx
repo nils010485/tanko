@@ -543,7 +543,7 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
                 </div>
 
                 {currentSource && scope === 'source' && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                         {healthDot(currentSource.health, t)}
                         <span>
                             {currentSource.health === 'ok' && t('discover.statusOk')}
