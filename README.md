@@ -1,4 +1,6 @@
 # Tanko
+> ⚠️ **Work in progress** — Tanko is under active development and not yet
+> stable. Features may change or break without notice.
 
 Tanko is a headless manga and manhwa downloader and tracker with a web
 dashboard. It is based on the engine of
