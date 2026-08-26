@@ -1,5 +1,5 @@
 # Tanko
-> ⚠️ **Work in progress** — Tanko is under active development and not yet
+> ⚠️ **Work in progress**: Tanko is under active development and not yet
 > stable. Features may change or break without notice.
 
 Tanko is a headless manga and manhwa downloader and tracker with a web
@@ -7,7 +7,10 @@ dashboard. It is based on the engine of
 [HakuNeko](https://github.com/manga-download/hakuneko), whose source
 connectors it reuses, kept up to date automatically. It works like a
 Sonarr for manga: follow series, detect new chapters, download them
-automatically, and get notified.
+automatically, and get notified. Sources are managed for you: the list
+syncs automatically, unhealthy sources are filtered out, and downloads
+fail over to a working one, so your chapters stay up to date without
+you ever managing source outages.
 
 | | |
 |---|---|
@@ -19,7 +22,8 @@ automatically, and get notified.
 - Automatic source list synced from HakuNeko, with health checks
 - Sonarr-like library: follow series, auto-download new chapters
 - Persistent download queue with retries and rate limiting
-- CBZ or image folder output, HakuNeko-compatible layout
+- CBZ or image folder output, HakuNeko-compatible layout, fully
+  compatible with readers such as [Komga](https://github.com/gotson/komga)
 - Dark web dashboard (English/French) with live updates
 - Optional first-chapter thumbnails cached locally
 - Cron scheduler with Discord/ntfy notifications
