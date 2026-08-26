@@ -342,7 +342,7 @@ export default function Series({
                                 <Badge tone="orange">{t('series.incompleteBadge', { n: entry.chapterCount })}</Badge>
                             </button>
                         )}
-                        {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
+                        {entry.paused && <Badge>{t('library.paused')}</Badge>}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
                         {entry.chapterCount > 0 && <span>{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>}
@@ -355,7 +355,7 @@ export default function Series({
                         <Toggle
                             checked={entry.autoDownload}
                             onChange={toggleFollow}
-                            label={entry.autoDownload ? t('library.following') : t('library.paused')}
+                            label={entry.autoDownload ? t('library.following') : t('library.manualDl')}
                         />
                         <Button small onClick={checkNow} loading={busy.check}>
                             <IconRefresh size={13} /> {t('library.check')}

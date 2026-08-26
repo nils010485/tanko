@@ -1,4 +1,4 @@
-import type { LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
+import type { LibraryBulkAction, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { JobRunner } from '../activity/jobs.js';
 import type { DownloadQueue } from '../downloader/queue.js';
@@ -19,6 +19,8 @@ function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: number)
 
 /** Shape accepted by Scheduler.updateSettings (notifications may be partial). */
 type SchedulePatch = Partial<Omit<ScheduleSettings, 'notifications'>> & { notifications?: Partial<ScheduleSettings['notifications']> };
+/** Actions accepted by POST /api/library/bulk (library selection mode). */
+const BULK_ACTIONS: readonly LibraryBulkAction[] = ['pause', 'resume', 'hide', 'unhide', 'check', 'downloadNew', 'rematch', 'delete'];
 export function registerLibraryRoutes(
     app: FastifyInstance,
     store: LibraryStore,
@@ -132,23 +134,134 @@ export function registerLibraryRoutes(
     });
 
     // Toggle auto-download for an entry
-    app.patch<{ Params: { entryId: string }; Body: { autoDownload?: boolean; hidden?: boolean } }>('/api/library/:entryId', async (request, reply) => {
-        const { entryId } = request.params;
-        if (typeof request.body?.autoDownload === 'boolean') {
-            const ok = store.setAutoDownload(Number(entryId), request.body.autoDownload);
-            if (!ok) {
-                return reply.code(404).send({ error: 'Entry not found' });
+    app.patch<{ Params: { entryId: string }; Body: { autoDownload?: boolean; hidden?: boolean; paused?: boolean } }>(
+        '/api/library/:entryId',
+        async (request, reply) => {
+            const { entryId } = request.params;
+            if (typeof request.body?.autoDownload === 'boolean') {
+                const ok = store.setAutoDownload(Number(entryId), request.body.autoDownload);
+                if (!ok) {
+                    return reply.code(404).send({ error: 'Entry not found' });
+                }
+                return publishEntry(Number(entryId));
             }
-            return publishEntry(Number(entryId));
-        }
-        if (typeof request.body?.hidden === 'boolean') {
-            const ok = store.setHidden(Number(entryId), request.body.hidden);
-            if (!ok) {
-                return reply.code(404).send({ error: 'Entry not found' });
+            if (typeof request.body?.hidden === 'boolean') {
+                const ok = store.setHidden(Number(entryId), request.body.hidden);
+                if (!ok) {
+                    return reply.code(404).send({ error: 'Entry not found' });
+                }
+                return publishEntry(Number(entryId));
             }
-            return publishEntry(Number(entryId));
+            if (typeof request.body?.paused === 'boolean') {
+                const ok = store.setPaused(Number(entryId), request.body.paused);
+                if (!ok) {
+                    return reply.code(404).send({ error: 'Entry not found' });
+                }
+                return publishEntry(Number(entryId));
+            }
+            return reply.code(400).send({ error: 'Body must contain boolean "autoDownload", "hidden" or "paused"' });
         }
-        return reply.code(400).send({ error: 'Body must contain boolean "autoDownload" or "hidden"' });
+    );
+
+    // Bulk operations for the library selection mode: same actions as the
+    // per-entry routes, applied sequentially; individual failures are counted
+    // and never abort the run.
+    app.post<{ Body: { ids?: number[]; action?: LibraryBulkAction; disk?: boolean } }>('/api/library/bulk', async (request, reply) => {
+        const action = request.body?.action;
+        const disk = request.body?.disk === true;
+        const ids = Array.isArray(request.body?.ids) ? request.body.ids.filter(id => Number.isInteger(id)) : [];
+        if (!action || !BULK_ACTIONS.includes(action)) {
+            return reply.code(400).send({ error: `action must be one of: ${BULK_ACTIONS.join(', ')}` });
+        }
+        if (ids.length === 0) {
+            return reply.code(400).send({ error: 'ids must be a non-empty array of integers' });
+        }
+        if (action === 'rematch' && !failover) {
+            return reply.code(501).send({ error: 'Failover non disponible' });
+        }
+        const summary = { processed: 0, failed: 0, skipped: 0, newChapters: 0, queued: 0, deleted: 0 };
+        for (const id of ids) {
+            let outcome: 'ok' | 'skip' | 'fail' = 'fail';
+            try {
+                const entry = store.getEntry(id);
+                if (!entry && action !== 'delete') {
+                    summary.failed += 1; // vanished since the selection
+                    continue;
+                }
+                switch (action) {
+                    case 'pause':
+                    case 'resume':
+                        outcome = store.setPaused(id, action === 'pause') ? 'ok' : 'fail';
+                        publishEntry(id);
+                        break;
+                    case 'hide':
+                    case 'unhide':
+                        outcome = store.setHidden(id, action === 'hide') ? 'ok' : 'fail';
+                        publishEntry(id);
+                        break;
+                    case 'check': {
+                        // unlike the single /check, no starved-source probe: a
+                        // large selection would hammer every source at once
+                        const { fresh } = await store.checkForNewChapters(id);
+                        summary.newChapters += fresh.length;
+                        outcome = 'ok';
+                        publishEntry(id);
+                        break;
+                    }
+                    case 'downloadNew': {
+                        const queued = store.enqueueNewChapters(id, queue);
+                        summary.queued += queued;
+                        outcome = 'ok';
+                        if (queued > 0) {
+                            publishEntry(id);
+                        }
+                        break;
+                    }
+                    case 'rematch': {
+                        if (!entry || !failover) {
+                            break; // vanished or failover unavailable — failed
+                        }
+                        // migrating under running downloads would orphan their
+                        // files and double-queue the requeued chapters — skip:
+                        // the next rematch run picks the entry up again
+                        if (queue.hasPendingJobs(id)) {
+                            outcome = 'skip';
+                            break;
+                        }
+                        const migrated = await failover.maybeMigrate({ id, sourceId: entry.sourceId, title: entry.title });
+                        if (migrated === 'migrated') {
+                            store.requeueFailedAfterMigration(id, queue);
+                        }
+                        outcome = 'ok';
+                        publishEntry(id);
+                        break;
+                    }
+                    case 'delete': {
+                        const result = store.removeEntry(id, { disk });
+                        outcome = result.ok ? 'ok' : 'fail';
+                        summary.deleted += result.ok ? 1 : 0;
+                        break;
+                    }
+                }
+            } catch {
+                outcome = 'fail';
+            }
+            if (outcome === 'ok') {
+                summary.processed += 1;
+            } else if (outcome === 'skip') {
+                summary.skipped += 1;
+            } else {
+                summary.failed += 1;
+            }
+        }
+        events.publishLog({
+            level: 'info',
+            category: 'system',
+            code: 'system.bulk',
+            params: { action, processed: summary.processed, skipped: summary.skipped, failed: summary.failed },
+            message: `Action groupée « ${action} » : ${summary.processed} traitée(s), ${summary.skipped} ignorée(s), ${summary.failed} échec(s)`
+        });
+        return summary;
     });
 
     // Re-match every entry whose source keeps failing (bulk failover, cached catalogs)

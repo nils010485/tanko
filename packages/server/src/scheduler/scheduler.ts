@@ -35,8 +35,9 @@ const MAX_RETRY_ROUNDS = 2;
  *  preferred languages (license takedown typically) — a per-series CONTENT
  *  signal: it must keep migrating at its own pace, never open an outage. */
 const NO_USABLE_CHAPTERS = 'la source ne référence plus aucun chapitre dans les langues préférées';
-/** A series with no new chapter for this long is hidden (autoUnfollow). 120
- *  days: monthly series publish every ~30 days, quarterly ones every ~92. */
+/** A series with no new chapter for this long gets its monitoring paused
+ *  (autoUnfollow setting). 120 days: monthly series publish every ~30 days,
+ *  quarterly ones every ~92. */
 const UNFOLLOW_STALE_DAYS = 120;
 export interface ScheduleSettings {
     enabled: boolean;
@@ -151,7 +152,7 @@ export class Scheduler {
         const failoverProbed = new Set<number>();
         const failedIds = new Set<number>();
         try {
-            const entries = await this.opts.store.listEntries();
+            const entries = await this.opts.store.listFollowedEntries();
             for (const entry of entries) {
                 const fresh = await this._checkOne(entry, failoverProbed, failedIds);
                 checked++;
@@ -242,8 +243,8 @@ export class Scheduler {
                 }
             }
 
-            const hiddenStale = this._hideStaleEntries();
-            this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s)${hiddenStale > 0 ? `, ${hiddenStale} stale series hidden` : ''} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+            const pausedStale = this._pauseStaleEntries();
+            this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s)${pausedStale > 0 ? `, ${pausedStale} stale series paused` : ''} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
             this._detectIncompleteSources(); // background, opt-in
             if (totalNew > 0) {
                 await this._notifyNewChapters(newBySeries);
@@ -263,32 +264,33 @@ export class Scheduler {
     }
 
     /** Opt-in pass run after each check run: series whose last new chapter is
-     *  older than UNFOLLOW_STALE_DAYS are hidden (reversible from « Masquées »;
-     *  files and history are kept, the scheduler ignores hidden entries).
-     *  Entries with pending check failures are skipped by the store — an
-     *  unreachable source is not an abandoned series. */
-    private _hideStaleEntries(): number {
+     *  older than UNFOLLOW_STALE_DAYS get their monitoring paused — they stay
+     *  visible in the library (badge + filter) and can be resumed at any
+     *  time; files and history are kept. Entries with pending check failures
+     *  are skipped by the store — an unreachable source is not an abandoned
+     *  series. */
+    private _pauseStaleEntries(): number {
         if (!this.settings.autoUnfollow) {
             return 0;
         }
-        let hidden = 0;
+        let paused = 0;
         for (const stale of this.opts.store.listStaleEntries(UNFOLLOW_STALE_DAYS)) {
-            this.opts.store.setHidden(stale.id, true);
-            hidden++;
+            this.opts.store.setPaused(stale.id, true);
+            paused++;
             this.opts.events.publishLog({
                 level: 'info',
                 category: 'system',
-                code: 'system.autoHide',
+                code: 'system.autoPause',
                 params: { title: stale.title, days: UNFOLLOW_STALE_DAYS },
                 entryId: stale.id,
-                message: `"${stale.title}" masquée automatiquement (aucun nouveau chapitre depuis plus de ${UNFOLLOW_STALE_DAYS} jours)`
+                message: `Suivi de "${stale.title}" mis en pause automatiquement (aucun nouveau chapitre depuis plus de ${UNFOLLOW_STALE_DAYS} jours)`
             });
             const updated = this.opts.store.getEntry(stale.id);
             if (updated) {
                 this.opts.events.publish({ type: 'library.updated', entry: updated });
             }
         }
-        return hidden;
+        return paused;
     }
 
     /** Background pass after each run (opt-in): starved sources — entries
@@ -305,11 +307,11 @@ export class Scheduler {
         let probes = 0;
         void (async () => {
             try {
-                for (const entry of await this.opts.store.listEntries()) {
+                for (const entry of await this.opts.store.listFollowedEntries()) {
                     if (probes >= DETECTION_PROBES) {
                         break;
                     }
-                    if (entry.hidden || entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
+                    if (entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
                         continue;
                     }
                     let outcome: 'suggested' | 'miss' | 'skipped' | undefined;
@@ -540,8 +542,8 @@ export class Scheduler {
         try {
             for (const id of entryIds) {
                 const entry = this.opts.store.getEntry(id);
-                if (!entry || entry.hidden) {
-                    continue; // removed or hidden since the failure
+                if (!entry || entry.hidden || entry.paused) {
+                    continue; // removed, hidden or paused since the failure
                 }
                 await this._checkOne(entry, failoverProbed, stillFailing);
             }

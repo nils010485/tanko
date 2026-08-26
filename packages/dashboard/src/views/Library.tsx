@@ -6,7 +6,7 @@
  * per-user display preferences (persisted in localStorage).
  */
 
-import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
+import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { chapterTone } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
@@ -23,6 +23,8 @@ import {
     IconGridSmall,
     IconLibrary,
     IconList,
+    IconPause,
+    IconPlay,
     IconRefresh,
     IconSearch,
     IconSliders,
@@ -38,7 +40,7 @@ import { chapterDownloadable, rematchOutcomeKey, toQueueChapters } from '../lib/
 
 type ViewMode = 'grid' | 'grid-compact' | 'list';
 type SortKey = 'recent' | 'title' | 'progress' | 'new' | 'gap';
-type FilterId = 'new' | 'missing' | 'gap' | 'failing' | 'stale' | 'paused';
+type FilterId = 'new' | 'missing' | 'gap' | 'failing' | 'stale' | 'migration' | 'paused';
 
 interface DisplayPrefs {
     progress: boolean;
@@ -83,14 +85,15 @@ function gridClassName(view: ViewMode): string {
     return `grid gap-4 ${GRID_CLASSES[view === 'grid-compact' ? 'grid-compact' : 'grid']}`;
 }
 
-const FILTER_IDS: FilterId[] = ['new', 'missing', 'gap', 'failing', 'stale', 'paused'];
+const FILTER_IDS: FilterId[] = ['new', 'missing', 'gap', 'failing', 'stale', 'migration', 'paused'];
 const FILTER_PREDS: Record<FilterId, (entry: LibraryEntryDto) => boolean> = {
     new: entry => entry.newCount > 0,
     missing: entry => missingCount(entry) > 0,
     gap: entry => missingCount(entry) >= GAP_THRESHOLD,
     failing: entry => (entry.checkFailures ?? 0) > 0,
     stale: isStale,
-    paused: entry => !entry.autoDownload
+    migration: entry => !!entry.migrationSuggestion,
+    paused: entry => entry.paused === true
 };
 
 const SORTERS: Record<SortKey, (a: LibraryEntryDto, b: LibraryEntryDto) => number> = {
@@ -135,6 +138,7 @@ export default function Library({
     const [filter, setFilter] = useState('');
     const [pendingRemove, setPendingRemove] = useState<LibraryEntryDto | null>(null);
     const [pendingDisk, setPendingDisk] = useState<LibraryEntryDto | null>(null);
+    const [pendingBulkRemove, setPendingBulkRemove] = useState(false);
     const [diskPath, setDiskPath] = useState<string | null>(null);
     const [showHidden, setShowHidden] = useState(false);
     const [rematchAllBusy, setRematchAllBusy] = useState(false);
@@ -142,7 +146,7 @@ export default function Library({
     const [dlAllBusy, setDlAllBusy] = useState(false);
     const [selecting, setSelecting] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-    const [bulkBusy, setBulkBusy] = useState<'check' | 'download' | null>(null);
+    const [bulkBusy, setBulkBusy] = useState<string | null>(null);
     const [pendingRescan, setPendingRescan] = useState<DeadSeriesDto[] | null>(null);
     const [hiddenList, setHiddenList] = useState<LibraryEntryDto[]>([]);
     const [sort, setSort] = useState<SortKey>('recent');
@@ -167,15 +171,18 @@ export default function Library({
         void refreshHidden();
     }, [refreshHidden]);
 
-    // close the remove dialog with Escape
+    // close the remove dialogs with Escape
     useEffect(() => {
-        if (pendingRemove === null) return;
+        if (pendingRemove === null && !pendingBulkRemove) return;
         const onKey = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setPendingRemove(null);
+            if (event.key === 'Escape') {
+                setPendingRemove(null);
+                setPendingBulkRemove(false);
+            }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [pendingRemove]);
+    }, [pendingRemove, pendingBulkRemove]);
 
     // close the display popover when clicking outside
     useEffect(() => {
@@ -273,51 +280,88 @@ export default function Library({
         setSelectedIds(new Set());
     };
 
-    /** Sequential bulk check over the selected series (errors are skipped). */
-    const bulkCheck = async () => {
-        const targets = source.filter(entry => selectedIds.has(entry.id));
-        if (targets.length === 0) return;
-        setBulkBusy('check');
-        let fresh = 0;
-        try {
-            for (const entry of targets) {
-                try {
-                    const result = await api.checkEntry(entry.id);
-                    fresh += result.newChapters;
-                } catch {
-                    /* keep checking the rest */
-                }
-            }
-            toast.info(t('library.bulkCheckDone', { n: targets.length, new: fresh }));
-            await refreshLibrary();
-            exitSelection();
-        } finally {
-            setBulkBusy(null);
+    /** Long-press (~500 ms, steady pointer) on a card or row enters selection
+     *  mode and toggles that entry; moving >10 px or releasing early cancels. */
+    const pressState = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+    /** Set when the long-press fired: the release click that follows must be
+     *  swallowed — it would land on the re-rendered handlers and undo the
+     *  selection that was just toggled. */
+    const pressFired = useRef(false);
+    const clearPress = () => {
+        if (pressState.current) {
+            clearTimeout(pressState.current.timer);
+            pressState.current = null;
         }
     };
-
-    /** Sequential bulk download of new chapters over the selected series. */
-    const bulkDownload = async () => {
-        const targets = source.filter(entry => selectedIds.has(entry.id));
-        if (targets.length === 0) return;
-        setBulkBusy('download');
-        let queued = 0;
-        let affected = 0;
-        try {
-            for (const entry of targets) {
-                try {
-                    const result = await api.downloadNew(entry.id);
-                    queued += result.queued;
-                    if (result.queued > 0) {
-                        affected += 1;
-                    }
-                } catch {
-                    /* keep downloading the rest */
-                }
+    const longPress = (id: number) => ({
+        onPointerDown: (event: React.PointerEvent) => {
+            if (selecting) {
+                return;
             }
-            toast.success(t('library.bulkQueuedDone', { n: queued, entries: affected }));
+            clearPress();
+            pressFired.current = false;
+            const { clientX: x, clientY: y } = event;
+            pressState.current = {
+                timer: setTimeout(() => {
+                    pressState.current = null;
+                    pressFired.current = true;
+                    setSelecting(true);
+                    toggleSelect(id);
+                }, 500),
+                x,
+                y
+            };
+        },
+        onPointerMove: (event: React.PointerEvent) => {
+            const press = pressState.current;
+            if (press && (Math.abs(event.clientX - press.x) > 10 || Math.abs(event.clientY - press.y) > 10)) {
+                clearPress();
+            }
+        },
+        onPointerUp: clearPress,
+        onPointerLeave: clearPress,
+        onPointerCancel: clearPress,
+        onClickCapture: (event: React.MouseEvent) => {
+            if (pressFired.current) {
+                pressFired.current = false;
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        },
+        // touch long-press would open the context menu instead of selecting
+        onContextMenu: (event: React.MouseEvent) => {
+            if (pressState.current || pressFired.current) {
+                event.preventDefault();
+            }
+        }
+    });
+
+    /** Server-side bulk action over the current selection; per-entry failures
+     *  are counted by the server and never abort the run. */
+    const runBulk = async (action: LibraryBulkAction, disk = false) => {
+        const ids = source.filter(entry => selectedIds.has(entry.id)).map(entry => entry.id);
+        if (ids.length === 0 || bulkBusy) {
+            return;
+        }
+        setBulkBusy(action);
+        try {
+            const result = await api.bulkLibrary(ids, action, disk);
+            if (action === 'check') {
+                toast.info(t('library.bulkCheckDone', { n: result.processed, new: result.newChapters }));
+            } else if (action === 'downloadNew') {
+                toast.success(t('library.bulkQueuedDone', { n: result.queued, entries: result.processed }));
+            } else if (action === 'delete') {
+                toast.success(t('library.bulkDeleted', { n: result.deleted }));
+            } else {
+                toast.success(t('library.bulkDone', { n: result.processed, failed: result.failed }));
+            }
             await refreshLibrary();
+            if (action === 'hide' || action === 'unhide' || action === 'delete' || showHidden) {
+                await refreshHidden();
+            }
             exitSelection();
+        } catch (error) {
+            toast.error((error as Error).message);
         } finally {
             setBulkBusy(null);
         }
@@ -437,6 +481,16 @@ export default function Library({
         }
     };
 
+    const togglePaused = async (entry: LibraryEntryDto) => {
+        try {
+            await api.setPaused(entry.id, !entry.paused);
+            toast.success(t(entry.paused ? 'library.resumedToast' : 'library.pausedToast', { title: entry.title }));
+            await refreshLibrary();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
     const rematch = async (entry: LibraryEntryDto) => {
         setBusyFlag(`rematch-${entry.id}`, true);
         try {
@@ -533,6 +587,8 @@ export default function Library({
                 return t('library.filterFailing');
             case 'stale':
                 return t('library.filterStale', { n: STALE_DAYS });
+            case 'migration':
+                return t('library.filterMigration');
             case 'paused':
                 return t('library.filterPaused');
         }
@@ -550,6 +606,19 @@ export default function Library({
     const totalNew = library.reduce((sum, entry) => sum + entry.newCount, 0);
     // bulk actions only process the selection that is visible in the current list (visible vs hidden)
     const selectedInView = selecting ? source.filter(entry => selectedIds.has(entry.id)).length : 0;
+    const allInViewSelected = selecting && filtered.length > 0 && filtered.every(entry => selectedIds.has(entry.id));
+    const toggleSelectAll = () =>
+        setSelectedIds(current => {
+            const next = new Set(current);
+            for (const entry of filtered) {
+                if (allInViewSelected) {
+                    next.delete(entry.id);
+                } else {
+                    next.add(entry.id);
+                }
+            }
+            return next;
+        });
 
     // clicking the sidebar "new" badge focuses the library on new chapters (consumed once)
     useEffect(() => {
@@ -632,6 +701,11 @@ export default function Library({
                         {withChapters &&
                             item(<IconList size={14} />, expanded === entry.id ? t('library.hide') : t('discover.chapters'), () => openChapters(entry))}
                         {item(<IconSearch size={14} />, t('library.rematch'), () => rematch(entry), false, busy[`rematch-${entry.id}`])}
+                        {item(
+                            entry.paused ? <IconPlay size={14} /> : <IconPause size={14} />,
+                            entry.paused ? t('library.resumeFollow') : t('library.pauseFollow'),
+                            () => togglePaused(entry)
+                        )}
                         {entry.canRollbackMigration && item(<IconUndo size={14} />, t('library.rollbackMigrationHint'), () => undoMigration(entry))}
                         <div className="my-1 border-t border-line" />
                         {showHidden
@@ -648,6 +722,9 @@ export default function Library({
         <>
             <IconButton title={t('library.rematchHint')} onClick={() => rematch(entry)} loading={busy[`rematch-${entry.id}`]}>
                 <IconSearch size={14} />
+            </IconButton>
+            <IconButton title={entry.paused ? t('library.resumeFollow') : t('library.pauseFollow')} onClick={() => togglePaused(entry)}>
+                {entry.paused ? <IconPlay size={14} /> : <IconPause size={14} />}
             </IconButton>
             {entry.canRollbackMigration && (
                 <IconButton title={t('library.rollbackMigrationHint')} onClick={() => undoMigration(entry)}>
@@ -724,31 +801,47 @@ export default function Library({
         );
 
     const renderGridCard = (entry: LibraryEntryDto) => (
-        <article key={entry.id} className="relative rounded-xl border border-line bg-surface/60 transition-colors hover:border-zinc-600">
+        <article
+            key={entry.id}
+            {...longPress(entry.id)}
+            className={`relative rounded-xl border bg-surface/60 transition-colors hover:border-zinc-600 ${selecting && selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
+        >
             <div className="relative aspect-[2/3] overflow-hidden rounded-t-xl">
                 <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
                 <div className="absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry)}</div>
-                <button
-                    type="button"
-                    title={entry.autoDownload ? t('library.following') : t('library.paused')}
-                    onClick={() => toggleFollow(entry, !entry.autoDownload)}
-                    className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${entry.autoDownload ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
-                >
-                    {entry.autoDownload ? <IconBookmarkFilled size={13} /> : <IconBookmark size={13} />}
-                </button>
+                {selecting ? (
+                    <button
+                        type="button"
+                        title={entry.title}
+                        aria-label={entry.title}
+                        onClick={() => toggleSelect(entry.id)}
+                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${selectedIds.has(entry.id) ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                        {selectedIds.has(entry.id) ? <IconCheck size={13} /> : <IconBookmark size={13} />}
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        title={entry.autoDownload ? t('library.following') : t('library.manualDl')}
+                        onClick={() => toggleFollow(entry, !entry.autoDownload)}
+                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${entry.autoDownload ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                        {entry.autoDownload ? <IconBookmarkFilled size={13} /> : <IconBookmark size={13} />}
+                    </button>
+                )}
             </div>
             <div className="space-y-1.5 p-3">
                 <button
                     type="button"
                     className="line-clamp-2 min-h-[2.5em] w-full text-left text-sm font-semibold leading-tight transition-colors hover:text-accent-soft"
                     title={entry.title}
-                    onClick={() => onOpenSeries?.(entry.id)}
+                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
                 >
                     {entry.title}
                 </button>
                 <div className="flex flex-wrap items-center gap-1">
                     {prefs.source && (entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>)}
-                    {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
+                    {entry.paused && <Badge>{t('library.paused')}</Badge>}
                 </div>
                 <div className="flex min-h-[2.125rem] flex-wrap content-start items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4">{statLine(entry)}</div>
                 {prefs.progress && <ProgressBar value={progressOf(entry)} tone={progressTone(entry)} />}
@@ -763,7 +856,11 @@ export default function Library({
     );
 
     const renderListRow = (entry: LibraryEntryDto) => (
-        <article key={entry.id} className="rounded-xl border border-line bg-surface/60 p-2.5 transition-colors hover:border-zinc-600">
+        <article
+            key={entry.id}
+            {...longPress(entry.id)}
+            className={`rounded-xl border bg-surface/60 p-2.5 transition-colors hover:border-zinc-600 ${selecting && selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
+        >
             <div className="flex items-center gap-3">
                 {selecting && (
                     <input
@@ -781,12 +878,12 @@ export default function Library({
                             type="button"
                             className="truncate text-sm font-semibold transition-colors hover:text-accent-soft"
                             title={entry.title}
-                            onClick={() => onOpenSeries?.(entry.id)}
+                            onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
                         >
                             {entry.title}
                         </button>
                         {statusBadges(entry)}
-                        {!entry.autoDownload && <Badge>{t('library.paused')}</Badge>}
+                        {entry.paused && <Badge>{t('library.paused')}</Badge>}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
                         {prefs.source && (
@@ -811,7 +908,7 @@ export default function Library({
                 <Toggle
                     checked={entry.autoDownload}
                     onChange={value => toggleFollow(entry, value)}
-                    label={entry.autoDownload ? t('library.following') : t('library.paused')}
+                    label={entry.autoDownload ? t('library.following') : t('library.manualDl')}
                 />
                 <div className="card-actions flex flex-none items-center gap-1">
                     {primaryActions(entry)}
@@ -829,12 +926,7 @@ export default function Library({
             type="button"
             title={label}
             aria-label={label}
-            onClick={() => {
-                setView(mode);
-                if (mode !== 'list') {
-                    exitSelection();
-                }
-            }}
+            onClick={() => setView(mode)}
             className={`px-2.5 py-1.5 transition-colors first:rounded-l-lg last:rounded-r-lg ${view === mode ? 'bg-zinc-800 text-fg' : 'text-muted hover:bg-zinc-800/60'}`}
         >
             {icon}
@@ -968,11 +1060,34 @@ export default function Library({
             {selecting && (
                 <Card className="flex flex-wrap items-center gap-2 p-3">
                     <span className="text-sm text-muted">{t('library.selectionCount', { n: selectedInView })}</span>
-                    <Button small onClick={bulkCheck} disabled={selectedInView === 0} loading={bulkBusy === 'check'}>
+                    <Button small variant="ghost" onClick={toggleSelectAll} disabled={filtered.length === 0}>
+                        {allInViewSelected ? t('library.deselectAll') : t('library.selectAll')}
+                    </Button>
+                    <Button small onClick={() => runBulk('check')} disabled={selectedInView === 0} loading={bulkBusy === 'check'}>
                         <IconRefresh size={13} /> {t('library.checkSelected', { n: selectedInView })}
                     </Button>
-                    <Button small onClick={bulkDownload} disabled={selectedInView === 0} loading={bulkBusy === 'download'}>
+                    <Button small onClick={() => runBulk('downloadNew')} disabled={selectedInView === 0} loading={bulkBusy === 'downloadNew'}>
                         <IconDownload size={13} /> {t('library.downloadSelected', { n: selectedInView })}
+                    </Button>
+                    <Button small onClick={() => runBulk('pause')} disabled={selectedInView === 0} loading={bulkBusy === 'pause'}>
+                        <IconPause size={13} /> {t('library.pauseSelected')}
+                    </Button>
+                    <Button small onClick={() => runBulk('resume')} disabled={selectedInView === 0} loading={bulkBusy === 'resume'}>
+                        <IconPlay size={13} /> {t('library.resumeSelected')}
+                    </Button>
+                    <Button small onClick={() => runBulk('hide')} disabled={selectedInView === 0} loading={bulkBusy === 'hide'}>
+                        <IconEyeOff size={13} /> {t('library.hideSelected')}
+                    </Button>
+                    {showHidden && (
+                        <Button small onClick={() => runBulk('unhide')} disabled={selectedInView === 0} loading={bulkBusy === 'unhide'}>
+                            <IconRefresh size={13} /> {t('library.unhideSelected')}
+                        </Button>
+                    )}
+                    <Button small onClick={() => runBulk('rematch')} disabled={selectedInView === 0} loading={bulkBusy === 'rematch'}>
+                        <IconSearch size={13} /> {t('library.rematch')}
+                    </Button>
+                    <Button small variant="danger" onClick={() => setPendingBulkRemove(true)} disabled={selectedInView === 0}>
+                        <IconTrash size={13} /> {t('library.removeSelected', { n: selectedInView })}
                     </Button>
                     <Button small variant="ghost" onClick={exitSelection}>
                         {t('common.cancel')}
@@ -1065,6 +1180,66 @@ export default function Library({
                         </div>
                         <div className="mt-4 flex justify-end">
                             <Button small variant="ghost" onClick={() => setPendingRemove(null)}>
+                                {t('common.cancel')}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pendingBulkRemove && selecting && (
+                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; same pattern as the single-remove dialog above
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    onClick={event => {
+                        if (event.target === event.currentTarget) {
+                            setPendingBulkRemove(false);
+                        }
+                    }}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={t('library.bulkRemoveTitle', { n: selectedInView })}
+                        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50"
+                    >
+                        <div className="text-sm font-semibold text-fg">{t('library.bulkRemoveTitle', { n: selectedInView })}</div>
+                        <div className="mt-4 space-y-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPendingBulkRemove(false);
+                                    void runBulk('delete');
+                                }}
+                                className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900"
+                            >
+                                <span className="mt-0.5 text-zinc-400">
+                                    <IconLibrary size={16} />
+                                </span>
+                                <span>
+                                    <span className="block text-sm font-medium text-fg">{t('library.bulkRemoveOnly')}</span>
+                                    <span className="mt-0.5 block text-xs text-muted">{t('library.bulkRemoveOnlyHint')}</span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPendingBulkRemove(false);
+                                    void runBulk('delete', true);
+                                }}
+                                className="flex w-full items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-left transition-colors hover:border-red-500/60 hover:bg-red-500/10"
+                            >
+                                <span className="mt-0.5 text-red-400">
+                                    <IconFolder size={16} />
+                                </span>
+                                <span>
+                                    <span className="block text-sm font-medium text-red-300">{t('library.bulkRemoveDisk')}</span>
+                                    <span className="mt-0.5 block text-xs text-red-300/70">{t('library.bulkRemoveDiskHint')}</span>
+                                </span>
+                            </button>
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <Button small variant="ghost" onClick={() => setPendingBulkRemove(false)}>
                                 {t('common.cancel')}
                             </Button>
                         </div>

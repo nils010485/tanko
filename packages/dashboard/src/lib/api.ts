@@ -13,6 +13,8 @@ import type {
     DownloadsPageDto,
     GlobalSearchStatusDto,
     JobStatusDto,
+    LibraryBulkAction,
+    LibraryBulkSummary,
     LibraryChapterDto,
     LibraryEntryDto,
     MangaDto,
@@ -172,6 +174,13 @@ export const api = {
     pruneLibrary: (ids: number[]) => request<{ removed: number }>('/api/library/prune', { method: 'POST', body: JSON.stringify({ ids }) }),
     setHidden: (entryId: number, hidden: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ hidden }) }),
+    setPaused: (entryId: number, paused: boolean) =>
+        request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ paused }) }),
+    bulkLibrary: (ids: number[], action: LibraryBulkAction, disk = false) =>
+        request<LibraryBulkSummary>('/api/library/bulk', {
+            method: 'POST',
+            body: JSON.stringify({ ids, action, disk })
+        }),
     entryDiskPath: (entryId: number) => request<{ path: string | null }>(`/api/library/${entryId}/disk-path`),
     setAutoDownload: (entryId: number, autoDownload: boolean) =>
         request<LibraryEntryDto | null>(`/api/library/${entryId}`, { method: 'PATCH', body: JSON.stringify({ autoDownload }) }),

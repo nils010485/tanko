@@ -71,8 +71,10 @@ interface EntryRow {
     migration_suggestion: string | null;
     migration_dismissed: string | null;
     hidden: number;
+    /** Paused (follow off): the entry stays visible but the scheduler ignores it. */
+    paused: number;
     last_checked_at: string | null;
-    /** Date the last new chapter was discovered (drives the stale-series auto-unfollow). */
+    /** Date the last new chapter was discovered (drives the stale-series auto-pause). */
     last_chapter_at: string | null;
     added_at: string;
     /** Stalled-probe back-off: consecutive probes without a richer source
@@ -344,13 +346,30 @@ export class LibraryStore {
         return Promise.all(rows.map(row => this._entryToDto(row)));
     }
 
-    /** Hide (or restore) an entry without touching its files. Restoring also
-     *  refreshes the last-new-chapter date: an unhidden series gets a fresh
-     *  stale period instead of being re-hidden by the next scheduler run. */
+    /** Monitored entries (scheduler checks, detection passes): visible and not paused. */
+    async listFollowedEntries(): Promise<LibraryEntryDto[]> {
+        const rows = this._all<EntryRow>('SELECT * FROM library WHERE hidden = 0 AND paused = 0 ORDER BY title COLLATE NOCASE ASC');
+        return Promise.all(rows.map(row => this._entryToDto(row)));
+    }
+
+    /** Hide (or restore) an entry without touching its files: a hidden entry
+     *  leaves the default library list and the scheduler. Restoring also
+     *  refreshes the last-new-chapter date: a series watched again gets a
+     *  fresh stale period instead of being paused right away. */
     setHidden(entryId: number, hidden: boolean): boolean {
         const sql = 'UPDATE library SET hidden = 1 WHERE id = ?';
         const restoreSql = 'UPDATE library SET hidden = 0, last_chapter_at = ? WHERE id = ?';
         const result = hidden ? this.opts.db.db.prepare(sql).run(entryId) : this.opts.db.db.prepare(restoreSql).run(new Date().toISOString(), entryId);
+        return Number(result.changes) > 0;
+    }
+
+    /** Pause (or resume) monitoring: a paused entry stays visible — hiding is
+     *  a manual, visual decision only. Resuming refreshes the last-new-chapter
+     *  date (fresh stale period) and clears the stalled-probe back-off. */
+    setPaused(entryId: number, paused: boolean): boolean {
+        const sql = 'UPDATE library SET paused = 1 WHERE id = ?';
+        const resumeSql = 'UPDATE library SET paused = 0, last_chapter_at = ?, staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?';
+        const result = paused ? this.opts.db.db.prepare(sql).run(entryId) : this.opts.db.db.prepare(resumeSql).run(new Date().toISOString(), entryId);
         return Number(result.changes) > 0;
     }
 
@@ -391,7 +410,10 @@ export class LibraryStore {
      *  resets on the first success). Several at once means the source itself
      *  is broken (API change, block) — not per-series rot. */
     countEntriesWithCheckFailures(sourceId: string): number {
-        const row = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM library WHERE source_id = ? AND hidden = 0 AND check_failures > 0', sourceId);
+        const row = this._get<{ n: number }>(
+            'SELECT COUNT(*) AS n FROM library WHERE source_id = ? AND hidden = 0 AND paused = 0 AND check_failures > 0',
+            sourceId
+        );
         return Number(row?.n ?? 0);
     }
 
@@ -469,19 +491,19 @@ export class LibraryStore {
     /** Entries whose downloads keep failing (candidates for a source failover). */
     listDownloadFailing(minimum: number): Array<{ id: number; sourceId: string; title: string; downloadFailures: number }> {
         return this._all<{ id: number; source_id: string; title: string; download_failures: number }>(
-            'SELECT id, source_id, title, download_failures FROM library WHERE hidden = 0 AND download_failures >= ? ORDER BY download_failures DESC',
+            'SELECT id, source_id, title, download_failures FROM library WHERE hidden = 0 AND paused = 0 AND download_failures >= ? ORDER BY download_failures DESC',
             minimum
         ).map(row => ({ id: row.id, sourceId: row.source_id, title: row.title, downloadFailures: Number(row.download_failures) }));
     }
 
     /** Entries with no new chapter for more than `maxAgeDays` (stale-series
-     *  auto-unfollow). Entries with pending check failures are skipped: an
+     *  auto-pause). Entries with pending check failures are skipped: an
      *  unreachable source must not be mistaken for an abandoned series. */
     listStaleEntries(maxAgeDays: number): Array<{ id: number; title: string; lastChapterAt: string }> {
         const cutoff = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
         return this._all<{ id: number; title: string; last_chapter_at: string }>(
             `SELECT id, title, last_chapter_at FROM library
-             WHERE hidden = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL AND last_chapter_at < ?`,
+             WHERE hidden = 0 AND paused = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL AND last_chapter_at < ?`,
             cutoff
         ).map(row => ({ id: row.id, title: row.title, lastChapterAt: row.last_chapter_at }));
     }
@@ -495,7 +517,7 @@ export class LibraryStore {
         const now = new Date();
         const rows = this._all<{ id: number; source_id: string; title: string; last_chapter_at: string }>(
             `SELECT id, source_id, title, last_chapter_at FROM library
-             WHERE hidden = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL
+             WHERE hidden = 0 AND paused = 0 AND check_failures = 0 AND last_chapter_at IS NOT NULL
                AND migration_suggestion IS NULL
                AND (staleness_next_probe_at IS NULL OR staleness_next_probe_at <= ?)
              ORDER BY last_chapter_at ASC`,
@@ -1110,6 +1132,7 @@ export class LibraryStore {
         this._addColumn('library', columns, 'last_chapter_at', 'last_chapter_at TEXT');
         this._addColumn('library', columns, 'staleness_misses', 'staleness_misses INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'staleness_next_probe_at', 'staleness_next_probe_at TEXT');
+        this._addColumn('library', columns, 'paused', 'paused INTEGER NOT NULL DEFAULT 0');
         // unknown last-new-chapter date (existing databases, imports, or rows
         // created between the ALTER and a crash): start from today so the
         // auto-unfollow cannot fire right on startup — runs on every boot, a
@@ -1181,7 +1204,8 @@ export class LibraryStore {
             migrationSuggestion: suggestion,
             dismissedMigration: dismissed,
             canRollbackMigration: Number(snapshot.n || 0) > 0,
-            hidden: Number(row.hidden || 0) === 1
+            hidden: Number(row.hidden || 0) === 1,
+            paused: Number(row.paused || 0) === 1
         };
     }
 }

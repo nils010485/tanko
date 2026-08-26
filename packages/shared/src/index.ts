@@ -133,7 +133,7 @@ export interface LibraryEntryDto {
     downloadedCount: number;
     newCount: number;
     lastCheckedAt?: string;
-    /** Date the last new chapter was discovered (auto-hide of stale series). */
+    /** Date the last new chapter was discovered (drives the stale-series auto-pause). */
     lastChapterAt?: string;
     addedAt: string;
     /** Consecutive failed checks against the current source. */
@@ -146,6 +146,21 @@ export interface LibraryEntryDto {
     canRollbackMigration?: boolean;
     /** Hidden entries stay out of the default library list and the scheduler. */
     hidden?: boolean;
+    /** Paused entries stay visible but are not monitored (auto or manual pause). */
+    paused?: boolean;
+}
+
+/** Actions accepted by POST /api/library/bulk (library selection mode). */
+export type LibraryBulkAction = 'pause' | 'resume' | 'hide' | 'unhide' | 'check' | 'downloadNew' | 'rematch' | 'delete';
+/** Recap returned by POST /api/library/bulk. */
+export interface LibraryBulkSummary {
+    processed: number;
+    failed: number;
+    newChapters: number;
+    queued: number;
+    deleted: number;
+    /** Rematch skipped on purpose (downloads still running for the entry). */
+    skipped: number;
 }
 
 export interface LibraryChapterDto {

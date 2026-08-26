@@ -21,7 +21,7 @@ const schedulers: Scheduler[] = [];
  * catch and the assertions would pass vacuously). */
 function buildScheduler(store?: object, failover?: unknown): Scheduler {
     const defaults: Record<string, unknown> = {
-        listEntries: async () => [],
+        listFollowedEntries: async () => [],
         checkForNewChapters: async () => ({ fresh: [], usableSeen: 1 }),
         listSourceOutages: () => [],
         getSourceOutage: () => undefined,
@@ -36,7 +36,7 @@ function buildScheduler(store?: object, failover?: unknown): Scheduler {
         enqueueChapters: () => undefined,
         getEntry: () => undefined,
         listStaleEntries: () => [],
-        setHidden: () => undefined,
+        setPaused: () => undefined,
         listStalledCandidates: () => [],
         recordStalenessProbe: () => undefined
     };
@@ -91,7 +91,7 @@ describe('scheduler last-run persistence', () => {
     it('keeps a non-empty last-run summary across restarts', async () => {
         const entry = { id: 1, sourceId: 'src', sourceLabel: 'Source', title: 'Series' } as unknown as LibraryEntryDto;
         const store = {
-            listEntries: async () => [entry],
+            listFollowedEntries: async () => [entry],
             checkForNewChapters: async () => ({ fresh: [{ chapter_id: 'c1', title: 'Ch. 1' }], usableSeen: 3 }),
             getEntry: () => entry,
             resetCheckFailures: () => {},
@@ -121,7 +121,7 @@ describe('scheduler failover dedup', () => {
         const entry = { id: 7, sourceId: 'src', title: 'Series', sourceLabel: 'Source' };
         const store = {
             // the check fails -> _handleCheckFailure arms the failover
-            listEntries: async () => [entry],
+            listFollowedEntries: async () => [entry],
             checkForNewChapters: async () => {
                 throw new Error('boom');
             },
@@ -220,11 +220,11 @@ describe('scheduler failover dedup', () => {
 });
 
 describe('scheduler auto-unfollow of stale series', () => {
-    it('hides stale entries when enabled, keeps them when disabled', async () => {
+    it('pauses stale entries when enabled, keeps them when disabled', async () => {
         const stale = { id: 1, title: 'Old Series', lastChapterAt: '2020-01-01T00:00:00.000Z' };
-        const hidden: number[] = [];
+        const paused: number[] = [];
         const store = {
-            listEntries: async () => [{ id: 1, sourceId: 'src', title: 'Old Series', sourceLabel: 'Source', downloadedCount: 0, autoDownload: false }],
+            listFollowedEntries: async () => [{ id: 1, sourceId: 'src', title: 'Old Series', sourceLabel: 'Source', downloadedCount: 0, autoDownload: false }],
             checkForNewChapters: async () => ({ fresh: [], usableSeen: 1 }),
             resetCheckFailures: () => {},
             listSourceOutages: () => [],
@@ -232,21 +232,21 @@ describe('scheduler auto-unfollow of stale series', () => {
             getEntry: () => undefined,
             listDownloadFailing: () => [],
             listStaleEntries: () => [stale],
-            setHidden: (id: number, value: boolean) => {
+            setPaused: (id: number, value: boolean) => {
                 if (value) {
-                    hidden.push(id);
+                    paused.push(id);
                 }
             }
         };
         const disabled = buildScheduler(store);
 
         await disabled.runNow();
-        expect(hidden).toEqual([]);
+        expect(paused).toEqual([]);
 
         const enabled = buildScheduler(store);
         enabled.updateSettings({ autoUnfollow: true });
         await enabled.runNow();
-        expect(hidden).toEqual([1]);
+        expect(paused).toEqual([1]);
         // restore the shared persisted setting so later suites start clean
         enabled.updateSettings({ autoUnfollow: false });
     });
@@ -257,7 +257,7 @@ describe('scheduler check-failure wave', () => {
         const entry = { id: 11, sourceId: 'src', title: 'Wave Series', sourceLabel: 'Source' };
         const suspended = { sourceId: 'src', startedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), failures: 1, escalatedAt: null };
         const store = {
-            listEntries: async () => [entry],
+            listFollowedEntries: async () => [entry],
             checkForNewChapters: async () => {
                 throw new Error('fetch failed');
             },
@@ -276,7 +276,7 @@ describe('scheduler check-failure wave', () => {
         const maybeMigrate = vi.fn().mockResolvedValue('none');
         const entry = { id: 12, sourceId: 'src', title: 'Takedown Series', sourceLabel: 'Source' };
         const store = {
-            listEntries: async () => [entry],
+            listFollowedEntries: async () => [entry],
             checkForNewChapters: async () => {
                 throw new Error('la source ne référence plus aucun chapitre dans les langues préférées');
             },
@@ -297,7 +297,7 @@ describe('scheduler stalled-source detection pass', () => {
         const recordStalenessProbe = vi.fn();
         const found = { id: 31, sourceId: 'src', title: 'Found', sourceLabel: 'Source' } as unknown as LibraryEntryDto;
         const store = {
-            listEntries: async () => [],
+            listFollowedEntries: async () => [],
             listStalledCandidates: () => [
                 { id: 21, sourceId: 'src', title: 'Hiatus Series', chapterCount: 40 },
                 { id: 31, sourceId: 'src', title: 'Found', chapterCount: 90 }
@@ -317,7 +317,7 @@ describe('scheduler stalled-source detection pass', () => {
         const suggestIfStalled = vi.fn().mockResolvedValue('skipped');
         const recordStalenessProbe = vi.fn();
         const store = {
-            listEntries: async () => [],
+            listFollowedEntries: async () => [],
             listStalledCandidates: () =>
                 Array.from({ length: 12 }, (_, index) => ({ id: 40 + index, sourceId: 'src', title: `Stalled ${index}`, chapterCount: 10 })),
             recordStalenessProbe
@@ -332,7 +332,7 @@ describe('scheduler stalled-source detection pass', () => {
         const suggestIfStalled = vi.fn().mockRejectedValue(new Error('crawl failed'));
         const recordStalenessProbe = vi.fn();
         const store = {
-            listEntries: async () => [],
+            listFollowedEntries: async () => [],
             listStalledCandidates: () => [{ id: 55, sourceId: 'src', title: 'Flaky', chapterCount: 30 }],
             recordStalenessProbe
         };
@@ -349,7 +349,7 @@ describe('scheduler stalled-source detection pass', () => {
         const suggestIfStalled = vi.fn().mockResolvedValue('miss');
         const recordStalenessProbe = vi.fn();
         const store = {
-            listEntries: async () =>
+            listFollowedEntries: async () =>
                 Array.from({ length: 12 }, (_, index) => ({
                     id: 60 + index,
                     sourceId: 'src',
