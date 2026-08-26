@@ -712,11 +712,12 @@ export class DownloadQueue {
     /** Memory guard tripped: write every buffered zip entry to the img directory
      *   and drop the archive; the rest of the chapter lands on disk directly. */
     private async _spillArchiveToDirectory(zip: JSZip, paths: ChapterPaths, jobId: number): Promise<void> {
-        this.opts.events.publish({
-            type: 'log',
+        this.opts.events.publishLog({
             level: 'warn',
-            message: `Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #${jobId})`,
-            at: new Date().toISOString()
+            category: 'system',
+            code: 'system.cbzBudget',
+            params: { jobId },
+            message: `Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #${jobId})`
         });
         fs.mkdirSync(paths.directory, { recursive: true });
         for (const file of Object.values(zip.files)) {

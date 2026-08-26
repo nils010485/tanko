@@ -124,7 +124,7 @@ export class CoverService {
         const generation = this.generation;
         const entries = this.opts.db.db.prepare('SELECT id, title FROM library').all() as Array<{ id: number; title: string }>;
         this.counters = { total: entries.length, done: 0, failed: 0, skipped: 0 };
-        this.log(`regenerating cover cache for ${entries.length} series`);
+        this.log(`regenerating cover cache for ${entries.length} series`, 'info', 'scan.covers.started', { total: entries.length });
         for (const entry of entries) {
             if (generation !== this.generation) {
                 this.running = false; // the cache was cleared (or a new run started): stop
@@ -139,11 +139,19 @@ export class CoverService {
                 }
             } catch (error) {
                 this.counters.failed++;
-                this.log(`cover failed for "${entry.title}": ${(error as Error).message}`, 'warn');
+                this.log(`cover failed for "${entry.title}": ${(error as Error).message}`, 'warn', 'scan.covers.entryFailed', {
+                    title: entry.title,
+                    error: (error as Error).message
+                });
             }
         }
         this.running = false;
-        this.log(`cover cache done: ${this.counters.done} generated, ${this.counters.skipped} skipped, ${this.counters.failed} failed`);
+        this.log(
+            `cover cache done: ${this.counters.done} generated, ${this.counters.skipped} skipped, ${this.counters.failed} failed`,
+            'info',
+            'scan.covers.finished',
+            { done: this.counters.done, skipped: this.counters.skipped, failed: this.counters.failed }
+        );
     }
 
     /**
@@ -205,7 +213,7 @@ export class CoverService {
                 .run(entryId, webp, new Date().toISOString());
             return true;
         } catch (error) {
-            this.log(`cover conversion failed for entry ${entryId}: ${(error as Error).message}`, 'warn');
+            this.log(`cover conversion failed for entry ${entryId}: ${(error as Error).message}`, 'warn', 'scan.covers.conversionFailed', { entryId });
             return false;
         }
     }
@@ -250,8 +258,8 @@ export class CoverService {
         return null;
     }
 
-    private log(message: string, level: 'info' | 'warn' = 'info'): void {
-        this.opts.events.publish({ type: 'log', level, message: `[covers] ${message}`, at: new Date().toISOString() });
+    private log(message: string, level: 'info' | 'warn' = 'info', code?: string, params?: Record<string, string | number>): void {
+        this.opts.events.publishLog({ level, category: 'scan', code, params, message: `[covers] ${message}` });
     }
 }
 

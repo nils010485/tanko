@@ -3,6 +3,7 @@
  */
 import type {
     ActivityLogDto,
+    ActivityStatsDto,
     ApiError,
     AppSettingsResponseDto,
     ChapterDto,
@@ -11,6 +12,7 @@ import type {
     DeadSeriesDto,
     DownloadsPageDto,
     GlobalSearchStatusDto,
+    JobStatusDto,
     LibraryChapterDto,
     LibraryEntryDto,
     MangaDto,
@@ -228,7 +230,20 @@ export const api = {
     clearQueue: () => request<{ cancelled: number; removed: number } & QueueStatusDto>('/api/downloads/clear', { method: 'POST' }),
 
     // activity
-    activity: () => request<{ logs: ActivityLogDto[] }>('/api/activity'),
+    activity: (params: { limit?: number; offset?: number } = {}) => {
+        const search = new URLSearchParams();
+        if (params.limit) {
+            search.set('limit', String(params.limit));
+        }
+        if (params.offset) {
+            search.set('offset', String(params.offset));
+        }
+        const query = search.toString();
+        return request<{ logs: ActivityLogDto[] }>(`/api/activity${query ? `?${query}` : ''}`);
+    },
+    activityStats: (since?: string) => request<ActivityStatsDto>(`/api/activity/stats${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+    activityJobs: () => request<{ current: JobStatusDto | null; last: JobStatusDto | null }>('/api/activity/jobs'),
+    cancelJob: (jobId: number) => request<{ ok: boolean }>(`/api/activity/jobs/${jobId}/cancel`, { method: 'POST' }),
 
     // schedule
     schedule: () => request<{ settings: ScheduleSettingsDto; status: ScheduleStatusDto }>('/api/schedule'),

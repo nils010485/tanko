@@ -24,6 +24,12 @@ export class EventBus {
         this.logSink = sink;
     }
 
+    /** Publish a structured activity log event; `at` defaults to now.
+     *  Thin sugar over publish() so emit sites stay one-liners. */
+    publishLog(event: Omit<LogEvent, 'type' | 'at'> & { at?: string }): void {
+        this.publish({ type: 'log', at: new Date().toISOString(), ...event });
+    }
+
     publish(event: WsEvent): void {
         if (event.type === 'log' && this.logSink) {
             const id = this.logSink(event);

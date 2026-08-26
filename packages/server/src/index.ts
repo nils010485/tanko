@@ -8,6 +8,7 @@ import fastifyWebsocket, { type WebSocket } from '@fastify/websocket';
 import { createEngine, loadConnectors, SourceRegistry } from '@tanko/core';
 import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
 import Fastify from 'fastify';
+import { JobRunner } from './activity/jobs.js';
 import { ActivityService } from './activity/service.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
 import { SqliteCacheStore } from './cache/sqlite-store.js';
@@ -53,7 +54,7 @@ const database = new Database(config.dataDirectory);
 const events = new EventBus();
 const activity = new ActivityService({ db: database });
 // every `log` event is persisted; the returned row id tags the broadcast copy
-events.setLogSink(({ level, message, at }) => activity.add(level, message, at));
+events.setLogSink(event => activity.add(event));
 const cacheStore = new SqliteCacheStore(database);
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
@@ -103,7 +104,14 @@ const failover = new FailoverService({
     store: library,
     listSources: listSourceInfos,
     getPreferredLanguages: preferredLanguages,
-    isDetectionEnabled: createIncompleteDetectionPref(database)
+    isDetectionEnabled: createIncompleteDetectionPref(database),
+    // late-bound: `scheduler` is declared below — suggestions only fire long after init
+    onSuggestion: (entry, target, currentChapters) =>
+        scheduler.notify(
+            'migrations',
+            'Migration suggérée',
+            `« ${entry.title} » : ${target.sourceLabel} propose ${target.chapterCount ?? '?'} chapitres (contre ${currentChapters}) — à confirmer dans la Librairie`
+        )
 });
 
 const queue = new DownloadQueue({
@@ -132,12 +140,17 @@ const queue = new DownloadQueue({
         // healed — close the outage and fast-track the failed jobs' retries
         if (job.status === 'completed' && library.closeSourceOutage(job.sourceId)) {
             queue.resetRetryLadder(job.sourceId);
-            events.publish({
-                type: 'log',
+            queue.resetRetryLadder(job.sourceId);
+            const recovered = `La source ${job.sourceId} semble rétablie — nouvelle tentative rapide des téléchargements en échec`;
+            events.publishLog({
                 level: 'info',
-                message: `La source ${job.sourceId} semble rétablie — nouvelle tentative rapide des téléchargements en échec`,
-                at: new Date().toISOString()
+                category: 'source',
+                code: 'source.recovered',
+                params: { source: job.sourceId },
+                sourceId: job.sourceId,
+                message: recovered
             });
+            scheduler.notify('outages', 'Source rétablie', recovered);
         }
         if (job.status === 'completed' && covers.isEnabled() && !covers.hasCover(job.entryId)) {
             // first downloaded chapter of this series: fill the cover cache in the background
@@ -192,12 +205,17 @@ function handleDownloadFailure(job: DownloadJobDto): void {
             const lastWarnAt = sourceOutageWarnAt.get(entry.sourceId) ?? 0;
             if (outage?.escalatedAt === null && Date.now() - lastWarnAt > SOURCE_OUTAGE_LOG_MS) {
                 sourceOutageWarnAt.set(entry.sourceId, Date.now());
-                events.publish({
-                    type: 'log',
+                sourceOutageWarnAt.set(entry.sourceId, Date.now());
+                const outageText = `Panne de la source ${entry.sourceLabel} — migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`;
+                events.publishLog({
                     level: 'warn',
-                    message: `Panne de la source ${entry.sourceLabel} — migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`,
-                    at: new Date().toISOString()
+                    category: 'source',
+                    code: 'outage.opened',
+                    params: { source: entry.sourceLabel, minutes: Math.round(OUTAGE_ESCALATION_MS / 60000) },
+                    sourceId: entry.sourceId,
+                    message: outageText
                 });
+                scheduler.notify('outages', 'Panne de source', outageText);
             }
             return;
         }
@@ -212,16 +230,19 @@ function handleDownloadFailure(job: DownloadJobDto): void {
     void (async () => {
         try {
             const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-            events.publish({
-                type: 'log',
+            events.publishLog({
                 level: outcome === 'migrated' ? 'info' : 'warn',
+                category: 'failover',
+                code: `failover.downloadFailures.${outcome}`,
+                params: { title: entry.title, failures },
+                entryId: entry.id,
+                sourceId: entry.sourceId,
                 message:
                     outcome === 'migrated'
                         ? `"${entry.title}" : ${failures} téléchargements en échec — migré vers une autre source, reprise du téléchargement`
                         : outcome === 'suggested'
                           ? `"${entry.title}" : ${failures} téléchargements en échec — migration de source suggérée (à confirmer)`
-                          : `"${entry.title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`,
-                at: new Date().toISOString()
+                          : `"${entry.title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`
             });
             if (outcome === 'migrated') {
                 library.requeueFailedAfterMigration(entryId, queue);
@@ -242,6 +263,7 @@ function handleDownloadFailure(job: DownloadJobDto): void {
 }
 
 const scheduler = new Scheduler({ db: database, store: library, queue, events, failover });
+const jobs = new JobRunner();
 const importer = new ImportService({
     db: database,
     registry: sourceRegistry,
@@ -272,12 +294,12 @@ app.decorate('engine', engine);
 app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
-registerActivityRoutes(app, activity);
+registerActivityRoutes(app, activity, { library, sourceHealth: healthService }, jobs);
 registerSourceRoutes(app, sourceRegistry, preferredLanguages);
 registerSourceHealthRoutes(app, healthService);
 registerSourceUpdateRoutes(app, config, database);
 registerDownloadRoutes(app, queue, sourceRegistry, library);
-registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers);
+registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers, jobs);
 registerSettingsRoutes(app, queue, database, covers);
 registerCoverRoutes(app, covers);
 registerImageRoutes(app);

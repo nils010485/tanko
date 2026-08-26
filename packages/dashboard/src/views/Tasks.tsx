@@ -30,12 +30,12 @@ function SectionHeading({ icon, children }: { icon: ReactNode; children: ReactNo
 }
 
 /** Settings row: label + hint on the left, switch on the right. */
-function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (value: boolean) => void }) {
+function ToggleRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (value: boolean) => void }) {
     return (
         <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
                 <div className="text-sm font-medium">{label}</div>
-                <div className="text-xs text-zinc-500">{hint}</div>
+                {hint && <div className="text-xs text-zinc-500">{hint}</div>}
             </div>
             <Toggle checked={checked} onChange={onChange} />
         </div>
@@ -367,6 +367,18 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                         onChange={value => save({ notifications: { enabled: value } })}
                     />
                     <NotificationUrl value={settings.notifications?.webhookUrl || ''} onSave={value => save({ notifications: { webhookUrl: value } })} />
+                    <div className="space-y-3 border-t border-line pt-4">
+                        <div className="text-sm font-medium">{t('tasks.notifyEvents')}</div>
+                        {(['newChapters', 'outages', 'migrations', 'scans'] as const).map(key => (
+                            <ToggleRow
+                                key={key}
+                                label={t(`tasks.notify.${key}` as Parameters<typeof t>[0])}
+                                // server default: only new chapters notify
+                                checked={settings.notifications?.events?.[key] ?? key === 'newChapters'}
+                                onChange={value => save({ notifications: { events: { [key]: value } } })}
+                            />
+                        ))}
+                    </div>
                 </Card>
             </section>
 

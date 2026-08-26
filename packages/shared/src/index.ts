@@ -259,17 +259,72 @@ export interface AppSettingsResponseDto {
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
+/** Event families shown as icons/filter chips in the Activity tab. */
+export type LogCategory = 'check' | 'source' | 'failover' | 'scan' | 'system';
+
+/** Structured extras carried by `log` events and persisted activity rows.
+ *  `code` + `params` let the dashboard translate the message (the raw
+ *  `message` stays as fallback); the entity refs make the line clickable. */
+export interface LogEventMeta {
+    category?: LogCategory;
+    code?: string;
+    params?: Record<string, string | number>;
+    entryId?: number;
+    sourceId?: string;
+}
+
 /** One Activity tab entry (GET /api/activity, live WS `log` events). */
-export interface ActivityLogDto {
+export interface ActivityLogDto extends LogEventMeta {
     id: number;
     level: LogLevel;
     message: string;
     at: string;
 }
 
+/** Long-running background job (bulk tools) — GET /api/activity/jobs. */
+export interface JobStatusDto {
+    id: number;
+    /** i18n code prefix of the tool, e.g. 'scan.betterSources'. */
+    kind: string;
+    label: string;
+    running: boolean;
+    done: number;
+    total: number;
+    /** Migrations/suggestions found, depending on the tool. */
+    hits: number;
+    startedAt: string;
+    finishedAt?: string;
+    cancelled?: boolean;
+}
+
+/** System pulse — GET /api/activity/stats. */
+export interface ActivityStatsDto {
+    /** Visible library entries. */
+    series: number;
+    /** New chapters discovered by checks over the last 7 days (activity log). */
+    newChapters7d: number;
+    /** Visible entries whose source keeps failing checks. */
+    activeFailures: number;
+    /** Healthy vs known sources (health probes). */
+    sourcesHealthy: number;
+    sourcesTotal: number;
+    /** error-level log rows newer than `?since=` — unread-errors badge. */
+    errorsSince?: number;
+}
+
+/** Per-event webhook opt-in. Absent fields fall back to the defaults
+ *  (only new chapters notify — the historical behavior). */
+export interface NotificationEventToggles {
+    newChapters: boolean;
+    outages: boolean;
+    migrations: boolean;
+    scans: boolean;
+}
+
 export interface NotificationSettingsDto {
     enabled: boolean;
     webhookUrl: string;
+    events?: Partial<NotificationEventToggles>;
 }
 
 /** Queue counters (GET /api/downloads/status, pause/resume responses, WS pushes). */
@@ -291,7 +346,7 @@ export type WsEvent =
     | { type: 'library.updated'; entry: LibraryEntryDto }
     | { type: 'schedule.status'; status: ScheduleStatusDto }
     | { type: 'queue.status'; status: QueueStatusDto }
-    | { type: 'log'; id?: number; level: LogLevel; message: string; at: string };
+    | ({ type: 'log'; id?: number; level: LogLevel; message: string; at: string } & LogEventMeta);
 
 // ---------------------------------------------------------------------------
 // Generic API envelope

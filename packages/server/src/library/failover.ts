@@ -92,6 +92,8 @@ export class FailoverService {
             getPreferredLanguages: () => string[];
             /** Opt-in starved-source detection (Settings); absent = disabled. */
             isDetectionEnabled?: () => boolean;
+            /** Webhook hook: a migration suggestion was stored (banner flow). */
+            onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
         }
     ) {}
 
@@ -233,6 +235,7 @@ export class FailoverService {
                 return false;
             }
             this.opts.store.setMigrationSuggestion(entry.id, better);
+            this.opts.onSuggestion?.(entry, better, chapterCount);
             console.log(`[failover] "${entry.title}" : source incomplète (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
             return true;
         } finally {
@@ -317,6 +320,10 @@ export class FailoverService {
             return 'migrated';
         }
         this.opts.store.setMigrationSuggestion(entry.id, best);
+        const updated = this.opts.store.getEntry(entry.id);
+        if (updated?.migrationSuggestion) {
+            this.opts.onSuggestion?.(entry, updated.migrationSuggestion, updated.chapterCount);
+        }
         return 'suggested';
     }
 }

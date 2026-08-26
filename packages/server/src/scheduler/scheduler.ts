@@ -9,7 +9,14 @@ import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
 import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, OUTAGE_SILENCE_MS, SOURCE_OUTAGE_ENTRIES } from '../library/failover.js';
-import { type NotificationSettings, sendNotification } from '../library/notify.js';
+import {
+    DEFAULT_EVENT_TOGGLES,
+    mergeNotificationSettings,
+    type NotificationEvent,
+    type NotificationSettings,
+    notificationEnabled,
+    sendNotification
+} from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
 
@@ -43,7 +50,7 @@ const DEFAULTS: ScheduleSettings = {
     cron: '0 */6 * * *',
     autoDownload: true,
     autoUnfollow: false,
-    notifications: { enabled: false, webhookUrl: '' }
+    notifications: { enabled: false, webhookUrl: '', events: { ...DEFAULT_EVENT_TOGGLES } }
 };
 
 export class Scheduler {
@@ -90,14 +97,21 @@ export class Scheduler {
     // ------------------------------------------------------------------
 
     getSettings(): ScheduleSettings {
-        return { ...this.settings, notifications: { ...this.settings.notifications } };
+        return { ...this.settings, notifications: { ...this.settings.notifications, events: { ...this.settings.notifications.events } } };
+    }
+
+    /** Fire-and-forget webhook for `event` when its toggle is on. */
+    notify(event: NotificationEvent, title: string, body: string): void {
+        if (notificationEnabled(this.settings.notifications, event)) {
+            void sendNotification(this.settings.notifications, title, body);
+        }
     }
 
     updateSettings(patch: Partial<Omit<ScheduleSettings, 'notifications'>> & { notifications?: Partial<NotificationSettings> }): ScheduleSettings {
         this.settings = {
             ...this.settings,
             ...patch,
-            notifications: { ...this.settings.notifications, ...(patch.notifications || {}) }
+            notifications: mergeNotificationSettings(this.settings.notifications, patch.notifications)
         };
         // patch values can arrive untyped from HTTP clients: keep `enabled` a real boolean
         if (typeof this.settings.enabled !== 'boolean') {
@@ -155,22 +169,30 @@ export class Scheduler {
                     }
                     this.opts.store.closeSourceOutage(outage.sourceId);
                     this.opts.queue.resetRetryLadder(outage.sourceId);
-                    this.opts.events.publish({
-                        type: 'log',
+                    const recovered = `La source ${outage.sourceId} n'échoue plus — clôture de la panne, reprise des téléchargements en échec`;
+                    this.opts.events.publishLog({
                         level: 'info',
-                        message: `La source ${outage.sourceId} n'échoue plus — clôture de la panne, reprise des téléchargements en échec`,
-                        at: new Date().toISOString()
+                        category: 'source',
+                        code: 'outage.closed',
+                        params: { source: outage.sourceId },
+                        sourceId: outage.sourceId,
+                        message: recovered
                     });
+                    this.notify('outages', 'Source rétablie', recovered);
                     continue;
                 }
                 const escalated = this.opts.store.armOutageEscalation(outage.sourceId);
                 if (escalated?.escalatedAt && !outage.escalatedAt) {
-                    this.opts.events.publish({
-                        type: 'log',
+                    const escalation = `Panne de la source ${outage.sourceId} persistante — migration de source réautorisée`;
+                    this.opts.events.publishLog({
                         level: 'warn',
-                        message: `Panne de la source ${outage.sourceId} persistante — migration de source réautorisée`,
-                        at: new Date().toISOString()
+                        category: 'source',
+                        code: 'outage.escalated',
+                        params: { source: outage.sourceId },
+                        sourceId: outage.sourceId,
+                        message: escalation
                     });
+                    this.notify('outages', 'Panne de source persistante', escalation);
                 }
             }
             // backstop for download failures that did not trip the immediate
@@ -193,11 +215,14 @@ export class Scheduler {
                     }
                     try {
                         const outcome = await this.opts.failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-                        this.opts.events.publish({
-                            type: 'log',
+                        this.opts.events.publishLog({
                             level: outcome === 'migrated' ? 'info' : 'warn',
-                            message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`,
-                            at: new Date().toISOString()
+                            category: 'failover',
+                            code: `failover.downloadFailures.${outcome}`,
+                            params: { title: entry.title, failures: entry.downloadFailures },
+                            entryId: entry.id,
+                            sourceId: entry.sourceId,
+                            message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`
                         });
                         if (outcome === 'migrated') {
                             this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
@@ -246,11 +271,13 @@ export class Scheduler {
         for (const stale of this.opts.store.listStaleEntries(UNFOLLOW_STALE_DAYS)) {
             this.opts.store.setHidden(stale.id, true);
             hidden++;
-            this.opts.events.publish({
-                type: 'log',
+            this.opts.events.publishLog({
                 level: 'info',
-                message: `"${stale.title}" masquée automatiquement (aucun nouveau chapitre depuis plus de ${UNFOLLOW_STALE_DAYS} jours)`,
-                at: new Date().toISOString()
+                category: 'system',
+                code: 'system.autoHide',
+                params: { title: stale.title, days: UNFOLLOW_STALE_DAYS },
+                entryId: stale.id,
+                message: `"${stale.title}" masquée automatiquement (aucun nouveau chapitre depuis plus de ${UNFOLLOW_STALE_DAYS} jours)`
             });
             const updated = this.opts.store.getEntry(stale.id);
             if (updated) {
@@ -344,11 +371,14 @@ export class Scheduler {
         }
         this.opts.store.resetCheckFailures(entry.id);
         if (fresh.length > 0) {
-            this.opts.events.publish({
-                type: 'log',
+            this.opts.events.publishLog({
                 level: 'info',
-                message: `${entry.title}: ${fresh.length} new chapter(s) on ${entry.sourceLabel}`,
-                at: new Date().toISOString()
+                category: 'check',
+                code: 'check.newChapters',
+                params: { title: entry.title, count: fresh.length, source: entry.sourceLabel },
+                entryId: entry.id,
+                sourceId: entry.sourceId,
+                message: `${entry.title}: ${fresh.length} new chapter(s) on ${entry.sourceLabel}`
             });
             if (this.settings.autoDownload && entry.autoDownload) {
                 this.opts.store.enqueueChapters(
@@ -376,11 +406,14 @@ export class Scheduler {
     /** A series check failed: log it, count the failure, and try a failover after repeated failures. */
     private async _handleCheckFailure(entry: LibraryEntryDto, error: unknown, failoverProbed?: Set<number>, failedIds?: Set<number>): Promise<void> {
         failedIds?.add(entry.id);
-        this.opts.events.publish({
-            type: 'log',
+        this.opts.events.publishLog({
             level: 'warn',
-            message: `Check failed for "${entry.title}" (${entry.sourceLabel}): ${(error as Error).message}`,
-            at: new Date().toISOString()
+            category: 'check',
+            code: 'check.failed',
+            params: { title: entry.title, source: entry.sourceLabel, error: (error as Error).message },
+            entryId: entry.id,
+            sourceId: entry.sourceId,
+            message: `Check failed for "${entry.title}" (${entry.sourceLabel}): ${(error as Error).message}`
         });
         // repeated failures -> the source is probably dead for this series: try a failover
         const failures = this.opts.store.recordCheckFailure(entry.id);
@@ -409,11 +442,13 @@ export class Scheduler {
         }
         try {
             const outcome = await this.opts.failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-            this.opts.events.publish({
-                type: 'log',
+            this.opts.events.publishLog({
                 level: outcome === 'migrated' ? 'info' : 'warn',
-                message: this._failoverMessage(entry.title, outcome),
-                at: new Date().toISOString()
+                category: 'failover',
+                code: `failover.afterCheckFailures.${outcome}`,
+                params: { title: entry.title },
+                entryId: entry.id,
+                message: this._failoverMessage(entry.title, outcome)
             });
             if (outcome === 'migrated') {
                 this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
@@ -484,6 +519,9 @@ export class Scheduler {
 
     /** Send the new-chapters webhook notification. */
     private async _notifyNewChapters(newBySeries: Array<{ title: string; chapters: string[] }>): Promise<void> {
+        if (!notificationEnabled(this.settings.notifications, 'newChapters')) {
+            return;
+        }
         const body = newBySeries.map(item => `• ${item.title}: ${item.chapters.slice(0, 5).join(', ')}${item.chapters.length > 5 ? '…' : ''}`).join('\n');
         await sendNotification(this.settings.notifications, 'New chapters available', body);
     }
@@ -496,7 +534,7 @@ export class Scheduler {
                 return {
                     ...DEFAULTS,
                     ...parsed,
-                    notifications: { ...DEFAULTS.notifications, ...(parsed.notifications || {}) }
+                    notifications: mergeNotificationSettings(DEFAULTS.notifications, parsed.notifications)
                 };
             }
         } catch {

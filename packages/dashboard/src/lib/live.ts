@@ -3,16 +3,12 @@
  * Keeps jobs / library / schedule / logs in sync with the server.
  */
 
-import type { DownloadJobDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
+import type { ActivityLogDto, DownloadJobDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 
-export interface LogLine {
-    id: number;
-    level: 'info' | 'warn' | 'error';
-    message: string;
-    at: string;
-}
+/** One Activity tab line — structured event (WS `log` + REST history). */
+export type LogLine = ActivityLogDto;
 
 export interface LiveState {
     connected: boolean;
@@ -24,6 +20,9 @@ export interface LiveState {
     queueStatus: QueueStatusDto | null;
     schedule: ScheduleStatusDto | null;
     logs: LogLine[];
+    /** error-level events since the last Activity visit (sidebar badge). */
+    unreadErrors: number;
+    markActivitySeen: () => void;
     refreshLibrary: () => Promise<void>;
     refreshJobs: () => Promise<void>;
 }
@@ -48,7 +47,10 @@ export function useLiveState(): LiveState {
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
     const [queueStatus, setQueueStatus] = useState<QueueStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
+    const [unreadErrors, setUnreadErrors] = useState(0);
     const logSeq = useRef(0);
+    /** Row ids already known (REST load or previous frames) — WS replay dedupe. */
+    const seenLogIds = useRef<Set<number>>(new Set());
 
     const refreshJobs = useCallback(async () => {
         try {
@@ -87,11 +89,29 @@ export function useLiveState(): LiveState {
 
     const refreshActivity = useCallback(async () => {
         try {
-            // persisted history (newest first) — the WS replay dedupes against it by id
-            setLogs(await api.activity().then(result => result.logs));
+            // persisted history (newest first) — replayed WS frames dedupe against these ids
+            const fresh = await api.activity().then(result => result.logs);
+            seenLogIds.current = new Set(fresh.map(log => log.id));
+            setLogs(fresh);
         } catch {
             /* ignore */
         }
+    }, []);
+    const refreshUnread = useCallback(async () => {
+        const seenAt = localStorage.getItem('tanko.activitySeenAt');
+        if (!seenAt) {
+            return;
+        }
+        try {
+            const stats = await api.activityStats(seenAt);
+            setUnreadErrors(stats.errorsSince ?? 0);
+        } catch {
+            /* ignore */
+        }
+    }, []);
+    const markActivitySeen = useCallback(() => {
+        localStorage.setItem('tanko.activitySeenAt', new Date().toISOString());
+        setUnreadErrors(0);
     }, []);
     useEffect(() => {
         refreshJobs();
@@ -99,6 +119,7 @@ export function useLiveState(): LiveState {
         refreshSchedule();
         refreshQueueStatus();
         refreshActivity();
+        refreshUnread();
 
         let disposed = false;
         let retry: ReturnType<typeof setTimeout> | undefined;
@@ -119,6 +140,7 @@ export function useLiveState(): LiveState {
                 refreshSchedule();
                 refreshQueueStatus();
                 refreshActivity();
+                refreshUnread();
             };
             socket.onclose = () => {
                 setConnected(false);
@@ -153,16 +175,20 @@ export function useLiveState(): LiveState {
                             setSchedule(message.status);
                             break;
                         case 'log':
-                            setLogs(current => {
-                                // events replayed right after the REST load carry the same row id — skip those
-                                if (message.id !== undefined && current.some(log => log.id === message.id)) {
-                                    return current;
-                                }
-                                return [
-                                    { id: message.id ?? --logSeq.current, level: message.level, message: message.message, at: message.at },
-                                    ...current
-                                ].slice(0, 300);
-                            });
+                            // replayed frames (reconnect) carry ids the REST load already
+                            // returned — skipping them keeps the unread counter honest
+                            if (message.id !== undefined && seenLogIds.current.has(message.id)) {
+                                break;
+                            }
+                            if (message.id !== undefined) {
+                                seenLogIds.current.add(message.id);
+                            }
+                            if (message.level === 'warn' || message.level === 'error') {
+                                setUnreadErrors(current => current + 1);
+                            }
+                            setLogs(current =>
+                                [{ ...message, id: message.id ?? --logSeq.current, category: message.category ?? 'system' }, ...current].slice(0, 300)
+                            );
                             break;
                     }
                 } catch {
@@ -177,7 +203,7 @@ export function useLiveState(): LiveState {
             clearTimeout(retry);
             socket?.close();
         };
-    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity]);
+    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity, refreshUnread]);
 
-    return { connected, jobs, jobsLoaded, library, libraryLoaded, queueStatus, schedule, logs, refreshLibrary, refreshJobs };
+    return { connected, jobs, jobsLoaded, library, libraryLoaded, queueStatus, schedule, logs, unreadErrors, markActivitySeen, refreshLibrary, refreshJobs };
 }

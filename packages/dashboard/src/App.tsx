@@ -50,6 +50,13 @@ export default function App() {
         document.title = `Tanko — ${activeLabel}`;
     }, [activeLabel]);
 
+    // entering the Activity tab marks the unread error counter as seen
+    useEffect(() => {
+        if (tab === 'activity') {
+            live.markActivitySeen();
+        }
+    }, [tab, live.markActivitySeen]);
+
     // close the mobile navigation with Escape
     useEffect(() => {
         if (!navOpen) return;
@@ -118,6 +125,7 @@ export default function App() {
                                         <Badge tone="orange">{totalNew}</Badge>
                                     </span>
                                 )}
+                                {item.id === 'activity' && live.unreadErrors > 0 && <Badge tone="red">{live.unreadErrors}</Badge>}
                             </button>
                         );
                     })}
@@ -172,7 +180,7 @@ export default function App() {
                         {tab === 'downloads' && <Downloads library={live.library} />}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
                         {tab === 'tasks' && <Tasks schedule={live.schedule} library={live.library} />}
-                        {tab === 'activity' && <Activity logs={live.logs} />}
+                        {tab === 'activity' && <Activity logs={live.logs} library={live.library} onOpenSeries={navigateSeries} />}
                         {tab === 'settings' && <Settings />}
                     </div>
                 </main>

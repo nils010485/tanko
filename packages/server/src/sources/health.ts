@@ -70,7 +70,13 @@ export class SourceHealthService {
             return { sourceId, status: 'error', error: 'Unknown source' };
         }
         this.checking.add(sourceId);
-        this.opts.events.publish({ type: 'log', level: 'info', message: `Health check: ${adapter.label}...`, at: new Date().toISOString() });
+        this.opts.events.publishLog({
+            level: 'info',
+            category: 'source',
+            code: 'source.healthCheck',
+            params: { label: adapter.label },
+            message: `Health check: ${adapter.label}...`
+        });
         try {
             const result = await adapter.checkHealth();
             const now = new Date().toISOString();
