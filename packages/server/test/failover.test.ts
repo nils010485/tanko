@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
 import type { SourceInfo } from '../src/import/service.js';
-import { FailoverService } from '../src/library/failover.js';
+import { classifyFailure, FailoverService } from '../src/library/failover.js';
 import { LibraryStore } from '../src/library/store.js';
 
 let tmpDir: string;
@@ -73,6 +73,17 @@ afterAll(() => {
 });
 
 describe('manual source picker (listAlternatives)', () => {
+
+describe('failure classification (classifyFailure)', () => {
+    it('treats the MangaHere war.jpg placeholder as content-side removal', () => {
+        expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe('content');
+    });
+    it('keeps treating CDN/network noise as infra', () => {
+        expect(classifyFailure('Failed to download page "https://zjcdn.mangahere.org/x.jpg": non-image page (text/plain, 0 bytes)')).toBe('infra');
+        expect(classifyFailure('HTTP 503')).toBe('infra');
+        expect(classifyFailure(null)).toBe('infra');
+    });
+});
     it('lists one candidate per source, sorted by chapter count', async () => {
         const alternatives = await failover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
         // the current source is excluded; one row per remaining source

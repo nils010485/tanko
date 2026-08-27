@@ -71,7 +71,7 @@ export type FailureClass = 'infra' | 'content';
 /** Deterministic server-side-removal signals. Everything else — non-image
  *  page (CDN error), HTTP 5xx, 429, timeouts, network errors — defaults to
  *  'infra': the conservative choice (wait, don't migrate on ambiguity). */
-const CONTENT_FAILURES = [/HTTP 404/, /HTTP 410/, /not found/i, /Page list is empty/];
+const CONTENT_FAILURES = [/HTTP 404/, /HTTP 410/, /not found/i, /Page list is empty/, /serves no images/];
 
 export function classifyFailure(error: string | null | undefined): FailureClass {
     if (!error) {
