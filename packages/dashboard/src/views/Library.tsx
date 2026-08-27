@@ -12,6 +12,7 @@ import { chapterTone } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import {
+    IconArrowLeftRight,
     IconBookmark,
     IconBookmarkFilled,
     IconCheck,
@@ -32,6 +33,7 @@ import {
     IconUndo,
     IconX
 } from '../components/icons.js';
+import { MigrationModal } from '../components/MigrationModal.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, ProgressBar, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
@@ -144,6 +146,7 @@ export default function Library({
     const [rematchAllBusy, setRematchAllBusy] = useState(false);
     const [rescanBusy, setRescanBusy] = useState(false);
     const [dlAllBusy, setDlAllBusy] = useState(false);
+    const [migrationOpen, setMigrationOpen] = useState(false);
     const [selecting, setSelecting] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -607,6 +610,7 @@ export default function Library({
             .sort(SORTERS[sort]);
     }, [source, filter, activeFilters, sort]);
     const failingCount = source.filter(entry => (entry.checkFailures ?? 0) > 0).length;
+    const pendingMigrations = library.filter(entry => entry.migrationSuggestion);
     const totalNew = library.reduce((sum, entry) => sum + entry.newCount, 0);
     // bulk actions only process the selection that is visible in the current list (visible vs hidden)
     const selectedInView = selecting ? source.filter(entry => selectedIds.has(entry.id)).length : 0;
@@ -967,6 +971,11 @@ export default function Library({
                                 <IconSearch size={13} /> {t('library.rematchFailed', { n: failingCount })}
                             </Button>
                         )}
+                        {pendingMigrations.length > 0 && (
+                            <Button small variant="ghost" onClick={() => setMigrationOpen(true)} title={t('library.migrationProcessHint')}>
+                                <IconArrowLeftRight size={13} /> {t('library.migrationProcess', { n: pendingMigrations.length })}
+                            </Button>
+                        )}
                         <Button small variant={showHidden ? 'primary' : 'ghost'} onClick={() => setShowHidden(current => !current)}>
                             <IconEyeOff size={13} /> {t('library.hidden')}
                             {hiddenList.length > 0 ? ` (${hiddenList.length})` : ''}
@@ -1291,6 +1300,7 @@ export default function Library({
                 onConfirm={confirmRescan}
                 onCancel={() => setPendingRescan(null)}
             />
+            <MigrationModal open={migrationOpen} entries={pendingMigrations} onClose={() => setMigrationOpen(false)} onChanged={refreshLibrary} />
         </div>
     );
 }
