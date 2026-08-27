@@ -198,6 +198,9 @@ export class FailoverService {
                         }
                         const results: Array<{ id: string; title: string; url?: string }> = [];
                         for (const query of queries) {
+                            if (Date.now() > deadline) {
+                                break; // budget exhausted — aliases must not multiply the per-source searches
+                            }
                             const search = adapter.searchMangas(query);
                             // a losing race must not leave an orphaned rejection
                             search.catch(() => undefined);

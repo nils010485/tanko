@@ -55,12 +55,13 @@ const STALE_BACKOFF_MAX_MS = 45 * DAY_MS;
 function normalizeTitle(title: string): string {
     return title
         .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks — "Café" == "Cafe" (mirrors similarity.ts)
         .toLowerCase()
         .replace(/[\p{P}\p{S}\s]+/gu, '');
 }
 
 /** Aliases are stored as a JSON array; normalization mirrors titleSimilarity's
- *  expectations: trimmed, non-empty, deduplicated case-insensitively, never
+ *  expectations: trimmed, 3–200 chars, deduplicated case-insensitively, never
  *  equal to the entry's own title, capped so a fat-fingered paste cannot
  *  multiply the failover's search queries. */
 function normalizeAliases(title: string, aliases: ReadonlyArray<string>): string[] {
@@ -69,7 +70,7 @@ function normalizeAliases(title: string, aliases: ReadonlyArray<string>): string
     for (const alias of aliases) {
         const trimmed = alias.trim();
         const key = normalizeTitle(trimmed);
-        if (trimmed.length < 2 || seen.has(key)) {
+        if (trimmed.length < 3 || trimmed.length > 200 || seen.has(key)) {
             continue;
         }
         seen.add(key);

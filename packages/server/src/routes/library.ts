@@ -18,6 +18,11 @@ function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: number)
     return entry;
 }
 
+/** Cooldown between two automatic AniList lookups for the same entry (the
+ *  manual fetch button is never throttled). */
+const ANILIST_RETRY_MS = 24 * 60 * 60 * 1000;
+const anilistTriedAt = new Map<number, number>();
+
 /** Shape accepted by Scheduler.updateSettings (notifications may be partial). */
 type SchedulePatch = Partial<Omit<ScheduleSettings, 'notifications'>> & { notifications?: Partial<ScheduleSettings['notifications']> };
 /** Actions accepted by POST /api/library/bulk (library selection mode). */
@@ -506,12 +511,14 @@ export function registerLibraryRoutes(
             // another title — ask AniList once, merge what it knows, retry the
             // crawl once (the failover re-reads the aliases from the store).
             let autoAliases: string[] | undefined;
-            if (alternatives.length === 0) {
+            if (alternatives.length === 0 && Date.now() - (anilistTriedAt.get(entry.id) ?? 0) > ANILIST_RETRY_MS) {
                 try {
-                    const known = entry.aliases ?? [];
-                    const fetched = await fetchTitleAliases(entry.title);
-                    const merged = store.setAliases(entry.id, [...known, ...fetched]);
-                    if (merged.length > known.length) {
+                    const names = await fetchTitleAliases(entry.title);
+                    anilistTriedAt.set(entry.id, Date.now());
+                    // re-read: a concurrent edit may have landed during the fetch
+                    const fresh = store.getEntry(entry.id)?.aliases ?? [];
+                    const merged = store.setAliases(entry.id, [...fresh, ...names]);
+                    if (merged.length > fresh.length) {
                         autoAliases = merged;
                         publishEntry(entry.id);
                         alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
@@ -551,8 +558,11 @@ export function registerLibraryRoutes(
             return reply;
         }
         try {
-            const fetched = await fetchTitleAliases(entry.title);
-            store.setAliases(entry.id, [...(entry.aliases ?? []), ...fetched]);
+            const names = await fetchTitleAliases(entry.title);
+            // re-read: a concurrent edit may have landed during the fetch
+            const fresh = store.getEntry(entry.id)?.aliases ?? [];
+            const kept = store.setAliases(entry.id, [...fresh, ...names]);
+            const fetched = kept.filter(name => !fresh.includes(name));
             return { entry: publishEntry(entry.id), fetched };
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });

@@ -5,8 +5,8 @@ import Fastify from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/db.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
-import { FailoverService } from '../src/library/failover.js';
 import { fetchTitleAliases } from '../src/library/anilist.js';
+import { FailoverService } from '../src/library/failover.js';
 import { LibraryStore } from '../src/library/store.js';
 import { registerLibraryRoutes } from '../src/routes/library.js';
 import { Scheduler } from '../src/scheduler/scheduler.js';
@@ -81,13 +81,22 @@ describe('alias storage (setAliases)', () => {
     });
 
     it('caps the list at 10 names and clears with an empty list', () => {
-        expect(store.setAliases(entryId, Array.from({ length: 15 }, (_, index) => `Alias ${index}`))).toHaveLength(10);
+        expect(
+            store.setAliases(
+                entryId,
+                Array.from({ length: 15 }, (_, index) => `Alias ${index}`)
+            )
+        ).toHaveLength(10);
         expect(store.setAliases(entryId, [])).toEqual([]);
         expect(store.getEntry(entryId)?.aliases).toBeUndefined();
     });
 
     it('throws for a missing entry', () => {
         expect(() => store.setAliases(999_999, ['Whatever'])).toThrow(/not found/i);
+    });
+
+    it('rejects names outside 3–200 chars and dedupes accent variants', () => {
+        expect(store.setAliases(entryId, ['OR', 'A'.repeat(201), 'Café Name', 'Cafe Name', 'Cafe NAME'])).toEqual(['Café Name']);
     });
 });
 
@@ -101,10 +110,7 @@ describe('AniList client (fetchTitleAliases)', () => {
             jsonResponse({
                 data: {
                     Page: {
-                        media: [
-                            anilistMedia(null, 'Unrelated Romaji', ['Noise']),
-                            anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['I Level Up Alone'])
-                        ]
+                        media: [anilistMedia(null, 'Unrelated Romaji', ['Noise']), anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['I Level Up Alone'])]
                     }
                 }
             })
@@ -134,6 +140,10 @@ describe('AniList client (fetchTitleAliases)', () => {
 });
 
 describe('alias routes', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     it('PUT replaces the alias list', async () => {
         const response = await app.inject({ method: 'PUT', url: `/api/library/${entryId}/aliases`, payload: { aliases: ['ORV'] } });
         expect(response.statusCode).toBe(200);
@@ -151,24 +161,22 @@ describe('alias routes', () => {
     });
 
     it('POST fetch merges the AniList titles into the existing aliases', async () => {
-        vi.stubGlobal(
-            'fetch',
-            async () => jsonResponse({ data: { Page: { media: [anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['I Level Up Alone'])] } } })
+        vi.stubGlobal('fetch', async () =>
+            jsonResponse({ data: { Page: { media: [anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['I Level Up Alone'])] } } })
         );
         const response = await app.inject({ method: 'POST', url: `/api/library/${entryId}/aliases/fetch` });
         expect(response.statusCode).toBe(200);
         const body = response.json();
-        expect(body.fetched).toEqual(['Solo Leveling', 'Na Honjaman Level Up', 'I Level Up Alone']);
+        // delta only: 'Solo Leveling' is the title itself (dropped), 'ORV' pre-existed
+        expect(body.fetched).toEqual(['Na Honjaman Level Up', 'I Level Up Alone']);
         // merged with the PUT list; the current title itself is dropped
         expect(body.entry.aliases).toEqual(['ORV', 'Na Honjaman Level Up', 'I Level Up Alone']);
-        vi.unstubAllGlobals();
     });
 
     it('GET alternatives auto-fetches AniList names when no source is found and retries the crawl', async () => {
         store.setAliases(entryId, []);
-        vi.stubGlobal(
-            'fetch',
-            async () => jsonResponse({ data: { Page: { media: [anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['Other Name'])] } } })
+        vi.stubGlobal('fetch', async () =>
+            jsonResponse({ data: { Page: { media: [anilistMedia('Solo Leveling', 'Na Honjaman Level Up', ['Other Name'])] } } })
         );
         const response = await app.inject({ method: 'GET', url: `/api/library/${entryId}/alternatives` });
         expect(response.statusCode).toBe(200);
@@ -177,18 +185,17 @@ describe('alias routes', () => {
         expect(body.alternatives.map((a: { sourceId: string }) => a.sourceId)).toEqual(['s2']);
         expect(body.autoAliases).toEqual(['Na Honjaman Level Up', 'Other Name']);
         expect(store.getEntry(entryId)?.aliases).toEqual(['Na Honjaman Level Up', 'Other Name']);
-        vi.unstubAllGlobals();
     });
 
     it('GET alternatives reports nothing new when AniList has no convincing match', async () => {
-        store.setAliases(entryId, []);
+        // fresh entry: the AniList negative cache must not mask the lookup
+        const { entry } = await store.addEntry({ sourceId: 's1', mangaId: 'm2', title: 'Solo Leveling', backlog: 'ignore' });
         vi.stubGlobal('fetch', async () => jsonResponse({ data: { Page: { media: [anilistMedia(null, 'Totally Different Series')] } } }));
-        const response = await app.inject({ method: 'GET', url: `/api/library/${entryId}/alternatives` });
+        const response = await app.inject({ method: 'GET', url: `/api/library/${entry.id}/alternatives` });
         expect(response.statusCode).toBe(200);
         const body = response.json();
         expect(body.alternatives).toEqual([]);
         expect(body.autoAliases).toBeUndefined();
-        expect(store.getEntry(entryId)?.aliases).toBeUndefined();
-        vi.unstubAllGlobals();
+        expect(store.getEntry(entry.id)?.aliases).toBeUndefined();
     });
 });
