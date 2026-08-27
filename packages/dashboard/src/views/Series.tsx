@@ -342,10 +342,12 @@ export default function Series({
 
     const chapterNode = (chapter: LibraryChapterDto) => (
         <span className="flex flex-none items-center gap-1.5">
-            <IconButton title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>
-                <IconEye size={14} />
-            </IconButton>
-            {chapterDownloadable(chapter.status) && (
+            {!chapter.localOnly && (
+                <IconButton title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>
+                    <IconEye size={14} />
+                </IconButton>
+            )}
+            {chapterDownloadable(chapter.status) && !chapter.localOnly && (
                 <IconButton
                     title={chapter.status === 'failed' ? t('library.retryChapterHint') : t('library.downloadChapterHint')}
                     onClick={() => downloadChapter(chapter)}
@@ -357,6 +359,11 @@ export default function Series({
                 <IconButton title={t('library.restoreFileHint')} onClick={() => rollbackChapter(chapter)}>
                     <span className="text-sm">⟲</span>
                 </IconButton>
+            )}
+            {chapter.localOnly && (
+                <span title={t('library.localOnlyChapterHint')}>
+                    <Badge tone="blue">{t('library.localOnlyChapter')}</Badge>
+                </span>
             )}
             <Badge tone={chapterTone(chapter.status)}>{t(`library.chapterStatus.${chapter.status}`)}</Badge>
         </span>

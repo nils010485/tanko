@@ -533,9 +533,10 @@ export class ImportService {
         // local files to the existing entry instead of creating a duplicate
         const existing = this.opts.store.findEntryByTitle(mangaTitle);
         if (existing) {
-            const matched = this.opts.store.markDownloadedByNumber(existing.id, local.byNumber);
+            const { attached, registered } = this.opts.store.registerLocalChapters(existing.id, local.byNumber);
+            const matched = attached + registered;
             console.log(
-                `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) — fichiers rattachés à l'entrée existante (${matched} chapitres)`
+                `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) — fichiers rattachés à l'entrée existante (${matched} chapitres, dont ${registered} locaux hors source)`
             );
             return {
                 matched,
@@ -564,7 +565,9 @@ export class ImportService {
         for (const pair of pairs) {
             this.opts.store.markChapter(entry.id, pair.chapterId, 'downloaded', pair.localPath, 'import');
         }
-        return { matched: pairs.length, localChapters: local.total, sourceChapters: chapters.length, mode, entryId: entry.id };
+        // files with no source counterpart stay visible as local-only chapters
+        const { registered } = this.opts.store.registerLocalChapters(entry.id, local.byNumber);
+        return { matched: pairs.length + registered, localChapters: local.total, sourceChapters: chapters.length, mode, entryId: entry.id };
     }
 
     /** Local chapters of a series folder: number -> file path (first occurrence wins), plus total count. */

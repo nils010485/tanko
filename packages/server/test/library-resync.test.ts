@@ -81,9 +81,20 @@ describe('resyncLocalFiles', () => {
         expect(chapterStatus(entry.id, 'c2')).toBe('new'); // genuinely missing from disk
     });
 
+    it('registers files the source never listed as local-only chapters', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'src', mangaId: 'm4', title: 'Series Four', backlog: 'ignore' });
+        const dir = path.join(tmpDir, 'downloads', 'Source', 'Series Four');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'Chapter 9.cbz'), 'x');
+
+        const result = await store.resyncLocalFiles();
+        expect(result.attached).toBeGreaterThanOrEqual(1);
+        expect(chapterStatus(entry.id, 'local:9')).toBe('downloaded');
+        expect(store.listChapters(entry.id).find(chapter => chapter.chapterId === 'local:9')?.localOnly).toBe(true);
+    });
     it('leaves entries without files untouched', async () => {
         await store.addEntry({ sourceId: 'src', mangaId: 'm3', title: 'Series Three', backlog: 'ignore' });
         const result = await store.resyncLocalFiles();
-        expect(result.entries).toBe(2); // the two series with files above
+        expect(result.entries).toBe(3); // the three series with files above
     });
 });

@@ -177,7 +177,8 @@ export interface LibraryChapterDto {
     language?: string;
     status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     path?: string;
-    discoveredAt: string;
+    /** Local-only chapter: a file on disk with no source counterpart (ghost row). */
+    localOnly?: boolean;
     downloadedAt?: string;
     /** Number of history entries (path/status changes) for this chapter. */
     historyCount?: number;

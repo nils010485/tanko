@@ -15,9 +15,11 @@ export function chapterDownloadable(status: LibraryChapterDto['status']): boolea
     }
 }
 
-/** Map tracked chapters onto the ad-hoc /api/downloads payload shape. */
+/** Map tracked chapters onto the ad-hoc /api/downloads payload shape.
+ *  Local-only chapters (no source counterpart) are dropped: the source
+ *  has nothing to download for them. */
 export function toQueueChapters(chapters: LibraryChapterDto[]): Array<{ id: string; title: string }> {
-    return chapters.map(chapter => ({ id: chapter.chapterId, title: chapter.title }));
+    return chapters.filter(chapter => !chapter.localOnly).map(chapter => ({ id: chapter.chapterId, title: chapter.title }));
 }
 
 /** i18n key describing a re-match outcome (extra interpolation params are ignored). */

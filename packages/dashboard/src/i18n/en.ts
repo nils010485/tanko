@@ -245,6 +245,8 @@ export const en = {
     'library.chapterStatus.downloading': 'downloading',
     'library.chapterStatus.downloaded': 'downloaded',
     'library.chapterStatus.failed': 'failed',
+    'library.localOnlyChapter': 'local',
+    'library.localOnlyChapterHint': 'File on disk with no matching chapter on the source',
 
     // series view
     'series.back': 'Back to library',

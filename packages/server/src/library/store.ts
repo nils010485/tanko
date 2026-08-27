@@ -326,13 +326,7 @@ export class LibraryStore {
             if (!directory) {
                 continue;
             }
-            const byNumber = new Map<number, string>();
-            for (const file of listChapterEntries(directory)) {
-                const number = parseChapterNumber(file.replace(/\.cbz$/i, ''));
-                if (number !== null && !byNumber.has(number)) {
-                    byNumber.set(number, path.join(directory, file));
-                }
-            }
+            const byNumber = this._diskByNumber(directory);
             if (byNumber.size === 0) {
                 continue;
             }
@@ -346,9 +340,9 @@ export class LibraryStore {
                     // display counts local files even without DB rows
                 }
             }
-            const matched = this.markDownloadedByNumber(row.id, byNumber);
-            if (matched > 0) {
-                attached += matched;
+            const { attached: matched, registered } = this.registerLocalChapters(row.id, byNumber);
+            if (matched + registered > 0) {
+                attached += matched + registered;
                 entries++;
             }
         }
@@ -698,7 +692,12 @@ export class LibraryStore {
 
         this._snapshotEntry(entryId, 'failover');
         const downloadedByNumber = this._downloadedByNumber(entryId);
-        return this._rebuildChapters(entryId, target, source, downloadedByNumber);
+        // local files matter as much as DB rows: an entry imported from a
+        // starved source (a handful of chapters listed) has barely any
+        // 'downloaded' row to carry — rebuilding on a richer source must not
+        // mark those files missing just because the old source ignored them
+        const diskByNumber = this._diskByNumber(this.seriesDirectory(entryId));
+        return this._rebuildChapters(entryId, target, source, downloadedByNumber, diskByNumber);
     }
 
     /** After a migration rebuilt the chapter list on a new source, re-queue the
@@ -756,12 +755,58 @@ export class LibraryStore {
         return downloadedByNumber;
     }
 
+    /** Local chapter files of an entry's series folder, keyed by parsed
+     *  chapter number (first occurrence wins). Empty when the folder is
+     *  missing or holds nothing usable. */
+    private _diskByNumber(directory: string | null): Map<number, string> {
+        const byNumber = new Map<number, string>();
+        if (!directory) {
+            return byNumber;
+        }
+        for (const file of listChapterEntries(directory)) {
+            const number = parseChapterNumber(file.replace(/\.cbz$/i, ''));
+            if (number !== null && !byNumber.has(number)) {
+                byNumber.set(number, path.join(directory, file));
+            }
+        }
+        return byNumber;
+    }
+
+    /** Attach local files to an entry's chapters by number, and register the
+     *  files the source never listed as local-only chapter rows ('local:<n>'):
+     *  a starved or oddly numbered source must not hide chapters that sit on
+     *  disk — they appear in the chapter list and the counts, and a later
+     *  check absorbs them into the real source chapter. */
+    registerLocalChapters(entryId: number, localByNumber: Map<number, string>): { attached: number; registered: number } {
+        const attached = this.markDownloadedByNumber(entryId, localByNumber);
+        const known = new Set<number>();
+        for (const chapter of this.listChapters(entryId)) {
+            const number = parseChapterNumber(chapter.title);
+            if (number !== null) {
+                known.add(number);
+            }
+        }
+        const now = new Date().toISOString();
+        const insert = this.opts.db.db.prepare(SQL_INSERT_CHAPTER_FULL);
+        let registered = 0;
+        for (const [number, localPath] of localByNumber) {
+            if (known.has(number)) {
+                continue;
+            }
+            const result = insert.run(entryId, `local:${number}`, path.basename(localPath).replace(/\.cbz$/i, ''), null, 'downloaded', localPath, now, now);
+            registered += Number(result.changes);
+            known.add(number);
+        }
+        return { attached, registered };
+    }
+
     /** Replace the entry's chapter list from the new source, carrying downloaded files over. */
     private async _rebuildChapters(
         entryId: number,
         target: MigrationTarget,
         source: SourceAdapter,
-        downloadedByNumber: Map<number, ChapterRow>
+        downloadedByNumber: Map<number, ChapterRow>,
+        diskByNumber: Map<number, string>
     ): Promise<{ kept: number; total: number }> {
         const chapters = await source.getChapters({ id: target.mangaId, title: target.mangaTitle });
         const preferred = this.opts.getPreferredLanguages?.() || [];
@@ -779,19 +824,35 @@ export class LibraryStore {
         const insert = this.opts.db.db.prepare(SQL_INSERT_CHAPTER_FULL);
         let kept = 0;
         let total = 0;
+        const listedNumbers = new Set<number>();
         for (const chapter of chapters) {
             if (!chapterAllowed(chapter.language, preferred)) {
                 continue;
             }
             total++;
             const number = parseChapterNumber(chapter.title);
-            const carried = number !== null ? downloadedByNumber.get(number) : undefined;
-            if (carried) {
-                insert.run(entryId, chapter.id, chapter.title, chapter.language || null, 'downloaded', carried.path, now, carried.downloaded_at);
+            if (number !== null) {
+                listedNumbers.add(number);
+            }
+            const fromDb = number !== null ? downloadedByNumber.get(number) : undefined;
+            const fromDisk = number !== null ? diskByNumber.get(number) : undefined;
+            if (fromDb) {
+                insert.run(entryId, chapter.id, chapter.title, chapter.language || null, 'downloaded', fromDb.path, now, fromDb.downloaded_at);
+                kept++;
+            } else if (fromDisk) {
+                insert.run(entryId, chapter.id, chapter.title, chapter.language || null, 'downloaded', fromDisk, now, now);
                 kept++;
             } else {
                 const status = this._isDownloaded(source.label, target.mangaTitle, chapter.title) ? 'downloaded' : 'new';
                 insert.run(entryId, chapter.id, chapter.title, chapter.language || null, status, null, now, null);
+            }
+        }
+        // files with no counterpart on the new source stay visible as
+        // local-only rows — the disk is the truth, not the chapter list
+        for (const [number, localPath] of diskByNumber) {
+            if (!listedNumbers.has(number)) {
+                insert.run(entryId, `local:${number}`, path.basename(localPath).replace(/\.cbz$/i, ''), null, 'downloaded', localPath, now, now);
+                kept++;
             }
         }
         return { kept, total };
@@ -851,12 +912,33 @@ export class LibraryStore {
         const insert = this.opts.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
         const fresh: ChapterRow[] = [];
         const preferred = this.opts.getPreferredLanguages?.() || [];
+        // local-only rows (files the source never listed) whose number the
+        // source now carries are absorbed into the real chapter: same file,
+        // real chapter id, no duplicate row
+        const known = new Set(
+            this._all<{ chapter_id: string }>('SELECT chapter_id FROM library_chapters WHERE entry_id = ?', entryId).map(item => item.chapter_id)
+        );
+        const ghosts = new Map<number, ChapterRow>();
+        for (const ghost of this._all<ChapterRow>("SELECT * FROM library_chapters WHERE entry_id = ? AND chapter_id LIKE 'local:%'", entryId)) {
+            const number = parseChapterNumber(ghost.title);
+            if (number !== null && !ghosts.has(number)) {
+                ghosts.set(number, ghost);
+            }
+        }
+        const absorb = this.opts.db.db.prepare('UPDATE library_chapters SET chapter_id = ?, title = ?, language = ? WHERE entry_id = ? AND id = ?');
         let usableSeen = 0;
         for (const chapter of chapters) {
             if (!chapterAllowed(chapter.language, preferred)) {
                 continue;
             }
             usableSeen++;
+            const number = parseChapterNumber(chapter.title);
+            const ghost = number !== null && !known.has(chapter.id) ? ghosts.get(number) : undefined;
+            if (ghost && number !== null) {
+                absorb.run(chapter.id, chapter.title, chapter.language || null, entryId, ghost.id);
+                ghosts.delete(number);
+                continue;
+            }
             const result = insert.run(entryId, chapter.id, chapter.title, chapter.language || null, now);
             if (Number(result.changes) > 0) {
                 fresh.push({
@@ -1064,6 +1146,7 @@ export class LibraryStore {
             language: row.language || undefined,
             status: row.status,
             path: row.path || undefined,
+            localOnly: row.chapter_id.startsWith('local:') || undefined,
             discoveredAt: row.discovered_at,
             downloadedAt: row.downloaded_at || undefined,
             historyCount: Number(row.history_count || 0)

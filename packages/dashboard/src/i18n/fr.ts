@@ -246,6 +246,8 @@ export const fr: typeof import('./en.js').en = {
     'library.chapterStatus.downloading': 'téléchargement',
     'library.chapterStatus.downloaded': 'téléchargé',
     'library.chapterStatus.failed': 'échec',
+    'library.localOnlyChapter': 'local',
+    'library.localOnlyChapterHint': 'Fichier présent sur le disque sans chapitre correspondant sur la source',
 
     // series view
     'series.back': 'Retour à la librairie',
