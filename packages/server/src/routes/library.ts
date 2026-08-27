@@ -2,6 +2,7 @@ import type { LibraryBulkAction, LibraryEntryDto, SourceAlternativeDto, SourceAl
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { JobRunner } from '../activity/jobs.js';
 import type { DownloadQueue } from '../downloader/queue.js';
+import { fetchTitleAliases } from '../library/anilist.js';
 import type { CoverService } from '../library/covers.js';
 import { type FailoverService, INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
 import type { LibraryStore } from '../library/store.js';
@@ -16,6 +17,11 @@ function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: number)
     }
     return entry;
 }
+
+/** Cooldown between two automatic AniList lookups for the same entry (the
+ *  manual fetch button is never throttled). */
+const ANILIST_RETRY_MS = 24 * 60 * 60 * 1000;
+const anilistTriedAt = new Map<number, number>();
 
 /** Shape accepted by Scheduler.updateSettings (notifications may be partial). */
 type SchedulePatch = Partial<Omit<ScheduleSettings, 'notifications'>> & { notifications?: Partial<ScheduleSettings['notifications']> };
@@ -500,12 +506,64 @@ export function registerLibraryRoutes(
             return reply;
         }
         try {
-            const alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            let alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            // Nothing under the known names: the series is probably hosted under
+            // another title — ask AniList once, merge what it knows, retry the
+            // crawl once (the failover re-reads the aliases from the store).
+            let autoAliases: string[] | undefined;
+            if (alternatives.length === 0 && Date.now() - (anilistTriedAt.get(entry.id) ?? 0) > ANILIST_RETRY_MS) {
+                try {
+                    const names = await fetchTitleAliases(entry.title);
+                    anilistTriedAt.set(entry.id, Date.now());
+                    // re-read: a concurrent edit may have landed during the fetch
+                    const fresh = store.getEntry(entry.id)?.aliases ?? [];
+                    const merged = store.setAliases(entry.id, [...fresh, ...names]);
+                    if (merged.length > fresh.length) {
+                        autoAliases = merged;
+                        publishEntry(entry.id);
+                        alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+                    }
+                } catch {
+                    // AniList being unreachable must not fail the picker
+                }
+            }
             const payload: SourceAlternativesResponseDto = {
                 current: { sourceId: entry.sourceId, sourceLabel: entry.sourceLabel, chapterCount: entry.chapterCount },
                 alternatives
             };
-            return payload;
+            return autoAliases ? { ...payload, autoAliases } : payload;
+        } catch (error) {
+            return reply.code(502).send({ error: (error as Error).message });
+        }
+    });
+
+    // Alias titles the failover also searches (manual editor): replaces the list
+    app.put<{ Params: { entryId: string }; Body: { aliases?: string[] } }>('/api/library/:entryId/aliases', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        const aliases = request.body?.aliases;
+        if (!Array.isArray(aliases) || aliases.some(alias => typeof alias !== 'string')) {
+            return reply.code(400).send({ error: 'Body must contain an aliases string array' });
+        }
+        store.setAliases(entry.id, aliases);
+        return { entry: publishEntry(entry.id) };
+    });
+
+    // AniList lookup: merge the official + alternative titles into the aliases
+    app.post<{ Params: { entryId: string } }>('/api/library/:entryId/aliases/fetch', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        try {
+            const names = await fetchTitleAliases(entry.title);
+            // re-read: a concurrent edit may have landed during the fetch
+            const fresh = store.getEntry(entry.id)?.aliases ?? [];
+            const kept = store.setAliases(entry.id, [...fresh, ...names]);
+            const fetched = kept.filter(name => !fresh.includes(name));
+            return { entry: publishEntry(entry.id), fetched };
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });
         }

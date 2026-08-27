@@ -55,9 +55,33 @@ const STALE_BACKOFF_MAX_MS = 45 * DAY_MS;
 function normalizeTitle(title: string): string {
     return title
         .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks — "Café" == "Cafe" (mirrors similarity.ts)
         .toLowerCase()
         .replace(/[\p{P}\p{S}\s]+/gu, '');
 }
+
+/** Aliases are stored as a JSON array; normalization mirrors titleSimilarity's
+ *  expectations: trimmed, 3–200 chars, deduplicated case-insensitively, never
+ *  equal to the entry's own title, capped so a fat-fingered paste cannot
+ *  multiply the failover's search queries. */
+function normalizeAliases(title: string, aliases: ReadonlyArray<string>): string[] {
+    const seen = new Set([normalizeTitle(title)]);
+    const kept: string[] = [];
+    for (const alias of aliases) {
+        const trimmed = alias.trim();
+        const key = normalizeTitle(trimmed);
+        if (trimmed.length < 3 || trimmed.length > 200 || seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        kept.push(trimmed);
+        if (kept.length >= 10) {
+            break;
+        }
+    }
+    return kept;
+}
+
 interface EntryRow {
     id: number;
     source_id: string;
@@ -81,6 +105,8 @@ interface EntryRow {
      *  found, and the earliest date the next probe may run (null = any time). */
     staleness_misses: number;
     staleness_next_probe_at: string | null;
+    /** Alternative titles (JSON array) searched by the failover. */
+    aliases: string | null;
 }
 
 /** A source-wide download outage (≥ SOURCE_OUTAGE_ENTRIES distinct entries
@@ -643,6 +669,18 @@ export class LibraryStore {
             .run(JSON.stringify(suggestion), entryId);
     }
 
+    /** Replace the failover search aliases (manual editor or AniList merge).
+     *  Returns what was actually kept, after normalization. */
+    setAliases(entryId: number, aliases: ReadonlyArray<string>): string[] {
+        const row = this._getEntryRow(entryId);
+        if (!row) {
+            throw new Error(`Library entry ${entryId} not found`);
+        }
+        const normalized = normalizeAliases(row.title, aliases);
+        this.opts.db.db.prepare('UPDATE library SET aliases = ? WHERE id = ?').run(normalized.length > 0 ? JSON.stringify(normalized) : null, entryId);
+        return normalized;
+    }
+
     /**
      * Move an entry to another source: snapshot the current state, then rebuild
      * the chapter list from the new source. Downloaded chapters keep their
@@ -1178,6 +1216,7 @@ export class LibraryStore {
         this._addColumn('library', columns, 'staleness_misses', 'staleness_misses INTEGER NOT NULL DEFAULT 0');
         this._addColumn('library', columns, 'staleness_next_probe_at', 'staleness_next_probe_at TEXT');
         this._addColumn('library', columns, 'paused', 'paused INTEGER NOT NULL DEFAULT 0');
+        this._addColumn('library', columns, 'aliases', 'aliases TEXT');
         // unknown last-new-chapter date (existing databases, imports, or rows
         // created between the ALTER and a crash): start from today so the
         // auto-unfollow cannot fire right on startup — runs on every boot, a
@@ -1220,6 +1259,13 @@ export class LibraryStore {
         } catch {
             dismissed = undefined;
         }
+        let aliases: string[] | undefined;
+        try {
+            const parsed: unknown = row.aliases ? JSON.parse(row.aliases) : undefined;
+            aliases = Array.isArray(parsed) ? parsed.filter((alias): alias is string => typeof alias === 'string') : undefined;
+        } catch {
+            aliases = undefined;
+        }
         let chapterCount = Number(counts.total || 0);
         let downloadedCount = Number(counts.downloaded || 0);
         // no chapter registered (import whose source-based sync failed,
@@ -1250,7 +1296,8 @@ export class LibraryStore {
             dismissedMigration: dismissed,
             canRollbackMigration: Number(snapshot.n || 0) > 0,
             hidden: Number(row.hidden || 0) === 1,
-            paused: Number(row.paused || 0) === 1
+            paused: Number(row.paused || 0) === 1,
+            aliases: aliases && aliases.length > 0 ? aliases : undefined
         };
     }
 }

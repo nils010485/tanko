@@ -117,6 +117,9 @@ export interface SourceAlternativeDto {
 export interface SourceAlternativesResponseDto {
     current: { sourceId: string; sourceLabel: string; chapterCount: number };
     alternatives: SourceAlternativeDto[];
+    /** Names the search was retried under after an automatic AniList lookup
+     *  (set only when the first crawl found nothing and new names were merged). */
+    autoAliases?: string[];
 }
 
 export interface LibraryEntryDto {
@@ -148,6 +151,9 @@ export interface LibraryEntryDto {
     hidden?: boolean;
     /** Paused entries stay visible but are not monitored (auto or manual pause). */
     paused?: boolean;
+    /** Alternative titles (manual or AniList) searched by the failover when
+     *  the current source goes bad — manhwas are often listed under another name. */
+    aliases?: string[];
 }
 
 /** Actions accepted by POST /api/library/bulk (library selection mode). */

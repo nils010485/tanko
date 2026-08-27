@@ -120,6 +120,13 @@ export function classifyFailure(error: string | null | undefined): FailureClass 
     return CONTENT_FAILURES.some(pattern => pattern.test(error)) ? 'content' : 'infra';
 }
 
+/** Best similarity against any known name of the series (title or alias): a
+ *  source listing the series under its alternative name must not be
+ *  under-scored against the current source's title. */
+function bestNameScore(names: string[], candidate: string): number {
+    return Math.max(...names.map(name => titleSimilarity(name, candidate)));
+}
+
 export class FailoverService {
     /** Entries currently probed by a suggestion detection (re-entry guard). */
     private readonly detectionRunning = new Set<number>();
@@ -166,7 +173,11 @@ export class FailoverService {
             .sort((a, b) => byKind(a, b) || byHealth(a, b) || a.label.localeCompare(b.label))
             .slice(0, opts.maxSources ?? CRAWL_SOURCES);
 
-        const queries = [...new Set([entry.title, stripTags(entry.title).trim()].filter(query => query.length > 2))];
+        // Alias titles (manual editor / AniList merge) widen the hunt: a series
+        // is often hosted under another name. Resolved from the store so every
+        // caller (probe, scheduler, picker) sees the latest list.
+        const names = [entry.title, ...(this.opts.store.getEntry(entry.id)?.aliases ?? [])];
+        const queries = [...new Set(names.flatMap(name => [name, stripTags(name).trim()]).filter(query => query.length > 2))];
         const deadline = Date.now() + (opts.deadlineMs ?? CRAWL_DEADLINE_MS);
         const candidates: MigrationTarget[] = [];
         // every attempted source counts as done (connectors fail deterministically);
@@ -187,6 +198,9 @@ export class FailoverService {
                         }
                         const results: Array<{ id: string; title: string; url?: string }> = [];
                         for (const query of queries) {
+                            if (Date.now() > deadline) {
+                                break; // budget exhausted — aliases must not multiply the per-source searches
+                            }
                             const search = adapter.searchMangas(query);
                             // a losing race must not leave an orphaned rejection
                             search.catch(() => undefined);
@@ -202,7 +216,7 @@ export class FailoverService {
                             mangaId: manga.id,
                             mangaTitle: manga.title,
                             url: manga.url,
-                            score: titleSimilarity(entry.title, manga.title)
+                            score: bestNameScore(names, manga.title)
                         }));
                     } catch {
                         return [] as MigrationTarget[]; // a broken alternative is simply skipped
