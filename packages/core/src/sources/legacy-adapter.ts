@@ -39,6 +39,12 @@ export class LegacySourceAdapter implements SourceAdapter {
     async searchMangas(query: string): Promise<MangaInfo[]> {
         return this._guard(async () => {
             await this.initialize();
+            // connectors with a site search endpoint answer in one request;
+            // the default flow crawls the whole catalog (minutes on some)
+            if (typeof this.connector._searchMangas === 'function') {
+                const mangas = await this.connector._searchMangas(query);
+                return (mangas || []).map(manga => this._toMangaInfo(manga));
+            }
             const needle = query.trim().toLowerCase();
             const mangas = await this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
             return (mangas || []).filter(manga => manga.title?.toLowerCase().includes(needle)).map(manga => this._toMangaInfo(manga));

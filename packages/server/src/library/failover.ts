@@ -9,21 +9,40 @@
  */
 import type { SourceRegistry } from '@tanko/core';
 import type { SourceAlternativeDto } from '@tanko/shared';
-import { confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
+import { AUTO_THRESHOLD, confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
 
-/** Healthy sources first. */
+/** Healthy sources first (natives outrank them anyway — see findAlternative). */
 function byHealth(a: SourceInfo, b: SourceInfo): number {
     return (a.health === 'ok' ? -1 : 1) - (b.health === 'ok' ? -1 : 1);
 }
 
-/** Native connectors before legacy ones. */
+/** Native connectors before legacy ones (cheap APIs, highest coverage). */
 function byKind(a: SourceInfo, b: SourceInfo): number {
     return (a.kind === 'native' ? -1 : 1) - (b.kind === 'native' ? -1 : 1);
 }
 
 import type { SourceInfo } from '../import/service.js';
+/** Parallel searches per wave of the alternative crawl. Dead sites hang
+ * until their fetch timeout, so every search is individually bounded below
+ * and only wave STARTS are deadline-bound. */
+const CRAWL_CONCURRENCY = 24;
+/** Per-source search budget: a source that cannot answer a title search in
+ * time is useless for a migration probe — its result is dropped, not awaited. */
+const SEARCH_TIMEOUT_MS = 10_000;
+/** Automatic failover hunts: wall-clock budget per crawl round. */
+const CRAWL_DEADLINE_MS = 60_000;
+/** Automatic failover hunts: sources crawled at most per round. */
+const CRAWL_SOURCES = 128;
+/** Manual source picker: crawl essentially every usable source, under a
+ * stricter wall-clock budget — the user waited for an answer, not forever. */
+const PICKER_SOURCES = 500;
+const PICKER_DEADLINE_MS = 60_000;
+/** Crawl-and-validate rounds: each round excludes the sources already
+ * searched or rejected, going deeper — a perfect title match on a source
+ * without preferred-language chapters must not end the hunt. */
+const VALIDATION_ROUNDS = 4;
 
 /** Starved-source detection: entries with at most this many chapters are
  *  searched elsewhere (opt-in setting). */
@@ -107,92 +126,132 @@ export class FailoverService {
 
     /**
      * Look for an alternative source carrying the same series.
-     * Returns the best candidate with its confidence tier.
+     * Returns the best candidate with its confidence tier, plus every source
+     * id that was searched (callers exclude them from further rounds).
      */
-    async findAlternative(entry: { id: number; sourceId: string; title: string }): Promise<{
+    async findAlternative(entry: { id: number; sourceId: string; title: string }, opts: { maxSources?: number; deadlineMs?: number; excludeSources?: ReadonlySet<string> } = {}): Promise<{
         best: MigrationTarget | null;
         confidence: 'auto' | 'review' | 'none';
         candidates: MigrationTarget[];
+        searched: string[];
     }> {
         const preferred = this.opts.getPreferredLanguages();
+        // natives (fast APIs) first, then healthy sources; the label tiebreak
+        // is arbitrary — the cap below, not this order, is the real bound
         const sources = (await this.opts.listSources())
-            .filter(source => !source.hidden && source.id !== entry.sourceId && sourceUsable(source.tags, preferred))
-            .sort((a, b) => byHealth(a, b) || byKind(a, b) || a.label.localeCompare(b.label))
-            .slice(0, 12);
+            .filter(
+                source =>
+                    !source.hidden &&
+                    source.id !== entry.sourceId &&
+                    !opts.excludeSources?.has(source.id) &&
+                    sourceUsable(source.tags, preferred)
+            )
+            .sort((a, b) => byKind(a, b) || byHealth(a, b) || a.label.localeCompare(b.label))
+            .slice(0, opts.maxSources ?? CRAWL_SOURCES);
+
 
         const queries = [...new Set([entry.title, stripTags(entry.title).trim()].filter(query => query.length > 2))];
+        const deadline = Date.now() + (opts.deadlineMs ?? CRAWL_DEADLINE_MS);
         const candidates: MigrationTarget[] = [];
-        let best: MigrationTarget | null = null;
-
-        for (const source of sources) {
-            try {
-                const adapter = await this.opts.registry.get(source.id);
-                if (!adapter) {
-                    continue;
-                }
-                const results: Array<{ id: string; title: string; url?: string }> = [];
-                for (const query of queries) {
-                    results.push(...(await adapter.searchMangas(query)));
-                    if (results.length > 0) {
-                        break;
+        // every attempted source counts as done (connectors fail deterministically);
+        // retried timeouts would just burn the next round's budget too
+        const searched: string[] = [];
+        for (let index = 0; index < sources.length; index += CRAWL_CONCURRENCY) {
+            if (index > 0 && Date.now() > deadline) {
+                break; // budget exhausted — never start another wave of dead sites
+            }
+            const waveSources = sources.slice(index, index + CRAWL_CONCURRENCY);
+            searched.push(...waveSources.map(source => source.id));
+            const wave = await Promise.all(
+                waveSources.map(async source => {
+                    try {
+                        const adapter = await this.opts.registry.get(source.id);
+                        if (!adapter) {
+                            return [] as MigrationTarget[];
+                        }
+                        const results: Array<{ id: string; title: string; url?: string }> = [];
+                        for (const query of queries) {
+                            const search = adapter.searchMangas(query);
+                            // a losing race must not leave an orphaned rejection
+                            search.catch(() => undefined);
+                            results.push(...(await Promise.race([
+                                search,
+                                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('search timeout')), SEARCH_TIMEOUT_MS))
+                            ])));
+                            if (results.length > 0) {
+                                break;
+                            }
+                        }
+                        return results.slice(0, 8).map(manga => ({
+                            sourceId: source.id,
+                            sourceLabel: source.label,
+                            mangaId: manga.id,
+                            mangaTitle: manga.title,
+                            url: manga.url,
+                            score: titleSimilarity(entry.title, manga.title)
+                        }));
+                    } catch {
+                        return [] as MigrationTarget[]; // a broken alternative is simply skipped
                     }
-                }
-                for (const manga of results.slice(0, 8)) {
-                    const score = titleSimilarity(entry.title, manga.title);
-                    const candidate: MigrationTarget = {
-                        sourceId: source.id,
-                        sourceLabel: source.label,
-                        mangaId: manga.id,
-                        mangaTitle: manga.title,
-                        url: manga.url,
-                        score
-                    };
-                    candidates.push(candidate);
-                    if (!best || (candidate.score || 0) > (best.score || 0)) {
-                        best = candidate;
-                    }
-                }
-            } catch {
-                /* a broken alternative is simply skipped */
+                })
+            );
+            candidates.push(...wave.flat());
+            const bestScore = Math.max(0, ...candidates.map(candidate => candidate.score ?? 0));
+            if (bestScore >= AUTO_THRESHOLD) {
+                break;
             }
         }
 
         candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
-        return { best, confidence: confidenceFor(best?.score), candidates: candidates.slice(0, 8) };
+        const best = candidates[0] ?? null;
+        return { best, confidence: confidenceFor(best?.score), candidates: candidates.slice(0, 8), searched };
     }
 
     /**
      * Chapter-counted alternatives for the manual source picker: the best
      * candidate per source, probed in score order (broken ones are skipped),
-     * sorted by chapter count so incomplete sources are obvious.
+     * sorted by chapter count so incomplete sources are obvious. Crawls in
+     * rounds: sources whose chapters don't match the preferred languages are
+     * excluded and the crawl goes deeper — a perfect title match on a source
+     * that only carries foreign-language rips must not hide the real host.
      */
     async listAlternatives(entry: { id: number; sourceId: string; title: string }): Promise<SourceAlternativeDto[]> {
-        const { candidates } = await this.findAlternative(entry);
-        const perSource = new Map<string, MigrationTarget>();
-        for (const candidate of candidates) {
-            if (!perSource.has(candidate.sourceId)) {
-                perSource.set(candidate.sourceId, candidate);
-            }
-        }
         const preferred = this.opts.getPreferredLanguages();
         const alternatives: SourceAlternativeDto[] = [];
-        for (const candidate of perSource.values()) {
-            if (alternatives.length >= 6) {
-                break; // bound the latency: 6 distinct sources max
+        const done = new Set<string>(); // searched and/or chapter-probed sources
+        for (let round = 0; round < VALIDATION_ROUNDS && alternatives.length < 6; round++) {
+            const { candidates, searched } = await this.findAlternative(entry, { maxSources: PICKER_SOURCES, deadlineMs: PICKER_DEADLINE_MS, excludeSources: done });
+            for (const id of searched) {
+                done.add(id);
             }
-            try {
-                const adapter = await this.opts.registry.get(candidate.sourceId);
-                if (!adapter) {
-                    continue;
+            const perSource = new Map<string, MigrationTarget>();
+            for (const candidate of candidates) {
+                if (!perSource.has(candidate.sourceId)) {
+                    perSource.set(candidate.sourceId, candidate);
                 }
-                const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
-                const chapterCount = chapters.filter(chapter => chapterAllowed(chapter.language, preferred)).length;
-                if (chapterCount === 0) {
-                    continue;
+            }
+            if (searched.length === 0) {
+                break; // no usable source left to crawl — deeper rounds are pointless
+            }
+            for (const candidate of perSource.values()) {
+                if (alternatives.length >= 6) {
+                    break; // bound the latency: 6 distinct sources max
                 }
-                alternatives.push({ ...candidate, chapterCount });
-            } catch {
-                /* a broken alternative is simply skipped */
+                done.add(candidate.sourceId);
+                try {
+                    const adapter = await this.opts.registry.get(candidate.sourceId);
+                    if (!adapter) {
+                        continue;
+                    }
+                    const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+                    const chapterCount = chapters.filter(chapter => chapterAllowed(chapter.language, preferred)).length;
+                    if (chapterCount === 0) {
+                        continue;
+                    }
+                    alternatives.push({ ...candidate, chapterCount });
+                } catch {
+                    /* a broken alternative is simply skipped */
+                }
             }
         }
         return alternatives.sort((a, b) => b.chapterCount - a.chapterCount || (b.score ?? 0) - (a.score ?? 0));
@@ -324,52 +383,65 @@ export class FailoverService {
      * Returns 'migrated' | 'suggested' | 'none'.
      */
     async maybeMigrate(entry: { id: number; sourceId: string; title: string }, auto = true): Promise<'migrated' | 'suggested' | 'none'> {
-        const { candidates } = await this.findAlternative(entry);
-        if (candidates.length === 0) {
-            return 'none';
-        }
-        // Validate candidates in score order: the best match may sit on a
-        // broken connector, the runner-up on a perfectly usable source.
+        // Crawl in rounds: a perfect title match whose chapters don't match
+        // the preferred languages (e.g. MangaDex carrying only foreign rips)
+        // is rejected and the crawl goes deeper — bounded by VALIDATION_ROUNDS
         const preferred = this.opts.getPreferredLanguages();
-        const triedSources = new Set<string>();
-        let best: MigrationTarget | null = null;
-        let confidence: 'auto' | 'review' | 'none' = 'none';
-        for (const candidate of candidates) {
-            if (triedSources.has(candidate.sourceId)) {
-                continue;
+        const done = new Set<string>(); // searched and/or validation-failed sources
+        for (let round = 0; round < VALIDATION_ROUNDS; round++) {
+            const { candidates, searched } = await this.findAlternative(entry, { excludeSources: done });
+            for (const id of searched) {
+                done.add(id);
             }
-            triedSources.add(candidate.sourceId);
-            if (triedSources.size > 4) {
-                break; // bound the latency: 4 distinct sources max
+            if (searched.length === 0) {
+                break; // no usable source left to crawl — deeper rounds are pointless
             }
-            const adapter = await this.opts.registry.get(candidate.sourceId);
-            if (!adapter) {
-                continue;
-            }
-            try {
-                const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
-                const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
-                if (!chapter) {
-                    console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
+            // Validate candidates in score order: the best match may sit on a
+            // broken connector, the runner-up on a perfectly usable source.
+            const triedSources = new Set<string>();
+            let best: MigrationTarget | null = null;
+            for (const candidate of candidates) {
+                if (triedSources.has(candidate.sourceId)) {
                     continue;
                 }
-                // a connector can list chapters but serve broken page lists
-                // (MangaHere grabbing): probe one chapter before committing
-                const pages = await adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title });
-                if (!pages.length) {
-                    throw new Error('page list is empty');
+                triedSources.add(candidate.sourceId);
+                if (triedSources.size > 4) {
+                    break; // bound the latency: 4 distinct sources max per round
                 }
-            } catch (error) {
-                console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
-                continue;
+                const adapter = await this.opts.registry.get(candidate.sourceId);
+                if (!adapter) {
+                    continue;
+                }
+                try {
+                    const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+                    const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
+                    if (!chapter) {
+                        console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
+                        continue;
+                    }
+                    // a connector can list chapters but serve broken page lists
+                    // (MangaHere grabbing): probe one chapter before committing
+                    const pages = await adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title });
+                    if (!pages.length) {
+                        throw new Error('page list is empty');
+                    }
+                } catch (error) {
+                    console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
+                    continue;
+                }
+                best = candidate;
+                break;
             }
-            best = candidate;
-            confidence = confidenceFor(candidate.score);
-            break;
+            if (best) {
+                return this._commitMigration(entry, best, auto);
+            }
         }
-        if (!best || confidence === 'none') {
-            return 'none';
-        }
+        return 'none';
+    }
+
+    /** Store or apply a validated migration target. */
+    private async _commitMigration(entry: { id: number; title: string }, best: MigrationTarget, auto: boolean): Promise<'migrated' | 'suggested' | 'none'> {
+        const confidence = confidenceFor(best.score);
         if (confidence === 'auto' && auto) {
             const result = await this.opts.store.migrateEntry(entry.id, best);
             console.log(`[failover] "${entry.title}" migré vers ${best.sourceLabel} (${result.kept}/${result.total} chapitres conservés)`);

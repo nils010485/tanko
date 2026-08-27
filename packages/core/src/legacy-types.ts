@@ -32,6 +32,8 @@ export interface LegacyConnector {
     config?: { path?: { value: string } };
     initialize(): Promise<void>;
     handleConnectorURI(uri: URL): Promise<{ data: BlobPart; mimeType: string }>;
+    /** Optional fast path: single-request site search (falls back to the full catalog scan). */
+    _searchMangas?(query: string): Promise<LegacyManga[]>;
     _getMangaList(callback: (error: unknown, mangas?: LegacyManga[]) => void): void;
     _getChapterList(manga: LegacyManga, callback: (error: unknown, chapters?: LegacyChapter[]) => void): void;
     _getPageList(manga: LegacyManga, chapter: LegacyChapter, callback: (error: unknown, pages?: unknown) => void): void;

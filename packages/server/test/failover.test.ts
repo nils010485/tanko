@@ -72,8 +72,6 @@ afterAll(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe('manual source picker (listAlternatives)', () => {
-
 describe('failure classification (classifyFailure)', () => {
     it('treats the MangaHere war.jpg placeholder as content-side removal', () => {
         expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe('content');
@@ -84,12 +82,41 @@ describe('failure classification (classifyFailure)', () => {
         expect(classifyFailure(null)).toBe('infra');
     });
 });
+
+describe('manual source picker (listAlternatives)', () => {
     it('lists one candidate per source, sorted by chapter count', async () => {
         const alternatives = await failover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
         // the current source is excluded; one row per remaining source
         expect(alternatives.map(a => a.sourceId)).toEqual(['richer', 'stranger', 'poorer']);
         expect(alternatives[0].chapterCount).toBe(120);
         expect(alternatives[0].score ?? 0).toBeGreaterThan(0.9);
+    });
+
+    it('goes deeper when a perfect match carries no preferred-language chapters', async () => {
+        // decoy = MangaDex-like: native, perfect title match, only foreign-language
+        // rips; rescue = aggregator carrying the title in the preferred language
+        const localAdapters: Record<string, unknown> = {
+            decoy: {
+                searchMangas: async () => [{ id: 'd1', title: 'Starved Series' }],
+                getChapters: async () => [{ id: 'c1', title: 'Ch.1', language: 'pl' }]
+            },
+            rescue: {
+                searchMangas: async () => [{ id: 'r1', title: 'Starved Series' }],
+                getChapters: async () => Array.from({ length: 9 }, (_, index) => ({ id: `r${index}`, title: `Ch.${index + 1}`, language: 'en' }))
+            }
+        };
+        const localFailover = new FailoverService({
+            registry: { get: async (id: string) => localAdapters[id] } as never,
+            store,
+            listSources: async () => [
+                { id: 'decoy', label: 'Decoy', tags: ['English'], kind: 'native' },
+                { id: 'rescue', label: 'Rescue', tags: ['English'], kind: 'legacy' }
+            ],
+            getPreferredLanguages: () => ['en']
+        });
+        const alternatives = await localFailover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
+        expect(alternatives.map(a => a.sourceId)).toEqual(['rescue']);
+        expect(alternatives[0].chapterCount).toBe(9);
     });
 });
 

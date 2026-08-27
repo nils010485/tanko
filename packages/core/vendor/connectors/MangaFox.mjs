@@ -105,6 +105,26 @@ export default class MangaFox extends Connector {
         });
     }
 
+    // Single-request search (the base class crawls the whole directory, which
+    // takes minutes on fanfox and starves any migration probe); results are
+    // <li> blocks whose item title link carries href + title
+    async _searchMangas(query) {
+        const uri = new URL('/search', this.url);
+        uri.searchParams.set('title', query);
+        const request = new Request(uri, this.requestOptions);
+        const data = await this.fetchDOM(request, 'p.manga-list-4-item-title a[title]', 3);
+        const seen = new Set();
+        const mangas = [];
+        for (const element of data) {
+            const id = this.getRootRelativeOrAbsoluteLink(element, this.url);
+            if (!seen.has(id)) {
+                seen.add(id);
+                mangas.push({ id: id, title: element.title.trim() });
+            }
+        }
+        return mangas;
+    }
+
     async _getPages(chapter) {
         const uri = new URL(chapter.id, this.url);
         let request = new Request(uri, this.requestOptions);
