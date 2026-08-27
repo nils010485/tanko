@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { VENDOR_PATH } from '@tanko/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CONNECTOR_OVERRIDES, VENDOR_PATH } from '@tanko/core';
 import { Database } from '../src/db.js';
-import { type CloneUpstream, CONNECTOR_OVERRIDES, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
+import { type CloneUpstream, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
 
 let dataDir: string;
 let database: Database;

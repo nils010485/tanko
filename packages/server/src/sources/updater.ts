@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { getVendorDirectory, VENDOR_PATH } from '@tanko/core';
+import { CONNECTOR_OVERRIDES, getVendorDirectory, VENDOR_PATH } from '@tanko/core';
 import type { ConnectorsUpdateInfo, ConnectorsUpdateStatus } from '@tanko/shared';
 import type { Database } from '../db.js';
 
@@ -20,14 +20,9 @@ const UPSTREAM_PATH = 'src/web/mjs';
 /** Minimum plausible connector count — guards against a broken upstream checkout. */
 const MIN_CONNECTORS = 1000;
 
-/**
- * Connectors we patch on top of upstream. Sites change under upstream's feet
- * and its connectors break (e.g. mangahere removed the newImgs global from
- * its webtoon reader); our bundled version carries the fix. The updater
- * copies these over the synced tree so clicking "update sources" never
- * regresses them. Drop an entry once upstream ships the same fix.
- */
-export const CONNECTOR_OVERRIDES = ['MangaFox.mjs'];
+// CONNECTOR_OVERRIDES (patched connectors re-applied over the synced tree
+// below and always loaded from the bundled vendor by the engine) is defined
+// and documented in @tanko/core.
 
 export const CONNECTORS_UPDATE_KEY = 'connectors-update';
 

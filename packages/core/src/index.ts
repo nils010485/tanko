@@ -1,5 +1,5 @@
 export type { EngineContext, LoadResult } from './engine.js';
-export { createEngine, getConnector, getVendorDirectory, loadConnectors, VENDOR_PATH } from './engine.js';
+export { CONNECTOR_OVERRIDES, createEngine, getConnector, getVendorDirectory, loadConnectors, VENDOR_PATH } from './engine.js';
 export { installGlobals } from './shims/globals.js';
 export { HeadlessRequest, prepareHeaders, randomUserAgent, retryAfterMs } from './shims/request.js';
 export { HeadlessSettings } from './shims/settings.js';

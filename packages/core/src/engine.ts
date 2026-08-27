@@ -32,6 +32,16 @@ export interface LoadResult {
 /** Directory containing the vendored legacy engine (src/web/mjs of hakuneko). */
 export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
 
+/**
+ * Connectors we patch on top of the upstream Hakuneko tree. Sites change
+ * under upstream's feet and its connectors break (e.g. mangahere removed
+ * the newImgs global from its webtoon reader); our bundled version carries
+ * the fix. These files are ALWAYS loaded from the bundled vendor — even
+ * when a previously synced copy shadows it — and the sources updater
+ * re-applies them over every new sync. Drop an entry once upstream ships
+ * the same fix.
+ */
+export const CONNECTOR_OVERRIDES = ['MangaFox.mjs'];
 const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;
 /** Active vendor directory: synced copy in the data directory if present, else the built-in one. */
@@ -68,7 +78,17 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     // Prefer a synced copy of the connectors (written by the updater) over the
     // built-in vendored one; falls back when no sync has happened yet.
     const syncedVendor = path.join(dataDirectory, 'vendor');
-    activeVendorPath = directoryHasConnectors(path.join(syncedVendor, 'connectors')) ? syncedVendor : VENDOR_PATH;
+    const syncedConnectors = path.join(syncedVendor, 'connectors');
+    activeVendorPath = directoryHasConnectors(syncedConnectors) ? syncedVendor : VENDOR_PATH;
+    // Self-heal an already-synced tree: re-apply the patched connectors over
+    // it (the updater does the same after each sync) — otherwise an old synced
+    // copy shadows bundled fixes, including for subclasses that import their
+    // base connector with a relative path.
+    if (activeVendorPath !== VENDOR_PATH) {
+        for (const file of CONNECTOR_OVERRIDES) {
+            fs.copyFileSync(path.join(VENDOR_PATH, 'connectors', file), path.join(syncedConnectors, file));
+        }
+    }
     const settings = new HeadlessSettings(dataDirectory);
     const storage = new HeadlessStorage(settings);
     const request = new HeadlessRequest();
