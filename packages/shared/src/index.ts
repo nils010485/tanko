@@ -365,6 +365,7 @@ export type WsEvent =
     | { type: 'library.updated'; entry: LibraryEntryDto }
     | { type: 'schedule.status'; status: ScheduleStatusDto }
     | { type: 'queue.status'; status: QueueStatusDto }
+    | { type: 'sources.updated' }
     | ({ type: 'log'; id?: number; level: LogLevel; message: string; at: string } & LogEventMeta);
 
 // ---------------------------------------------------------------------------

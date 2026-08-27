@@ -104,7 +104,15 @@ function MangaResultCard({
     );
 }
 
-export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedToLibrary: () => void; onOpenSeries?: (id: number) => void }) {
+export default function Discover({
+    onAddedToLibrary,
+    onOpenSeries,
+    sourcesVersion
+}: {
+    onAddedToLibrary: () => void;
+    onOpenSeries?: (id: number) => void;
+    sourcesVersion: number;
+}) {
     const [sources, setSources] = useState<SourceDto[]>([]);
     const [showHidden, setShowHidden] = useState(false);
     const [comboOpen, setComboOpen] = useState(false);
@@ -156,6 +164,15 @@ export default function Discover({ onAddedToLibrary, onOpenSeries }: { onAddedTo
             }
         });
     }, [refreshSources]);
+    // rolling health re-checks push sources.updated — refresh the statuses live
+    const seenSourcesVersion = useRef(sourcesVersion);
+    useEffect(() => {
+        if (sourcesVersion === seenSourcesVersion.current) {
+            return;
+        }
+        seenSourcesVersion.current = sourcesVersion;
+        void refreshSources().catch(() => undefined);
+    }, [sourcesVersion, refreshSources]);
 
     // close the combobox when clicking outside
     useEffect(() => {

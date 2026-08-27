@@ -22,6 +22,8 @@ export interface LiveState {
     logs: LogLine[];
     /** error-level events since the last Activity visit (sidebar badge). */
     unreadErrors: number;
+    /** Bumped on every WS sources.updated — Discover refetches source health when it changes. */
+    sourcesVersion: number;
     markActivitySeen: () => void;
     refreshLibrary: () => Promise<void>;
     refreshJobs: () => Promise<void>;
@@ -48,6 +50,7 @@ export function useLiveState(): LiveState {
     const [queueStatus, setQueueStatus] = useState<QueueStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
     const [unreadErrors, setUnreadErrors] = useState(0);
+    const [sourcesVersion, setSourcesVersion] = useState(0);
     const logSeq = useRef(0);
     /** Row ids already known (REST load or previous frames) — WS replay dedupe. */
     const seenLogIds = useRef<Set<number>>(new Set());
@@ -174,6 +177,9 @@ export function useLiveState(): LiveState {
                         case 'schedule.status':
                             setSchedule(message.status);
                             break;
+                        case 'sources.updated':
+                            setSourcesVersion(version => version + 1);
+                            break;
                         case 'log':
                             // replayed frames (reconnect) carry ids the REST load already
                             // returned — skipping them keeps the unread counter honest
@@ -205,5 +211,19 @@ export function useLiveState(): LiveState {
         };
     }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity, refreshUnread]);
 
-    return { connected, jobs, jobsLoaded, library, libraryLoaded, queueStatus, schedule, logs, unreadErrors, markActivitySeen, refreshLibrary, refreshJobs };
+    return {
+        connected,
+        jobs,
+        jobsLoaded,
+        library,
+        libraryLoaded,
+        queueStatus,
+        schedule,
+        logs,
+        unreadErrors,
+        sourcesVersion,
+        markActivitySeen,
+        refreshLibrary,
+        refreshJobs
+    };
 }

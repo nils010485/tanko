@@ -355,6 +355,8 @@ if (fs.existsSync(config.dashboardDirectory)) {
 
 // Background health probe for the (few) native sources at startup
 healthService.probeNative().catch(error => console.warn('[health] native probe failed:', error));
+// rolling re-check: probes due/dead sources in the background (backoff ladder)
+healthService.start();
 
 await app.listen({ host: config.host, port: config.port });
 console.log(`[server] listening on http://${config.host}:${config.port} (data: ${config.dataDirectory})`);
@@ -365,6 +367,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         console.log(`[server] received ${signal}, shutting down...`);
         queue.stop();
         scheduler.stop();
+        healthService.stop();
         await app.close();
         database.close();
         process.exit(0);

@@ -9,10 +9,10 @@
  */
 import type { SourceRegistry } from '@tanko/core';
 import type { SourceAlternativeDto } from '@tanko/shared';
+import type { SourceInfo } from '../import/service.js';
 import { AUTO_THRESHOLD, confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
-import type { SourceInfo } from '../import/service.js';
 
 /** Healthy sources first (natives outrank them anyway — see findAlternative). */
 function byHealth(a: SourceInfo, b: SourceInfo): number {
@@ -151,7 +151,10 @@ export class FailoverService {
      * scored candidates (best first) plus every source id attempted — callers
      * exclude those from the next round.
      */
-    async findAlternative(entry: { id: number; sourceId: string; title: string }, opts: { maxSources?: number; deadlineMs?: number; excludeSources?: ReadonlySet<string> } = {}): Promise<{
+    async findAlternative(
+        entry: { id: number; sourceId: string; title: string },
+        opts: { maxSources?: number; deadlineMs?: number; excludeSources?: ReadonlySet<string> } = {}
+    ): Promise<{
         candidates: MigrationTarget[];
         searched: string[];
     }> {
@@ -159,13 +162,7 @@ export class FailoverService {
         // natives (fast APIs) first, then healthy sources; the label tiebreak
         // is arbitrary — the cap below, not this order, is the real bound
         const sources = (await this.opts.listSources())
-            .filter(
-                source =>
-                    !source.hidden &&
-                    source.id !== entry.sourceId &&
-                    !opts.excludeSources?.has(source.id) &&
-                    sourceUsable(source.tags, preferred)
-            )
+            .filter(source => !source.hidden && source.id !== entry.sourceId && !opts.excludeSources?.has(source.id) && sourceUsable(source.tags, preferred))
             .sort((a, b) => byKind(a, b) || byHealth(a, b) || a.label.localeCompare(b.label))
             .slice(0, opts.maxSources ?? CRAWL_SOURCES);
 
@@ -226,7 +223,10 @@ export class FailoverService {
     /** Shared round driver: yields each round's candidates (best first) and
      * internally tracks the attempted sources so every round goes deeper.
      * Ends after VALIDATION_ROUNDS or once no source is left to crawl. */
-    private async *_crawlRounds(entry: { id: number; sourceId: string; title: string }, opts: { maxSources?: number; deadlineMs?: number } = {}): AsyncGenerator<MigrationTarget[]> {
+    private async *_crawlRounds(
+        entry: { id: number; sourceId: string; title: string },
+        opts: { maxSources?: number; deadlineMs?: number } = {}
+    ): AsyncGenerator<MigrationTarget[]> {
         const done = new Set<string>(); // attempted and/or rejected sources
         for (let round = 0; round < VALIDATION_ROUNDS; round++) {
             const { candidates, searched } = await this.findAlternative(entry, { ...opts, excludeSources: done });
@@ -281,7 +281,11 @@ export class FailoverService {
             if (!adapter) {
                 return null;
             }
-            const chapters = await withTimeout(adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }), VALIDATION_TIMEOUT_MS, 'chapter list timeout');
+            const chapters = await withTimeout(
+                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }),
+                VALIDATION_TIMEOUT_MS,
+                'chapter list timeout'
+            );
             const chapterCount = chapters.filter(chapter => chapterAllowed(chapter.language, preferred)).length;
             return chapterCount > 0 ? { ...candidate, chapterCount } : null;
         } catch {
@@ -440,7 +444,11 @@ export class FailoverService {
             if (!adapter) {
                 return false;
             }
-            const chapters = await withTimeout(adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }), VALIDATION_TIMEOUT_MS, 'chapter list timeout');
+            const chapters = await withTimeout(
+                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }),
+                VALIDATION_TIMEOUT_MS,
+                'chapter list timeout'
+            );
             const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
             if (!chapter) {
                 console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);

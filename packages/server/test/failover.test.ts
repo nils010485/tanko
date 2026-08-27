@@ -74,7 +74,9 @@ afterAll(() => {
 
 describe('failure classification (classifyFailure)', () => {
     it('treats the MangaHere war.jpg placeholder as content-side removal', () => {
-        expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe('content');
+        expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe(
+            'content'
+        );
     });
     it('keeps treating CDN/network noise as infra', () => {
         expect(classifyFailure('Failed to download page "https://zjcdn.mangahere.org/x.jpg": non-image page (text/plain, 0 bytes)')).toBe('infra');

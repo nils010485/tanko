@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CONNECTOR_OVERRIDES, VENDOR_PATH } from '@tanko/core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
 import { type CloneUpstream, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
 

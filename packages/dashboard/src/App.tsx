@@ -157,7 +157,9 @@ export default function App() {
                 {/* Main content */}
                 <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
                     <div className="mx-auto max-w-5xl">
-                        {tab === 'discover' && <Discover onAddedToLibrary={live.refreshLibrary} onOpenSeries={navigateSeries} />}
+                        {tab === 'discover' && (
+                            <Discover onAddedToLibrary={live.refreshLibrary} onOpenSeries={navigateSeries} sourcesVersion={live.sourcesVersion} />
+                        )}
                         {tab === 'library' && seriesId === null && (
                             <Library
                                 library={live.library}
