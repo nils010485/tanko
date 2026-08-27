@@ -110,6 +110,13 @@ export default class MangaFox extends Connector {
         let request = new Request(uri, this.requestOptions);
         const pages = await Engine.Request.fetchUI(request, this.script);
 
+        // the image endpoint answers with a war.jpg placeholder for titles the
+        // site no longer serves (removed/licensed) — fail with a clear error
+        // instead of a download queue full of placeholder pages
+        if (pages.length > 0 && pages.every(link => link.includes('/war.jpg'))) {
+            throw new Error('source serves no images for this title (removed or licensed on MangaHere/MangaFox)');
+        }
+
         const pageList = pages.map(link => this.createConnectorURI({
             url: link,
             referer: this.url
