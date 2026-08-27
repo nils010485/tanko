@@ -14,10 +14,13 @@ import { useEscapeKey } from '../lib/hooks.js';
 import { Cover } from './Cover.js';
 import { IconAlert, IconArrowLeftRight, IconCheck, IconUndo, IconX } from './icons.js';
 import { useToast } from './toast.js';
+import type { BadgeTone } from './ui.js';
 import { Badge, Button, ProgressBar } from './ui.js';
 
 /** Above this score the bulk button offers to migrate everything at once. */
 const HIGH_SCORE = 0.9;
+/** Above this score the match badge is green; below LOW_SCORE it is red. */
+const GOOD_SCORE = 0.85;
 /** Below this score the card shows a warning before migrating. */
 const LOW_SCORE = 0.8;
 
@@ -33,6 +36,17 @@ function nextPendingIndex(entries: LibraryEntryDto[], decided: Record<number, Ou
         }
     }
     return from;
+}
+
+/** Badge tone for the title-match score: green when confident, red when weak. */
+function matchTone(score: number): BadgeTone {
+    if (score >= GOOD_SCORE) {
+        return 'green';
+    }
+    if (score >= LOW_SCORE) {
+        return 'blue';
+    }
+    return 'red';
 }
 
 export function MigrationModal({
@@ -86,7 +100,7 @@ export function MigrationModal({
     }, []);
 
     /** Confirm or dismiss one suggestion; returns whether it was applied. */
-    const confirm = useCallback(
+    const confirmSuggestion = useCallback(
         async (entry: LibraryEntryDto, apply: boolean, silent = false): Promise<boolean> => {
             try {
                 const result = await api.confirmRematch(entry.id, apply);
@@ -113,15 +127,16 @@ export function MigrationModal({
                 return;
             }
             lock('act');
-            const decided = { ...results, [entry.id]: apply ? ('migrated' as const) : ('dismissed' as const) };
-            if (await confirm(entry, apply)) {
+            const outcome: Outcome = apply ? 'migrated' : 'dismissed';
+            const decided = { ...results, [entry.id]: outcome };
+            if (await confirmSuggestion(entry, apply)) {
                 setResults(decided);
                 setIndex(nextPendingIndex(snapshot, decided, index));
                 onChanged();
             }
             lock(null);
         },
-        [snapshot, index, results, confirm, lock, onChanged]
+        [snapshot, index, results, confirmSuggestion, lock, onChanged]
     );
 
     const skip = useCallback(() => {
@@ -143,7 +158,7 @@ export function MigrationModal({
             if (decided[entry.id] || (entry.migrationSuggestion?.score ?? 0) < HIGH_SCORE) {
                 continue;
             }
-            if (!(await confirm(entry, true, true))) {
+            if (!(await confirmSuggestion(entry, true, true))) {
                 break;
             }
             decided[entry.id] = 'migrated';
@@ -182,7 +197,7 @@ export function MigrationModal({
             return undefined;
         }
         const onKey = (event: KeyboardEvent) => {
-            if (busy || event.metaKey || event.ctrlKey || event.altKey) {
+            if (busyRef.current || event.metaKey || event.ctrlKey || event.altKey) {
                 return;
             }
             const target = event.target as HTMLElement | null;
@@ -202,7 +217,7 @@ export function MigrationModal({
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [open, allDone, busy, act, skip]);
+    }, [open, allDone, act, skip]);
 
     if (!open || snapshot.length === 0) {
         return null;
@@ -212,8 +227,9 @@ export function MigrationModal({
     const suggestedChapters = suggestion?.chapterCount ?? 0;
     const gain = current ? suggestedChapters - current.chapterCount : 0;
     const score = suggestion?.score ?? 0;
-    const matchTone = score >= 0.85 ? 'green' : score >= LOW_SCORE ? 'blue' : 'red';
     const titleDiffers = !!suggestion && suggestion.mangaTitle.toLowerCase() !== current.title.toLowerCase();
+    const migratedEntries = snapshot.filter(entry => results[entry.id] === 'migrated');
+    const dismissedEntries = snapshot.filter(entry => results[entry.id] === 'dismissed');
 
     const kbd = (key: string, label: string) => (
         <span className="flex items-center gap-1.5">
@@ -225,14 +241,14 @@ export function MigrationModal({
     const chip = (entry: LibraryEntryDto, position: number) => {
         const outcome = results[entry.id];
         const active = position === index;
-        const className =
-            outcome === 'migrated'
-                ? 'border-green-500/40 bg-green-500/10 text-green-400'
-                : outcome === 'dismissed'
-                  ? 'border-zinc-700 bg-zinc-800/50 text-faint line-through'
-                  : active
-                    ? 'border-accent/60 bg-accent/10 font-medium text-accent-soft'
-                    : 'border-zinc-700 text-zinc-400 hover:bg-zinc-800';
+        let className = 'border-zinc-700 text-zinc-400 hover:bg-zinc-800';
+        if (outcome === 'migrated') {
+            className = 'border-green-500/40 bg-green-500/10 text-green-400';
+        } else if (outcome === 'dismissed') {
+            className = 'border-zinc-700 bg-zinc-800/50 text-faint line-through';
+        } else if (active) {
+            className = 'border-accent/60 bg-accent/10 font-medium text-accent-soft';
+        }
         return (
             <button
                 key={entry.id}
@@ -328,12 +344,12 @@ export function MigrationModal({
                         </div>
                         <h3 className="font-bold">{t('library.migrationModalDone')}</h3>
                         <div className="mx-auto mt-4 max-w-md space-y-1.5 text-left">
-                            {snapshot.filter(entry => results[entry.id] === 'migrated').map(entry => summaryRow(entry, 'migrated'))}
-                            {snapshot.filter(entry => results[entry.id] === 'dismissed').map(entry => summaryRow(entry, 'dismissed'))}
+                            {migratedEntries.map(entry => summaryRow(entry, 'migrated'))}
+                            {dismissedEntries.map(entry => summaryRow(entry, 'dismissed'))}
                             <div className="pt-1 text-center text-xs text-faint">
                                 {t('library.migrationSummary', {
-                                    migrated: Object.values(results).filter(outcome => outcome === 'migrated').length,
-                                    dismissed: Object.values(results).filter(outcome => outcome === 'dismissed').length
+                                    migrated: migratedEntries.length,
+                                    dismissed: dismissedEntries.length
                                 })}
                             </div>
                         </div>
@@ -377,7 +393,7 @@ export function MigrationModal({
                                             </div>
                                         </div>
                                         <span title={t('library.migrationMatchHint')}>
-                                            <Badge tone={matchTone}>{t('library.migrationMatch', { pct: Math.round(score * 100) })}</Badge>
+                                            <Badge tone={matchTone(score)}>{t('library.migrationMatch', { pct: Math.round(score * 100) })}</Badge>
                                         </span>
                                     </div>
 
