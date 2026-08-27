@@ -212,6 +212,10 @@ export const api = {
             method: 'POST',
             body: JSON.stringify(target)
         }),
+    updateAliases: (entryId: number, aliases: string[]) =>
+        request<{ entry: LibraryEntryDto | null }>(`/api/library/${entryId}/aliases`, { method: 'PUT', body: JSON.stringify({ aliases }) }),
+    fetchAliases: (entryId: number) =>
+        request<{ entry: LibraryEntryDto | null; fetched: string[] }>(`/api/library/${entryId}/aliases/fetch`, { method: 'POST' }),
 
     // downloads
     downloads: (params: { limit?: number; offset?: number; status?: string; q?: string } = {}) => {

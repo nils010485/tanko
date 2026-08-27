@@ -242,6 +242,16 @@ export const en = {
     'series.changeSourceCurrent': 'current',
     'series.changeSourceMore': '+{n} vs current',
     'series.changeSourceMatch': '{n}% match',
+    'series.changeSourceTriedAliases': 'Also tried under: {names}',
+    'series.aliases': 'Other names',
+    'series.aliasesHint': 'Also searched when looking for other sources — manhwas are often hosted under another title.',
+    'series.aliasPlaceholder': 'Add a name…',
+    'series.aliasAdd': 'Add',
+    'series.aliasRemoveHint': 'Remove this name',
+    'series.aliasFetch': 'AniList',
+    'series.aliasFetchHint': 'Fetch the official and alternative titles from AniList',
+    'series.aliasFetched': '{n} name(s) found on AniList',
+    'series.aliasFetchEmpty': 'No match on AniList.',
     'series.incompleteBadge': 'only {n} chapters on this source',
 
     // downloads

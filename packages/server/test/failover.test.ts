@@ -228,3 +228,38 @@ describe('opt-in stalled-source detection (suggestIfStalled)', () => {
         expect(store.getEntry(stalledId)?.migrationSuggestion).toBeUndefined();
     });
 });
+
+describe('search aliases (manual / AniList names)', () => {
+    it('searches every alias until a source answers and scores against the best matching name', async () => {
+        const queries: string[] = [];
+        const adapters = {
+            current: adapterWith(5, 'Aliased Series'),
+            renamed: {
+                // answers only when searched by the alias (the current title misses)
+                searchMangas: async (query: string) => {
+                    queries.push(query);
+                    return query === 'Other Name' ? [{ id: 'x1', title: 'Other Name' }] : [];
+                },
+                getChapters: async () => Array.from({ length: 30 }, (_, index) => ({ id: `x${index + 1}`, title: `Ch.${index + 1}`, language: 'en' }))
+            }
+        };
+        const aliasFailover = new FailoverService({
+            registry: { get: async (id: string) => adapters[id], list: async () => [] } as never,
+            store,
+            listSources: async () => [
+                { id: 'current', label: 'Current', tags: ['English'], kind: 'native' },
+                { id: 'renamed', label: 'Renamed', tags: ['English'], kind: 'native' }
+            ],
+            getPreferredLanguages: () => ['en']
+        });
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'am', title: 'Aliased Series', backlog: 'ignore' });
+        store.setAliases(entry.id, ['Other Name']);
+        const alternatives = await aliasFailover.listAlternatives({ id: entry.id, sourceId: 'current', title: 'Aliased Series' });
+        // both names were tried per source; the alias is what found it
+        expect(queries).toEqual(['Aliased Series', 'Other Name']);
+        expect(alternatives.map(a => a.sourceId)).toEqual(['renamed']);
+        // listed under the alias exactly: a perfect best-name match even
+        // though the current title shares nothing with it
+        expect(alternatives[0].score).toBe(1);
+    });
+});

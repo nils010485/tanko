@@ -2,6 +2,7 @@ import type { LibraryBulkAction, LibraryEntryDto, SourceAlternativeDto, SourceAl
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { JobRunner } from '../activity/jobs.js';
 import type { DownloadQueue } from '../downloader/queue.js';
+import { fetchTitleAliases } from '../library/anilist.js';
 import type { CoverService } from '../library/covers.js';
 import { type FailoverService, INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
 import type { LibraryStore } from '../library/store.js';
@@ -500,12 +501,59 @@ export function registerLibraryRoutes(
             return reply;
         }
         try {
-            const alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            let alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            // Nothing under the known names: the series is probably hosted under
+            // another title — ask AniList once, merge what it knows, retry the
+            // crawl once (the failover re-reads the aliases from the store).
+            let autoAliases: string[] | undefined;
+            if (alternatives.length === 0) {
+                try {
+                    const known = entry.aliases ?? [];
+                    const fetched = await fetchTitleAliases(entry.title);
+                    const merged = store.setAliases(entry.id, [...known, ...fetched]);
+                    if (merged.length > known.length) {
+                        autoAliases = merged;
+                        publishEntry(entry.id);
+                        alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+                    }
+                } catch {
+                    // AniList being unreachable must not fail the picker
+                }
+            }
             const payload: SourceAlternativesResponseDto = {
                 current: { sourceId: entry.sourceId, sourceLabel: entry.sourceLabel, chapterCount: entry.chapterCount },
                 alternatives
             };
-            return payload;
+            return autoAliases ? { ...payload, autoAliases } : payload;
+        } catch (error) {
+            return reply.code(502).send({ error: (error as Error).message });
+        }
+    });
+
+    // Alias titles the failover also searches (manual editor): replaces the list
+    app.put<{ Params: { entryId: string }; Body: { aliases?: string[] } }>('/api/library/:entryId/aliases', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        const aliases = request.body?.aliases;
+        if (!Array.isArray(aliases) || aliases.some(alias => typeof alias !== 'string')) {
+            return reply.code(400).send({ error: 'Body must contain an aliases string array' });
+        }
+        store.setAliases(entry.id, aliases);
+        return { entry: publishEntry(entry.id) };
+    });
+
+    // AniList lookup: merge the official + alternative titles into the aliases
+    app.post<{ Params: { entryId: string } }>('/api/library/:entryId/aliases/fetch', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        try {
+            const fetched = await fetchTitleAliases(entry.title);
+            store.setAliases(entry.id, [...(entry.aliases ?? []), ...fetched]);
+            return { entry: publishEntry(entry.id), fetched };
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });
         }

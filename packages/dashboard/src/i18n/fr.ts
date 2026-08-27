@@ -243,6 +243,16 @@ export const fr: typeof import('./en.js').en = {
     'series.changeSourceCurrent': 'actuelle',
     'series.changeSourceMore': '+{n} vs actuelle',
     'series.changeSourceMatch': '{n}% de correspondance',
+    'series.changeSourceTriedAliases': 'Essayée aussi sous : {names}',
+    'series.aliases': 'Autres noms',
+    'series.aliasesHint': 'Aussi utilisés lors de la recherche d’autres sources — les manhwas sont souvent hébergés sous un autre titre.',
+    'series.aliasPlaceholder': 'Ajouter un nom…',
+    'series.aliasAdd': 'Ajouter',
+    'series.aliasRemoveHint': 'Retirer ce nom',
+    'series.aliasFetch': 'AniList',
+    'series.aliasFetchHint': 'Récupère les titres officiels et alternatifs depuis AniList',
+    'series.aliasFetched': '{n} nom(s) trouvés sur AniList',
+    'series.aliasFetchEmpty': 'Aucune correspondance sur AniList.',
     'series.incompleteBadge': 'seulement {n} chapitres sur cette source',
 
     // downloads

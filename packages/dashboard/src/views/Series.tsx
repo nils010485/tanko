@@ -55,6 +55,8 @@ export default function Series({
     });
     /** sourceId of the alternative being migrated to (row-level loading). */
     const [migratingTo, setMigratingTo] = useState<string | null>(null);
+    /** Alias-editor input in the source picker. */
+    const [aliasInput, setAliasInput] = useState('');
     const { t, formatDate } = useI18n();
     /** Ignore responses that resolve after a newer fetch started (series switch, poll, refresh). */
     const requestSeq = useRef(0);
@@ -162,12 +164,52 @@ export default function Series({
         try {
             const data = await api.entryAlternatives(entryId);
             setPicker({ open: true, loading: false, error: '', data });
+            // names were auto-merged from AniList after an empty crawl: refresh so the alias chips show them
+            if (data.autoAliases) {
+                await refreshLibrary();
+            }
         } catch (error) {
             setPicker({ open: true, loading: false, error: (error as Error).message, data: null });
         }
     };
 
     const closePicker = () => setPicker(current => ({ ...current, open: false }));
+
+    /** Save the alias list, refresh the entry, then re-run the source search —
+     *  editing a name only ever aims at finding more sources. */
+    const saveAliases = async (aliases: string[]) => {
+        try {
+            await api.updateAliases(entryId, aliases);
+            await refreshLibrary();
+            await openPicker();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
+    const addAlias = async () => {
+        const alias = aliasInput.trim();
+        if (!entry || alias === '') {
+            return;
+        }
+        setAliasInput('');
+        await saveAliases([...(entry.aliases ?? []), alias]);
+    };
+
+    /** Merge AniList's official + alternative titles into the aliases. */
+    const fetchAliasesFromAniList = async () => {
+        setBusyFlag('aliasFetch', true);
+        try {
+            const result = await api.fetchAliases(entryId);
+            await refreshLibrary();
+            toast.info(result.fetched.length > 0 ? t('series.aliasFetched', { n: result.fetched.length }) : t('series.aliasFetchEmpty'));
+            await openPicker();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setBusyFlag('aliasFetch', false);
+        }
+    };
 
     const migrateTo = async (target: SourceAlternativeDto) => {
         setMigratingTo(target.sourceId);
@@ -466,6 +508,45 @@ export default function Series({
                         <div className="mt-1 text-xs text-zinc-500">
                             {entry.sourceLabel} · {t('library.chaptersCount', { n: entry.chapterCount })} ({t('series.changeSourceCurrent')})
                         </div>
+
+                        {/* alias editor: the other names the failover searches too (AniList or manual) */}
+                        <div className="mt-3 rounded-lg border border-line bg-zinc-950/50 p-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs text-zinc-500">{t('series.aliases')}:</span>
+                                {(entry.aliases ?? []).map(alias => (
+                                    <button
+                                        key={alias}
+                                        type="button"
+                                        onClick={() => void saveAliases((entry.aliases ?? []).filter(item => item !== alias))}
+                                        title={t('series.aliasRemoveHint')}
+                                        className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-zinc-300 transition-colors hover:border-red-500/50 hover:text-red-400"
+                                    >
+                                        {alias} <IconX size={10} />
+                                    </button>
+                                ))}
+                                <Button small variant="ghost" onClick={fetchAliasesFromAniList} loading={busy.aliasFetch} title={t('series.aliasFetchHint')}>
+                                    {t('series.aliasFetch')}
+                                </Button>
+                            </div>
+                            <form
+                                className="mt-2 flex gap-2"
+                                onSubmit={event => {
+                                    event.preventDefault();
+                                    void addAlias();
+                                }}
+                            >
+                                <input
+                                    value={aliasInput}
+                                    onChange={event => setAliasInput(event.target.value)}
+                                    placeholder={t('series.aliasPlaceholder')}
+                                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface/60 px-2.5 py-1.5 text-sm text-fg placeholder:text-zinc-600 focus:border-accent/60 focus:outline-none"
+                                />
+                                <Button small type="submit" disabled={aliasInput.trim() === ''}>
+                                    {t('series.aliasAdd')}
+                                </Button>
+                            </form>
+                            <div className="mt-1.5 text-xs text-zinc-600">{t('series.aliasesHint')}</div>
+                        </div>
                         {picker.loading ? (
                             <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
                                 <Spinner /> {t('series.changeSourceSearching')}
@@ -473,7 +554,14 @@ export default function Series({
                         ) : picker.error ? (
                             <div className="mt-4 text-sm text-red-400">{picker.error}</div>
                         ) : (picker.data?.alternatives.length ?? 0) === 0 ? (
-                            <div className="mt-4 text-sm text-zinc-500">{t('series.changeSourceEmpty')}</div>
+                            <div className="mt-4 text-sm text-zinc-500">
+                                {t('series.changeSourceEmpty')}
+                                {picker.data?.autoAliases && (
+                                    <div className="mt-1 text-xs text-zinc-600">
+                                        {t('series.changeSourceTriedAliases', { names: picker.data.autoAliases.join(', ') })}
+                                    </div>
+                                )}
+                            </div>
                         ) : (
                             <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
                                 {picker.data?.alternatives.map(alternative => (
