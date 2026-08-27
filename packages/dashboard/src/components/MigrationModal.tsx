@@ -197,7 +197,7 @@ export function MigrationModal({
             return undefined;
         }
         const onKey = (event: KeyboardEvent) => {
-            if (busyRef.current || event.metaKey || event.ctrlKey || event.altKey) {
+            if (busyRef.current || event.repeat || event.metaKey || event.ctrlKey || event.altKey) {
                 return;
             }
             const target = event.target as HTMLElement | null;
@@ -205,6 +205,11 @@ export function MigrationModal({
                 return;
             }
             if (event.key === 'Enter') {
+                // let a focused button (Migrer/Refuser/chip) handle its own
+                // activation instead of diverting Enter to act(true)
+                if (target?.closest('button') || target?.closest('a')) {
+                    return;
+                }
                 event.preventDefault();
                 act(true);
             } else if (event.key.toLowerCase() === 'x') {
@@ -253,7 +258,7 @@ export function MigrationModal({
             <button
                 key={entry.id}
                 type="button"
-                disabled={!!busy}
+                disabled={!!busy || !!outcome}
                 onClick={() => setIndex(position)}
                 title={entry.title}
                 className={`max-w-45 shrink-0 truncate rounded-md border px-2.5 py-1 text-xs transition-colors ${className}`}
@@ -291,7 +296,7 @@ export function MigrationModal({
         <div
             className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
             onClick={event => {
-                if (event.target === event.currentTarget) {
+                if (!busyRef.current && event.target === event.currentTarget) {
                     onClose();
                 }
             }}
