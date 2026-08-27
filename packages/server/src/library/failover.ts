@@ -33,6 +33,18 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
     });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
+
+/** Validation budget for one candidate's chapter list. */
+const VALIDATION_TIMEOUT_MS = 20_000;
+/** Validation budget for a page-list probe — sequential per-page requests
+ * on long chapters legitimately take tens of seconds. */
+const PAGE_PROBE_TIMEOUT_MS = 90_000;
+/** Search results kept per source / candidates kept per round. */
+const MAX_SEARCH_RESULTS = 8;
+/** Distinct alternatives shown by the manual source picker. */
+const MAX_PICKER_ALTERNATIVES = 6;
+/** Distinct candidates fully validated per round. */
+const MAX_VALIDATIONS_PER_ROUND = 4;
 /** Parallel searches per wave of the alternative crawl. Dead sites hang
  * until their fetch timeout, so every search is individually bounded below
  * and only wave STARTS are deadline-bound. */
@@ -187,7 +199,7 @@ export class FailoverService {
                                 break;
                             }
                         }
-                        return results.slice(0, 8).map(manga => ({
+                        return results.slice(0, MAX_SEARCH_RESULTS).map(manga => ({
                             sourceId: source.id,
                             sourceLabel: source.label,
                             mangaId: manga.id,
@@ -208,7 +220,7 @@ export class FailoverService {
         }
 
         candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
-        return { candidates: candidates.slice(0, 8), searched };
+        return { candidates: candidates.slice(0, MAX_SEARCH_RESULTS), searched };
     }
 
     /** Shared round driver: yields each round's candidates (best first) and
@@ -246,7 +258,7 @@ export class FailoverService {
                 }
             }
             for (const candidate of perSource.values()) {
-                if (alternatives.length >= 6) {
+                if (alternatives.length >= MAX_PICKER_ALTERNATIVES) {
                     break; // bound the latency: 6 distinct sources max
                 }
                 const alternative = await this._countChapters(candidate, preferred);
@@ -254,7 +266,7 @@ export class FailoverService {
                     alternatives.push(alternative);
                 }
             }
-            if (alternatives.length >= 6) {
+            if (alternatives.length >= MAX_PICKER_ALTERNATIVES) {
                 break;
             }
         }
@@ -269,7 +281,7 @@ export class FailoverService {
             if (!adapter) {
                 return null;
             }
-            const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+            const chapters = await withTimeout(adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }), VALIDATION_TIMEOUT_MS, 'chapter list timeout');
             const chapterCount = chapters.filter(chapter => chapterAllowed(chapter.language, preferred)).length;
             return chapterCount > 0 ? { ...candidate, chapterCount } : null;
         } catch {
@@ -346,13 +358,7 @@ export class FailoverService {
         isBetter: (alternative: SourceAlternativeDto) => boolean,
         reason: string
     ): Promise<boolean> {
-        if (this.detectionRunning.has(entry.id)) {
-            return false;
-        }
-        if (this.opts.store.getEntry(entry.id)?.migrationSuggestion) {
-            return false; // a suggestion is already awaiting review
-        }
-        this.detectionRunning.add(entry.id);
+        this.detectionRunning.add(entry.id); // guards live in the callers
         try {
             const alternatives = await this.listAlternatives(entry);
             // the probe takes seconds of network: the entry may have been
@@ -413,7 +419,7 @@ export class FailoverService {
                     continue;
                 }
                 triedSources.add(candidate.sourceId);
-                if (triedSources.size > 4) {
+                if (triedSources.size > MAX_VALIDATIONS_PER_ROUND) {
                     break; // bound the latency: 4 distinct sources max per round
                 }
                 if (await this._isUsable(entry, candidate, preferred)) {
@@ -434,13 +440,17 @@ export class FailoverService {
             if (!adapter) {
                 return false;
             }
-            const chapters = await adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle });
+            const chapters = await withTimeout(adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }), VALIDATION_TIMEOUT_MS, 'chapter list timeout');
             const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
             if (!chapter) {
                 console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
                 return false;
             }
-            const pages = await adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title });
+            const pages = await withTimeout(
+                adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title }),
+                PAGE_PROBE_TIMEOUT_MS,
+                'page list timeout'
+            );
             if (!pages.length) {
                 throw new Error('page list is empty');
             }

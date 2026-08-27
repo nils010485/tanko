@@ -93,30 +93,40 @@ describe('manual source picker (listAlternatives)', () => {
     });
 
     it('goes deeper when a perfect match carries no preferred-language chapters', async () => {
-        // decoy = MangaDex-like: native, perfect title match, only foreign-language
-        // rips; rescue = aggregator carrying the title in the preferred language
+        // wave 1 must be full of natives so the crawl early-exits on the decoy
+        // (MangaDex-like: perfect title, foreign-language rips only); the
+        // rescue aggregator (legacy, preferred-language chapters) can then
+        // only be reached by round 2's exclusion set — the exact scenario
+        // the rounds exist for
+        let rescueSearches = 0;
         const localAdapters: Record<string, unknown> = {
             decoy: {
                 searchMangas: async () => [{ id: 'd1', title: 'Starved Series' }],
                 getChapters: async () => [{ id: 'c1', title: 'Ch.1', language: 'pl' }]
             },
             rescue: {
-                searchMangas: async () => [{ id: 'r1', title: 'Starved Series' }],
+                searchMangas: async () => {
+                    rescueSearches++;
+                    return [{ id: 'r1', title: 'Starved Series' }];
+                },
                 getChapters: async () => Array.from({ length: 9 }, (_, index) => ({ id: `r${index}`, title: `Ch.${index + 1}`, language: 'en' }))
             }
         };
+        const listSources = async () => [
+            { id: 'decoy', label: 'Decoy', tags: ['English'], kind: 'native' },
+            ...Array.from({ length: 24 }, (_, index) => ({ id: `filler${index}`, label: `Filler ${index}`, tags: ['English'], kind: 'native' })),
+            { id: 'rescue', label: 'Rescue', tags: ['English'], kind: 'legacy' }
+        ];
         const localFailover = new FailoverService({
-            registry: { get: async (id: string) => localAdapters[id] } as never,
+            registry: { get: async (id: string) => localAdapters[id] ?? { searchMangas: async () => [] } } as never,
             store,
-            listSources: async () => [
-                { id: 'decoy', label: 'Decoy', tags: ['English'], kind: 'native' },
-                { id: 'rescue', label: 'Rescue', tags: ['English'], kind: 'legacy' }
-            ],
+            listSources,
             getPreferredLanguages: () => ['en']
         });
         const alternatives = await localFailover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
         expect(alternatives.map(a => a.sourceId)).toEqual(['rescue']);
         expect(alternatives[0].chapterCount).toBe(9);
+        expect(rescueSearches).toBe(1); // searched in round 2 only, never re-crawled
     });
 });
 
