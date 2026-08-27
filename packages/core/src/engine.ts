@@ -42,6 +42,7 @@ export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
  * the same fix.
  */
 export const CONNECTOR_OVERRIDES = ['MangaFox.mjs'];
+
 const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;
 /** Active vendor directory: synced copy in the data directory if present, else the built-in one. */
