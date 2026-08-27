@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { getVendorDirectory } from '@tanko/core';
+import { getVendorDirectory, VENDOR_PATH } from '@tanko/core';
 import type { ConnectorsUpdateInfo, ConnectorsUpdateStatus } from '@tanko/shared';
 import type { Database } from '../db.js';
 
@@ -19,6 +19,15 @@ const UPSTREAM_URL = 'https://github.com/manga-download/hakuneko.git';
 const UPSTREAM_PATH = 'src/web/mjs';
 /** Minimum plausible connector count — guards against a broken upstream checkout. */
 const MIN_CONNECTORS = 1000;
+
+/**
+ * Connectors we patch on top of upstream. Sites change under upstream's feet
+ * and its connectors break (e.g. mangahere removed the newImgs global from
+ * its webtoon reader); our bundled version carries the fix. The updater
+ * copies these over the synced tree so clicking "update sources" never
+ * regresses them. Drop an entry once upstream ships the same fix.
+ */
+export const CONNECTOR_OVERRIDES = ['MangaFox.mjs'];
 
 export const CONNECTORS_UPDATE_KEY = 'connectors-update';
 
@@ -80,6 +89,12 @@ export async function syncConnectors(options: { dataDirectory: string; db: Datab
         try {
             fs.cpSync(path.join(tempDir, UPSTREAM_PATH, 'connectors'), path.join(vendorDir, 'connectors'), { recursive: true });
             fs.cpSync(path.join(tempDir, UPSTREAM_PATH, 'engine'), path.join(vendorDir, 'engine'), { recursive: true });
+            // re-apply our patched connectors over the synced tree — a missing
+            // bundled override is a packaging error that must abort the sync
+            // (rolled back below), never silently re-ship the broken upstream
+            for (const file of CONNECTOR_OVERRIDES) {
+                fs.copyFileSync(path.join(VENDOR_PATH, 'connectors', file), path.join(vendorDir, 'connectors', file));
+            }
             validateTree(path.join(vendorDir, 'connectors'), path.join(vendorDir, 'engine'));
         } catch (error) {
             fs.rmSync(vendorDir, { recursive: true, force: true });

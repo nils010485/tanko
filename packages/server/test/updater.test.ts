@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { VENDOR_PATH } from '@tanko/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
-import { type CloneUpstream, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
+import { type CloneUpstream, CONNECTOR_OVERRIDES, CONNECTORS_UPDATE_KEY, syncConnectors } from '../src/sources/updater.js';
 
 let dataDir: string;
 let database: Database;
@@ -32,6 +33,9 @@ function upstreamFixture(connectorCount: number): CloneUpstream {
     };
 }
 
+/** Expected synced count: upstream fixture + our patched connectors overlaid on top. */
+const overrides = CONNECTOR_OVERRIDES.length;
+
 describe('syncConnectors', () => {
     it('copies connectors and engine into the data directory and persists metadata', async () => {
         const info = await syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(1001) });
@@ -39,22 +43,27 @@ describe('syncConnectors', () => {
         expect(fs.existsSync(path.join(dataDir, 'vendor', 'connectors', 'Connector0.mjs'))).toBe(true);
         expect(fs.existsSync(path.join(dataDir, 'vendor', 'engine', 'Connector.mjs'))).toBe(true);
         expect(info.commit).toBe('abc123def4567890abcdef');
-        expect(info.connectorCount).toBe(1001);
+        expect(info.connectorCount).toBe(1001 + overrides);
         expect(info.previousCount).toBeGreaterThanOrEqual(1000); // built-in baseline
         expect(info.date).toBeTruthy();
 
         const stored = JSON.parse(database.kvGet(CONNECTORS_UPDATE_KEY)!);
         expect(stored.commit).toBe(info.commit);
-        expect(stored.connectorCount).toBe(1001);
-        // no leftover backup after a successful sync
+        expect(stored.connectorCount).toBe(1001 + overrides);
+        // every bundled override must shadow its upstream copy after sync
+        for (const file of CONNECTOR_OVERRIDES) {
+            expect(fs.readFileSync(path.join(dataDir, 'vendor', 'connectors', file), 'utf8')).toBe(
+                fs.readFileSync(path.join(VENDOR_PATH, 'connectors', file), 'utf8')
+            );
+        }
         expect(fs.existsSync(path.join(dataDir, 'vendor.bak'))).toBe(false);
     });
 
     it('reuses the synced copy as baseline on a second sync', async () => {
         await syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(1001) });
         const second = await syncConnectors({ dataDirectory: dataDir, db: database, clone: upstreamFixture(1005) });
-        expect(second.previousCount).toBe(1001);
-        expect(second.connectorCount).toBe(1005);
+        expect(second.previousCount).toBe(1001 + overrides);
+        expect(second.connectorCount).toBe(1005 + overrides);
     });
 
     it('rolls back the previous vendor copy when the sync fails', async () => {
@@ -91,7 +100,7 @@ describe('syncConnectors', () => {
             'Une mise à jour des sources est déjà en cours'
         );
         release();
-        expect((await first).connectorCount).toBe(1001);
+        expect((await first).connectorCount).toBe(1001 + overrides);
     });
 
     it('rejects a suspect upstream with too few connectors', async () => {

@@ -12,7 +12,8 @@ export default class MangaFox extends Connector {
         this.requestOptions.headers.set( 'x-cookie', 'isAdult=1' );
         this.pageLoadDelay = 50;
 
-        // this script uses chapterfun.ashx instead of chapter_bar.js as in MangaHere
+        // chapter images are served page by page via chapterfun.ashx — this
+        // script is also inherited by MangaHere (same reader flow)
         this.scriptSource = 'chapterfun.ashx';
 
         //ads pictures SHA256 hashes to remove from the pages list
@@ -22,31 +23,39 @@ export default class MangaFox extends Connector {
     get script() {
         return `
             new Promise(resolve => {
-                if(isbarchpater) {
-                    // webtoon (all images on a single page)
-                    resolve(newImgs.map(image => new URL(image, window.location.href).href));
-                } else {
-                    // manga (one image per page)
-                    let promises = [...(new Array(imagecount)).keys()].map(p => {
-                        return Promise.resolve()
-                        .then(() => {
-                            return {
-                                url: '${this.scriptSource}',
-                                data: {
-                                    cid: chapterid,
-                                    page: p+1,
-                                    key: guidkey
-                                }
-                            };
-                        })
-                        .then(request => $.ajax(request))
-                        .then(script => {
-                            eval(script);
-                            return Promise.resolve(new URL(d[0], window.location.href).href);
-                        });
-                    });
-                    resolve(Promise.all(promises));
+                // webtoon chapters used to expose a global newImgs array, but the
+                // reader (chapter_h.js v20260227+) now serves every chapter type
+                // (webtoon included) through chapterfun.ashx page by page
+                let pageCount = parseInt(imagecount, 10) || 0;
+                if (pageCount < 1) {
+                    throw new Error('chapter page exposes no imagecount');
                 }
+                let key = '';
+                if (typeof guidkey !== 'undefined') {
+                    key = guidkey;
+                } else {
+                    let el = document.getElementById('dm5_key');
+                    if (el) { key = el.value || ''; }
+                }
+                let promises = [...(new Array(pageCount)).keys()].map(p => {
+                    return Promise.resolve()
+                    .then(() => {
+                        return {
+                            url: '${this.scriptSource}',
+                            data: {
+                                cid: chapterid,
+                                page: p+1,
+                                key: key
+                            }
+                        };
+                    })
+                    .then(request => $.ajax(request))
+                    .then(script => {
+                        eval(script);
+                        return Promise.resolve(new URL(d[0], window.location.href).href);
+                    });
+                });
+                resolve(Promise.all(promises));
             });
         `;
     }
