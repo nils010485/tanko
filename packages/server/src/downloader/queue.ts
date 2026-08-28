@@ -93,8 +93,17 @@ const PAGE_LIST_REFRESHES = 2;
  *  source outage closes. */
 const AUTO_RETRY_BASE_MS = 30 * 60 * 1000;
 const AUTO_RETRY_CAP_MS = 4 * 60 * 60 * 1000;
-const AUTO_RETRY_MAX = 10;
+export const AUTO_RETRY_MAX = 10;
 const AUTO_RETRY_SWEEP_MS = 5 * 60 * 1000;
+/** Failed jobs whose fast ladder is exhausted (auto_retries >=
+ *  AUTO_RETRY_MAX) are NOT abandoned: the sweep revalidates them with one
+ *  attempt per cooldown, the cooldown doubling per failed revalidation
+ *  (24 h → 7-day cap). A chapter repaired server-side days later self-heals;
+ *  a chapter gone for good costs at most ~1 request/week. A manual retry, a
+ *  "download all" or an outage closure (resetRetryLadder) still resets the
+ *  whole ladder to the fast tier. */
+const REVALIDATE_BASE_MS = 24 * 60 * 60 * 1000;
+const REVALIDATE_CAP_MS = 7 * 24 * 60 * 60 * 1000;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
 const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
@@ -311,28 +320,72 @@ export class DownloadQueue {
     }
 
     /** Requeue failed jobs that have waited out their backoff slot (bounded
-     *  by AUTO_RETRY_MAX, reset by a manual retry or an outage closure):
-     *  temporary source outages and late timeouts self-heal without a click,
-     *  and a permanent outage stays covered until the failover escalates. */
+     *  by AUTO_RETRY_MAX for the fast tier, then handed to the slow
+     *  revalidation tier — see _sweepRevalidations): temporary source outages
+     *  and late timeouts self-heal without a click, and a permanent outage
+     *  stays covered until the failover escalates. */
     sweepFailedJobs(): number {
-        const rows = this.opts.db.db
-            .prepare("SELECT id, auto_retries, updated_at FROM download_jobs WHERE status = 'failed' AND auto_retries < ?")
-            .all(AUTO_RETRY_MAX) as Array<{ id: number; auto_retries: number; updated_at: string }>;
+        // Migration-orphaned jobs point at a source the entry no longer
+        // tracks: never resurrect them (previously only retryFailed/
+        // retryJob filtered, and an unbounded revalidation tier would probe
+        // a dead source forever). Both tiers also skip 'lost' chapters: the
+        // source delisted them, the download can never succeed — retrying
+        // would only flap the chapter status back and forth.
+        const skipFilter = this.libraryPresent
+            ? ` AND (entry_id IS NULL OR EXISTS(SELECT 1 FROM library WHERE library.id = download_jobs.entry_id AND library.source_id = download_jobs.source_id))
+                 AND NOT EXISTS(SELECT 1 FROM library_chapters lc WHERE lc.entry_id = download_jobs.entry_id AND lc.chapter_id = download_jobs.chapter_id AND lc.status = 'lost')`
+            : '';
+        const fast = this.opts.db.db
+            .prepare(`SELECT id, auto_retries FROM download_jobs WHERE status = 'failed' AND auto_retries < ?${skipFilter}`)
+            .all(AUTO_RETRY_MAX) as Array<{ id: number; auto_retries: number }>;
         let changed = 0;
-        for (const row of rows) {
-            const delay = Math.min(AUTO_RETRY_BASE_MS * 2 ** row.auto_retries, AUTO_RETRY_CAP_MS);
-            const cutoff = new Date(Date.now() - delay).toISOString();
-            changed += Number(
-                this.opts.db.db
-                    .prepare(
-                        "UPDATE download_jobs SET status = 'queued', error = NULL, progress = 0, pages_done = 0, auto_retries = auto_retries + 1, updated_at = ? WHERE id = ? AND status = 'failed' AND updated_at < ?"
-                    )
-                    .run(new Date().toISOString(), row.id, cutoff).changes
-            );
+        for (const row of fast) {
+            changed += this._requeueIfDue(row, Math.min(AUTO_RETRY_BASE_MS * 2 ** row.auto_retries, AUTO_RETRY_CAP_MS));
         }
+        changed += this._sweepRevalidations(skipFilter);
         if (changed > 0) {
             this._schedule();
             this._publishStatus();
+        }
+        return changed;
+    }
+
+    /** Requeue a failed job once its backoff slot has elapsed. The status and
+     *  updated_at guards in the WHERE clause make it idempotent: overlapping
+     *  sweeps or a status change mid-loop cannot double-requeue a row. */
+    private _requeueIfDue(row: { id: number }, delay: number): number {
+        return Number(
+            this.opts.db.db
+                .prepare(
+                    "UPDATE download_jobs SET status = 'queued', error = NULL, progress = 0, pages_done = 0, auto_retries = auto_retries + 1, updated_at = ? WHERE id = ? AND status = 'failed' AND updated_at < ?"
+                )
+                .run(new Date().toISOString(), row.id, new Date(Date.now() - delay).toISOString()).changes
+        );
+    }
+
+    /** Exhausted-ladder jobs (auto_retries >= AUTO_RETRY_MAX): one attempt
+     *  per cooldown, the cooldown doubling from REVALIDATE_BASE_MS to
+     *  REVALIDATE_CAP_MS. Skipped: ad-hoc jobs with no library entry (no UX
+     *  state to serve — the user asked once), migration orphans (dead
+     *  source), 'lost' chapters (removed from the source listing — the
+     *  download can never succeed), and jobs of hidden/paused entries
+     *  (monitoring suspended by the user or the auto-unfollow). The attempt
+     *  itself is the probe: getPages is the ground truth, no extra listing
+     *  request is needed. */
+    private _sweepRevalidations(filters: string): number {
+        if (!this.libraryPresent) {
+            return 0; // standalone downloader: no library to give the job meaning
+        }
+        const rows = this.opts.db.db
+            .prepare(
+                `SELECT id, auto_retries FROM download_jobs WHERE status = 'failed' AND auto_retries >= ?
+                 AND entry_id IS NOT NULL${filters}
+                 AND NOT EXISTS(SELECT 1 FROM library l WHERE l.id = download_jobs.entry_id AND (l.hidden = 1 OR l.paused = 1))`
+            )
+            .all(AUTO_RETRY_MAX) as Array<{ id: number; auto_retries: number }>;
+        let changed = 0;
+        for (const row of rows) {
+            changed += this._requeueIfDue(row, Math.min(REVALIDATE_BASE_MS * 2 ** (row.auto_retries - AUTO_RETRY_MAX), REVALIDATE_CAP_MS));
         }
         return changed;
     }
@@ -533,14 +586,20 @@ export class DownloadQueue {
         return this.opts.settings.historyRetentionDays ?? DEFAULT_HISTORY_RETENTION_DAYS;
     }
 
-    /** Drop finished jobs older than the configured retention; 0 keeps everything. */
+    /** Drop finished jobs older than the configured retention; 0 keeps
+     *  everything. Entry-linked failed jobs are exempt: they carry the slow
+     *  revalidation promise (a paused entry freezes them mid-ladder, a 'lost'
+     *  chapter freezes its job) — pruning them would strand the chapter with
+     *  no job behind it, resurrecting the abandoned-chapter gap. */
     private _pruneHistory(): void {
         const days = this._retentionDays();
         if (days <= 0) {
             return;
         }
         // updated_at is ISO-8601, so a lexicographic cutoff works
-        this._deleteFinished(`updated_at < '${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}'`);
+        this._deleteFinished(
+            `updated_at < '${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}' AND NOT (status = 'failed' AND entry_id IS NOT NULL)`
+        );
     }
 
     private _schedule(): void {
@@ -922,8 +981,30 @@ export class DownloadQueue {
             pagesDone: row.pages_done,
             error: row.error || undefined,
             path: row.path || undefined,
+            autoRetries: row.auto_retries,
+            revalidating: row.status === 'failed' && row.auto_retries >= AUTO_RETRY_MAX ? this._isRevalidating(row) || undefined : undefined,
             createdAt: row.created_at,
             updatedAt: row.updated_at
         };
+    }
+
+    /** Whether this exhausted failed job sits in the slow revalidation tier
+     *  (mirrors _sweepRevalidations' predicates): the dashboard must not
+     *  promise slow retries for jobs that will never run again — ad-hoc
+     *  downloads, migration orphans, 'lost' chapters, paused/hidden entries. */
+    private _isRevalidating(row: JobRow): boolean {
+        if (!this.libraryPresent || row.entry_id == null) {
+            return false;
+        }
+        return (
+            this.opts.db.db
+                .prepare(
+                    `SELECT 1 AS ok FROM download_jobs j
+                     WHERE j.id = ?
+                       AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)
+                       AND NOT EXISTS(SELECT 1 FROM library_chapters lc WHERE lc.entry_id = j.entry_id AND lc.chapter_id = j.chapter_id AND lc.status = 'lost')`
+                )
+                .get(row.id) !== undefined
+        );
     }
 }

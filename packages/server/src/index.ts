@@ -147,7 +147,6 @@ const queue = new DownloadQueue({
         // healed — close the outage and fast-track the failed jobs' retries
         if (job.status === 'completed' && library.closeSourceOutage(job.sourceId)) {
             queue.resetRetryLadder(job.sourceId);
-            queue.resetRetryLadder(job.sourceId);
             const recovered = `La source ${job.sourceId} semble rétablie — nouvelle tentative rapide des téléchargements en échec`;
             events.publishLog({
                 level: 'info',
@@ -211,7 +210,6 @@ function handleDownloadFailure(job: DownloadJobDto): void {
         if (!outage?.escalatedAt) {
             const lastWarnAt = sourceOutageWarnAt.get(entry.sourceId) ?? 0;
             if (outage?.escalatedAt === null && Date.now() - lastWarnAt > SOURCE_OUTAGE_LOG_MS) {
-                sourceOutageWarnAt.set(entry.sourceId, Date.now());
                 sourceOutageWarnAt.set(entry.sourceId, Date.now());
                 const outageText = `Panne de la source ${entry.sourceLabel} — migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`;
                 events.publishLog({

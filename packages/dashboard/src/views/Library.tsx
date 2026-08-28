@@ -8,7 +8,7 @@
 
 import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { chapterTone } from '../components/ChapterList.js';
+import { ChapterStatusBadge } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import {
@@ -805,7 +805,7 @@ export default function Library({
                                     ⟲
                                 </button>
                             )}
-                            <Badge tone={chapterTone(chapter.status)}>{t(`library.chapterStatus.${chapter.status}`)}</Badge>
+                            <ChapterStatusBadge chapter={chapter} />
                         </span>
                     </div>
                 ))}

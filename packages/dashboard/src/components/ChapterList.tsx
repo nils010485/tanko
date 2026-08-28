@@ -1,12 +1,13 @@
 /**
  * Shared chapter list: rows of (title + right-side actions) rendered in
  * increasing batches so thousand-chapter series stay usable without any
- * silent truncation. Also hosts the shared status → badge-tone mapping.
+ * silent truncation. Also hosts the shared status badge components.
  */
 import type { LibraryChapterDto } from '@tanko/shared';
 import { type ReactNode, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.js';
-import type { BadgeTone } from './ui.js';
+import { chapterStatusHint, chapterStatusKey } from '../lib/chapters.js';
+import { Badge, type BadgeTone } from './ui.js';
 
 export interface ChapterListItem {
     key: string;
@@ -30,6 +31,8 @@ export function chapterTone(status: LibraryChapterDto['status']): BadgeTone {
             return 'green';
         case 'failed':
             return 'red';
+        case 'lost':
+            return 'zinc';
         case 'new':
             return 'orange';
         case 'queued':
@@ -38,6 +41,19 @@ export function chapterTone(status: LibraryChapterDto['status']): BadgeTone {
         default:
             return 'zinc';
     }
+}
+
+/** Status badge with its tooltip: 'failed' splits by ladder state ('échec
+ *  persistant' when the slow revalidation tier took over), 'lost' explains
+ *  why nothing retries automatically. */
+export function ChapterStatusBadge({ chapter }: { chapter: LibraryChapterDto }) {
+    const { t } = useI18n();
+    const hint = chapterStatusHint(chapter);
+    return (
+        <span title={hint ? t(hint) : undefined}>
+            <Badge tone={chapterTone(chapter.status)}>{t(chapterStatusKey(chapter))}</Badge>
+        </span>
+    );
 }
 
 export function ChapterList({ items, selection, resetKey }: { items: ChapterListItem[]; selection?: ChapterListSelection; resetKey: string | number }) {

@@ -249,6 +249,12 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
                             {statusBadge(job.status, t)}
+                            {job.status === 'failed' && (job.autoRetries ?? 0) > 0 && (
+                                <>
+                                    <span>·</span>
+                                    <span>{job.revalidating ? t('downloads.revalidating') : t('downloads.autoRetries', { n: job.autoRetries ?? 0 })}</span>
+                                </>
+                            )}
                             {job.pagesTotal > 0 && (
                                 <>
                                     <span>{t('downloads.pagesCount', { done: job.pagesDone, total: job.pagesTotal })}</span>

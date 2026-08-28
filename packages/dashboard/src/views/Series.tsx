@@ -5,7 +5,7 @@
  */
 import type { LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChapterList, chapterTone } from '../components/ChapterList.js';
+import { ChapterList, ChapterStatusBadge } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import { IconArrowLeft, IconDownload, IconEye, IconGlobe, IconLibrary, IconRefresh, IconSearch, IconUndo, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
@@ -365,7 +365,7 @@ export default function Series({
                     <Badge tone="blue">{t('library.localOnlyChapter')}</Badge>
                 </span>
             )}
-            <Badge tone={chapterTone(chapter.status)}>{t(`library.chapterStatus.${chapter.status}`)}</Badge>
+            <ChapterStatusBadge chapter={chapter} />
         </span>
     );
 

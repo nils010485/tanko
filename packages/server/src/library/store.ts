@@ -11,7 +11,9 @@ import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { DeadSeriesDto, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import type { Database } from '../db.js';
 import { chapterPaths, countLocalChapters, listChapterEntries, outputExists } from '../downloader/paths.js';
-import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
+// runtime constant only — the queue module does not import this file, so no
+// runtime cycle is created (same policy as the failover constants below)
+import { AUTO_RETRY_MAX, type DownloadQueue, type QueueSettings } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
 import { withTimeout } from '../util/timeout.js';
@@ -954,6 +956,32 @@ export class LibraryStore {
                 });
             }
         }
+        // Reconcile failed chapters against the listing: a chapter the source
+        // no longer lists is 'lost' (slow revalidation stops — the download
+        // can never succeed), and a 'lost' chapter listed again goes back to
+        // 'failed' (revalidation resumes at its cooldown step). Guarded by
+        // usableSeen > 0: an empty or language-stripped listing (takedown)
+        // must never mass-mark chapters lost. The RAW listing (preferred
+        // languages included) keeps a language-preference change from losing
+        // chapters either.
+        if (usableSeen > 0) {
+            const listed = JSON.stringify(chapters.map(chapter => chapter.id));
+            this.opts.db.db
+                .prepare(
+                    `UPDATE library_chapters SET status = 'lost'
+                     WHERE entry_id = ? AND status = 'failed'
+                       AND chapter_id NOT LIKE 'local:%'
+                       AND chapter_id NOT IN (SELECT value FROM json_each(?))`
+                )
+                .run(entryId, listed);
+            this.opts.db.db
+                .prepare(
+                    `UPDATE library_chapters SET status = 'failed'
+                     WHERE entry_id = ? AND status = 'lost'
+                       AND chapter_id IN (SELECT value FROM json_each(?))`
+                )
+                .run(entryId, listed);
+        }
         if (fresh.length > 0) {
             // a new chapter just arrived: refresh the date that arms the
             // stale-series auto-unfollow and clear the stalled-probe
@@ -1059,7 +1087,7 @@ export class LibraryStore {
         const placeholders = chapterIds.map(() => '?').join(', ');
         const result = this.opts.db.db
             .prepare(
-                `UPDATE library_chapters SET status = 'queued', prev_status = status WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status IN ('new', 'missing', 'failed')`
+                `UPDATE library_chapters SET status = 'queued', prev_status = status WHERE entry_id = ? AND chapter_id IN (${placeholders}) AND status IN ('new', 'missing', 'failed', 'lost')`
             )
             .run(entryId, ...chapterIds);
         return Number(result.changes);
@@ -1089,7 +1117,11 @@ export class LibraryStore {
         }
     }
 
-    /** Called by the download queue / import / failover when a chapter changes. */
+    /** Called by the download queue / import / failover when a chapter changes.
+     *  A 'failed' report never overwrites 'lost': an attempt already in
+     *  flight when the chapter was delisted must not resurrect it (the sweeps
+     *  stop requeueing lost chapters; only a manual retry or the source
+     *  listing it again moves it). */
     markChapter(entryId: number, chapterId: string, status: 'downloaded' | 'failed' | 'new', filePath?: string, origin = 'download'): void {
         const previous = this._get<{ title: string; status: string; path: string | null }>(
             'SELECT title, status, path FROM library_chapters WHERE entry_id = ? AND chapter_id = ?',
@@ -1097,10 +1129,19 @@ export class LibraryStore {
             chapterId
         );
         this.opts.db.db
-            .prepare('UPDATE library_chapters SET status = ?, path = ?, downloaded_at = ? WHERE entry_id = ? AND chapter_id = ?')
-            .run(status, filePath || null, status === 'downloaded' ? new Date().toISOString() : null, entryId, chapterId);
-        if (previous && (previous.status !== status || previous.path !== (filePath || null))) {
-            this._recordChapterHistory(entryId, chapterId, previous.title, origin, previous.status, previous.path, status, filePath || null);
+            .prepare(
+                "UPDATE library_chapters SET status = ?, path = ?, downloaded_at = ? WHERE entry_id = ? AND chapter_id = ? AND (status <> 'lost' OR ? <> 'failed')"
+            )
+            .run(status, filePath || null, status === 'downloaded' ? new Date().toISOString() : null, entryId, chapterId, status);
+        // history records actual transitions only: the lost-guard above can
+        // leave the row untouched, so compare against a fresh read
+        const updated = this._get<{ status: string; path: string | null }>(
+            'SELECT status, path FROM library_chapters WHERE entry_id = ? AND chapter_id = ?',
+            entryId,
+            chapterId
+        );
+        if (previous && updated && (updated.status !== previous.status || updated.path !== previous.path)) {
+            this._recordChapterHistory(entryId, chapterId, previous.title, origin, previous.status, previous.path, updated.status, updated.path);
         }
     }
 
@@ -1133,8 +1174,18 @@ export class LibraryStore {
     }
 
     listChapters(entryId: number): LibraryChapterDto[] {
-        const rows = this._all<ChapterRow & { history_count: number }>(
-            `SELECT c.*, (SELECT COUNT(*) FROM chapter_history h WHERE h.entry_id = c.entry_id AND h.chapter_id = c.chapter_id) AS history_count
+        // the download-jobs join is optional: the store can run standalone
+        // (tests, queue-less deployments) before the queue creates its table
+        const jobsJoin = this._jobsTable()
+            ? `,
+                    EXISTS(SELECT 1 FROM download_jobs j
+                           WHERE j.entry_id = c.entry_id AND j.chapter_id = c.chapter_id
+                             AND j.status = 'failed' AND j.auto_retries >= ${AUTO_RETRY_MAX}
+                             AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)) AS retry_exhausted`
+            : ', 0 AS retry_exhausted';
+        const rows = this._all<ChapterRow & { history_count: number; retry_exhausted: number }>(
+            `SELECT c.*,
+                    (SELECT COUNT(*) FROM chapter_history h WHERE h.entry_id = c.entry_id AND h.chapter_id = c.chapter_id) AS history_count${jobsJoin}
              FROM library_chapters c WHERE entry_id = ? ORDER BY discovered_at DESC, id DESC`,
             entryId
         );
@@ -1149,10 +1200,21 @@ export class LibraryStore {
             localOnly: row.chapter_id.startsWith('local:') || undefined,
             discoveredAt: row.discovered_at,
             downloadedAt: row.downloaded_at || undefined,
-            historyCount: Number(row.history_count || 0)
+            historyCount: Number(row.history_count || 0),
+            retryExhausted: row.retry_exhausted === 1 || undefined
         }));
     }
 
+    /** Whether the download-jobs table exists yet (created by DownloadQueue,
+     *  possibly after this store — cached once seen). */
+    private jobsSeen = false;
+    private _jobsTable(): boolean {
+        if (this.jobsSeen) {
+            return true;
+        }
+        this.jobsSeen = this.opts.db.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'download_jobs'").get() !== undefined;
+        return this.jobsSeen;
+    }
     // ------------------------------------------------------------------
     // internals
     // ------------------------------------------------------------------

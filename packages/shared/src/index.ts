@@ -175,13 +175,16 @@ export interface LibraryChapterDto {
     chapterId: string;
     title: string;
     language?: string;
-    status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed' | 'lost';
     path?: string;
     /** Local-only chapter: a file on disk with no source counterpart (ghost row). */
     localOnly?: boolean;
     downloadedAt?: string;
     /** Number of history entries (path/status changes) for this chapter. */
     historyCount?: number;
+    /** The matching download job exhausted its fast retry ladder: automatic
+     *  retries continue on the slow revalidation tier (at most one per week). */
+    retryExhausted?: boolean;
 }
 
 export interface DeadSeriesDto {
@@ -207,6 +210,11 @@ export interface DownloadJobDto {
     pagesDone: number;
     error?: string;
     path?: string;
+    /** Auto-retries consumed so far (>= AUTO_RETRY_MAX = slow revalidation tier). */
+    autoRetries?: number;
+    /** True when this exhausted job sits in the slow revalidation tier (an
+     *  entry-linked, non-lost chapter of a visible, unpaused entry). */
+    revalidating?: boolean;
     createdAt: string;
     updatedAt: string;
 }
