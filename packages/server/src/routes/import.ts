@@ -1,15 +1,19 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { scanLibrary } from '../import/scanner.js';
-import type { AutoConfirmMode, ImportService } from '../import/service.js';
+import { type AutoConfirmMode, CRAWL_BUSY_ERROR, type ImportService } from '../import/service.js';
 
 const AUTO_CONFIRM_MODES = new Set<AutoConfirmMode>(['auto', 'all', 'none']);
 
-/** Shared body for resume/sync: run the action, 404 with the thrown message when the job is unknown. */
+/** Shared body for resume/sync: run the action, 404 with the thrown message
+ *  when the job is unknown — 409 when the single crawl slot is busy. */
 async function runJobAction(reply: FastifyReply, _importer: ImportService, id: string, action: (jobId: number) => Promise<void>) {
     try {
         await action(Number(id));
         return { ok: true };
     } catch (error) {
+        if ((error as Error).message === CRAWL_BUSY_ERROR) {
+            return reply.code(409).send({ error: CRAWL_BUSY_ERROR });
+        }
         return reply.code(404).send({ error: (error as Error).message });
     }
 }

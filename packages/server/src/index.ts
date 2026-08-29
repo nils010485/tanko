@@ -80,7 +80,9 @@ const queueSettings: QueueSettings = {
 };
 const preferredLanguages = createLanguagePreference(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });
-const covers = new CoverService({ db: database, events, directoryOf: entryId => library.seriesDirectory(entryId) });
+// instantiated before the services that report to it (covers, import) — the registry has no dependencies
+const jobs = new JobRunner();
+const covers = new CoverService({ db: database, events, jobs, directoryOf: entryId => library.seriesDirectory(entryId) });
 const healthService = new SourceHealthService({
     db: database,
     events,
@@ -268,13 +270,14 @@ function handleDownloadFailure(job: DownloadJobDto): void {
 }
 
 const scheduler = new Scheduler({ db: database, store: library, queue, events, failover });
-const jobs = new JobRunner();
 const importer = new ImportService({
     db: database,
     registry: sourceRegistry,
     store: library,
     getPreferredLanguages: preferredLanguages,
-    listSources: listSourceInfos
+    listSources: listSourceInfos,
+    events,
+    jobs
 });
 
 const globalSearch = new GlobalSearchService({

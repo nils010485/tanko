@@ -3,7 +3,7 @@
  * links, migration suggestions to confirm or dismiss) + system pulse and
  * the running background jobs.
  */
-import type { ActivityStatsDto, JobStatusDto, LibraryEntryDto, LogCategory } from '@tanko/shared';
+import type { ActivityJobsDto, ActivityStatsDto, JobStatusDto, LibraryEntryDto, LogCategory } from '@tanko/shared';
 import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { IconActivity, IconArrowLeftRight, IconCheck, IconGlobe, type IconProps, IconRefresh, IconSettings } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
@@ -43,11 +43,23 @@ function Stat({ label, value, tone = 'default' }: { label: string; value: string
     );
 }
 
+/** Icon + label heading shared by the running/history job sections. */
+function JobsHeading({ children }: { children: string }) {
+    return (
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent-soft">
+                <IconRefresh size={13} />
+            </span>
+            {children}
+        </h2>
+    );
+}
+
 export default function Activity({ logs, library, onOpenSeries }: { logs: LogLine[]; library: LibraryEntryDto[]; onOpenSeries: (entryId: number) => void }) {
     const { t, language } = useI18n();
     const toast = useToast();
     const [stats, setStats] = useState<ActivityStatsDto | null>(null);
-    const [jobs, setJobs] = useState<{ current: JobStatusDto | null; last: JobStatusDto | null }>({ current: null, last: null });
+    const [jobs, setJobs] = useState<ActivityJobsDto>({ running: [], history: [] });
     const [level, setLevel] = useState<(typeof LEVELS)[number]>('all');
     const [categories, setCategories] = useState<Set<LogCategory>>(new Set());
     const [query, setQuery] = useState('');
@@ -198,38 +210,42 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
             )}
 
             {/* running jobs */}
-            {(jobs.current || jobs.last) && (
+            {jobs.running.length > 0 && (
                 <section className="space-y-3">
-                    <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent-soft">
-                            <IconRefresh size={13} />
-                        </span>
-                        {t('activity.jobs.title')}
-                    </h2>
-                    {jobs.current ? (
-                        <Card className="space-y-3 border-accent/25 bg-gradient-to-b from-accent/[0.06] to-surface/60 p-4">
+                    <JobsHeading>{t('activity.jobs.title')}</JobsHeading>
+                    {jobs.running.map(job => (
+                        <Card key={job.id} className="space-y-3 border-accent/25 bg-gradient-to-b from-accent/[0.06] to-surface/60 p-4">
                             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                                <div className="font-medium">{jobs.current ? jobLabel(jobs.current) : ''}</div>
+                                <div className="font-medium">{jobLabel(job)}</div>
                                 <div className="flex items-center gap-2 text-xs text-zinc-400">
-                                    <span>{t('activity.jobs.progress', { done: jobs.current.done, total: jobs.current.total, hits: jobs.current.hits })}</span>
-                                    <Button small variant="ghost" onClick={() => cancelJob(jobs.current?.id ?? 0)}>
+                                    <span>{t('activity.jobs.progress', { done: job.done, total: job.total, hits: job.hits })}</span>
+                                    <Button small variant="ghost" onClick={() => cancelJob(job.id)}>
                                         {t('activity.jobs.cancel')}
                                     </Button>
                                 </div>
                             </div>
-                            <ProgressBar value={(jobs.current.done / Math.max(1, jobs.current.total)) * 100} />
+                            <ProgressBar value={(job.done / Math.max(1, job.total)) * 100} />
                         </Card>
-                    ) : (
-                        <div className="rounded-xl border border-line bg-surface/60 px-4 py-3 text-xs text-muted">
-                            {t('activity.jobs.last', {
-                                label: jobs.last ? jobLabel(jobs.last) : '',
-                                done: jobs.last?.done ?? 0,
-                                total: jobs.last?.total ?? 0,
-                                hits: jobs.last?.hits ?? 0
-                            })}
-                            {jobs.last?.cancelled ? ` — ${t('activity.jobs.cancelled')}` : ''}
-                        </div>
-                    )}
+                    ))}
+                </section>
+            )}
+
+            {/* recent jobs */}
+            {jobs.history.length > 0 && (
+                <section className="space-y-3">
+                    <JobsHeading>{t('activity.jobs.history')}</JobsHeading>
+                    <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface/60 text-xs">
+                        {jobs.history.map(job => (
+                            <li key={job.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                                <span className="min-w-0 truncate font-medium text-zinc-300">{jobLabel(job)}</span>
+                                <span className="flex shrink-0 items-center gap-2 text-muted">
+                                    {job.cancelled && <Badge tone="orange">{t('activity.jobs.cancelled')}</Badge>}
+                                    <span>{t('activity.jobs.historyCounts', { done: job.done, total: job.total, hits: job.hits })}</span>
+                                    <span>{timeOf(job.finishedAt ?? job.startedAt)}</span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
                 </section>
             )}
 

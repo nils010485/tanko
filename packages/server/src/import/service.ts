@@ -10,8 +10,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { SourceRegistry } from '@tanko/core';
 import type { AutoConfirmMode, ImportJobPhase, ImportJobStatusDto, ImportOptionsDto, MigrationSuggestion } from '@tanko/shared';
+import type { JobHandle, JobRunner } from '../activity/jobs.js';
 import type { Database } from '../db.js';
 import type { LibraryStore } from '../library/store.js';
+import type { EventBus } from '../ws.js';
 import { type MatcherContext, matchAll } from './matcher.js';
 import { assertValidDirectory, scanLibrary } from './scanner.js';
 import type { MatchConfidence } from './similarity.js';
@@ -21,6 +23,8 @@ import { type SyncerContext, syncAll } from './syncer.js';
 export type JobStatus = ImportJobPhase;
 export type { AutoConfirmMode };
 export type ImportOptions = ImportOptionsDto;
+/** Thrown when an import would double-crawl the sources (the Activity registry allows a single crawl job). */
+export const CRAWL_BUSY_ERROR = 'Un scan de sources est déjà en cours (re-match, meilleures sources ou import) — attendez sa fin';
 
 export interface SourceInfo {
     id: string;
@@ -71,6 +75,8 @@ export interface SeriesRow {
 export class ImportService {
     private cancelRequested = new Set<number>();
     private running = new Set<number>();
+    /** Activity job handles of the running imports, keyed by import job id. */
+    private readonly activeHandles = new Map<number, JobHandle>();
     private readonly sql: DatabaseSync;
     private readonly matcher: MatcherContext;
     private readonly syncer: SyncerContext;
@@ -82,6 +88,9 @@ export class ImportService {
             store: LibraryStore;
             listSources: () => Promise<SourceInfo[]>;
             getPreferredLanguages: () => string[];
+            /** Activity feed + job registry: import runs appear there with progress and cancel. */
+            events: EventBus;
+            jobs: JobRunner;
         }
     ) {
         this.sql = this.opts.db.db;
@@ -90,7 +99,8 @@ export class ImportService {
             registry: this.opts.registry,
             cancelRequested: this.cancelRequested,
             getPreferredLanguages: this.opts.getPreferredLanguages,
-            listSources: this.opts.listSources
+            listSources: this.opts.listSources,
+            onProgress: jobId => this.updateProgress(jobId, 'match')
         };
         this.syncer = {
             sql: this.sql,
@@ -99,7 +109,8 @@ export class ImportService {
             cancelRequested: this.cancelRequested,
             getPreferredLanguages: this.opts.getPreferredLanguages,
             getJob: jobId => this._job(jobId),
-            setStatus: (jobId, status) => this._setStatus(jobId, status)
+            setStatus: (jobId, status) => this._setStatus(jobId, status),
+            onProgress: jobId => this.updateProgress(jobId, 'sync')
         };
         this._migrate();
         // a server restart interrupts whatever was in flight; it can be resumed explicitly
@@ -120,6 +131,9 @@ export class ImportService {
     /** Create a job and run the pipeline in the background. */
     async start(root: string, options: ImportOptions = {}): Promise<{ jobId: number }> {
         const resolved = assertValidDirectory(root);
+        if (this.opts.jobs.crawlBusy()) {
+            throw new Error(CRAWL_BUSY_ERROR);
+        }
         const now = this.now();
         // one active job at a time: a previous unfinished job is superseded
         this.sql
@@ -132,7 +146,8 @@ export class ImportService {
             .prepare('INSERT INTO import_jobs (root, status, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
             .run(resolved, 'scanning', JSON.stringify(options), now, now);
         const jobId = Number(result.lastInsertRowid);
-        void this._run(jobId).catch(error => this._failJob(jobId, error));
+        const handle = this.startActivityJob(jobId);
+        void this._run(jobId, false, handle).catch(error => this.failRun(jobId, error));
         return { jobId };
     }
 
@@ -141,11 +156,12 @@ export class ImportService {
         if (!this._resumableJob(jobId)) {
             return;
         }
+        const handle = this.startActivityJob(jobId);
         const pending = this.sql.prepare(`SELECT COUNT(*) AS n FROM import_series WHERE job_id = ? AND status = 'pending'`).get(jobId) as unknown as {
             n: number;
         };
         this._setStatus(jobId, pending.n > 0 ? 'matching' : 'syncing');
-        void this._run(jobId, true).catch(error => this._failJob(jobId, error));
+        void this._run(jobId, true, handle).catch(error => this.failRun(jobId, error));
     }
 
     /** Stop background work after the current series; confirmed choices are kept. */
@@ -181,8 +197,11 @@ export class ImportService {
         if (!this._resumableJob(jobId)) {
             return;
         }
+        const handle = this.startActivityJob(jobId);
+        this.running.add(jobId);
         this._setStatus(jobId, 'syncing');
-        void syncAll(this.syncer, jobId).catch(error => this._failJob(jobId, error));
+        this.updateProgress(jobId, 'sync');
+        void this.runPhases(jobId, handle, () => syncAll(this.syncer, jobId));
     }
 
     /** Current job (latest) with counters and series. */
@@ -263,14 +282,15 @@ export class ImportService {
     // pipeline
     // ------------------------------------------------------------------
 
-    private async _run(jobId: number, resume = false): Promise<void> {
+    private async _run(jobId: number, resume = false, handle?: JobHandle): Promise<void> {
         const job = this._job(jobId);
         if (!job) {
             return;
         }
         this.running.add(jobId);
-        const options: ImportOptions = JSON.parse(job.options || '{}');
-        try {
+        await this.runPhases(jobId, handle, async () => {
+            const options: ImportOptions = JSON.parse(job.options || '{}');
+            this.log(`démarré : ${job.root}`, 'import.started', { root: job.root });
             if (!resume) {
                 const scan = scanLibrary(job.root);
                 if (scan.series.length === 0) {
@@ -287,6 +307,9 @@ export class ImportService {
                 }
                 this._setStatus(jobId, 'matching');
             }
+            this.updateProgress(jobId, 'match');
+            const total = this.countSeries(jobId);
+            this.log(`matching : ${total} série(s)`, 'import.matching', { total });
             await matchAll(this.matcher, jobId, options);
             if (this.cancelRequested.has(jobId)) {
                 this._setStatus(jobId, 'ready');
@@ -294,22 +317,117 @@ export class ImportService {
             }
             const mode = options.autoConfirm ?? 'none';
             if (mode !== 'none') {
-                this.confirm(jobId, mode);
+                const confirmed = this.confirm(jobId, mode);
                 this._setStatus(jobId, 'syncing');
+                this.updateProgress(jobId, 'sync');
+                this.log(`synchronisation : ${confirmed} série(s) confirmée(s)`, 'import.syncing', { total: confirmed });
                 await syncAll(this.syncer, jobId);
             } else {
                 this._setStatus(jobId, 'ready');
             }
-        } finally {
-            this.running.delete(jobId);
-            this.cancelRequested.delete(jobId);
-        }
+        });
     }
 
     // ------------------------------------------------------------------
     // internals
     // ------------------------------------------------------------------
 
+    /** Reserve the Activity job slot for an import run (progress + cancel in
+     *  the dashboard). Throws when another crawl job already holds it. */
+    private startActivityJob(jobId: number): JobHandle {
+        const handle = this.opts.jobs.begin('import.run', 'Import de bibliothèque', this.countSeries(jobId), {
+            crawl: true,
+            onCancel: () => this.cancel(jobId)
+        });
+        if (!handle) {
+            throw new Error(CRAWL_BUSY_ERROR);
+        }
+        this.activeHandles.set(jobId, handle);
+        return handle;
+    }
+
+    /** Finish and forget the Activity job of an import run (idempotent). */
+    private releaseActivityJob(jobId: number, cancelled: boolean): void {
+        this.activeHandles.get(jobId)?.finish(cancelled);
+        this.activeHandles.delete(jobId);
+    }
+
+    /** Safety net for the fire-and-forget _run promise: record the failure and release the Activity job. */
+    private failRun(jobId: number, error: unknown): void {
+        this._failJob(jobId, error);
+        this.releaseActivityJob(jobId, false);
+    }
+
+    /** Drive one background run: recap log on success, failure log through
+     *  _failJob, cancel flag and Activity job release on every exit path. */
+    /** Drive one background run: recap log on success, failure log through
+     *  _failJob, cancel flag and Activity job release on every exit path. */
+    private async runPhases(jobId: number, handle: JobHandle | undefined, phases: () => Promise<void>): Promise<void> {
+        let failed = false;
+        try {
+            await phases();
+            if (!this.cancelRequested.has(jobId)) {
+                this.logFinished(jobId);
+            }
+        } catch (error) {
+            failed = true;
+            this._failJob(jobId, error);
+        } finally {
+            this.running.delete(jobId);
+            // a failed run is a failure, not a cancellation — _failJob already logged the terminal line
+            const cancelled = !failed && this.cancelRequested.has(jobId);
+            this.cancelRequested.delete(jobId);
+            if (cancelled) {
+                const { done, total } = handle?.job ?? { done: 0, total: 0 };
+                this.log(`annulé après ${done}/${total} série(s)`, 'import.cancelled', { done, total });
+            }
+            this.releaseActivityJob(jobId, cancelled);
+        }
+    }
+
+    private countSeries(jobId: number): number {
+        const row = this.sql.prepare('SELECT COUNT(*) AS n FROM import_series WHERE job_id = ?').get(jobId) as unknown as { n: number };
+        return row.n;
+    }
+
+    /** Push the settled-series counts of the current phase into the Activity job. */
+    private updateProgress(jobId: number, mode: 'match' | 'sync'): void {
+        const handle = this.activeHandles.get(jobId);
+        if (!handle) {
+            return;
+        }
+        const settled = mode === 'match' ? `status NOT IN ('pending', 'matching')` : `status IN ('synced', 'failed')`;
+        const row = this.sql
+            .prepare(
+                `SELECT COUNT(*) AS total,
+                        SUM(CASE WHEN ${settled} THEN 1 ELSE 0 END) AS done,
+                        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) AS hits
+                 FROM import_series WHERE job_id = ?`
+            )
+            .get(jobId) as unknown as { total: number; done: number | null; hits: number | null };
+        handle.update({ total: row.total, done: Number(row.done), hits: Number(row.hits) });
+    }
+
+    /** Phase line in the Activity feed (category 'scan'); the dashboard translates `activity.<code>`. */
+    private log(message: string, code: string, params: Record<string, string | number>): void {
+        this.opts.events.publishLog({ level: 'info', category: 'scan', code, params, message: `[import] ${message}` });
+    }
+
+    private logFinished(jobId: number): void {
+        const row = this.sql
+            .prepare(
+                `SELECT COUNT(*) AS total,
+                        SUM(CASE WHEN status NOT IN ('pending', 'matching') THEN 1 ELSE 0 END) AS matched,
+                        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) AS synced
+                 FROM import_series WHERE job_id = ?`
+            )
+            .get(jobId) as unknown as { total: number; matched: number | null; synced: number | null };
+        this.log(`terminé : ${Number(row.matched)}/${row.total} série(s) appariée(s), ${Number(row.synced)} synchronisée(s)`, 'import.finished', {
+            total: row.total,
+            matched: Number(row.matched),
+            synced: Number(row.synced)
+        });
+    }
     private now(): string {
         return new Date().toISOString();
     }
@@ -335,8 +453,16 @@ export class ImportService {
     }
 
     private _failJob(jobId: number, error: unknown): void {
-        console.error(`[import] job ${jobId} failed:`, (error as Error).message);
-        this.sql.prepare('UPDATE import_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?').run('error', (error as Error).message, this.now(), jobId);
+        const message = (error as Error).message;
+        console.error(`[import] job ${jobId} failed:`, message);
+        this.opts.events.publishLog({
+            level: 'error',
+            category: 'scan',
+            code: 'import.failed',
+            params: { error: message },
+            message: `[import] job ${jobId} échoué : ${message}`
+        });
+        this.sql.prepare('UPDATE import_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?').run('error', message, this.now(), jobId);
     }
 
     private _migrate(): void {

@@ -152,11 +152,14 @@ export class LibraryStore {
      *  chapter rows at all (import whose sync failed, files pre-dating the
      *  database) get a source check first so there are rows to attach to;
      *  chapters that stay unattached are genuinely missing from disk. */
-    async resyncLocalFiles(): Promise<{ attached: number; entries: number; checked: number }> {
+    async resyncLocalFiles(shouldCancel?: () => boolean): Promise<{ attached: number; entries: number; checked: number }> {
         let attached = 0;
         let entries = 0;
         let checked = 0;
         for (const row of this.ctx.q.all<EntryRow>('SELECT * FROM library')) {
+            if (shouldCancel?.()) {
+                break;
+            }
             const directory = seriesDirectory(this.ctx, row.id, row);
             if (!directory) {
                 continue;

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import type { JobRunner } from '../activity/jobs.js';
 import type { Database } from '../db.js';
 import { listChapterEntries } from '../downloader/paths.js';
 import { parseChapterNumber } from '../import/scanner.js';
@@ -51,6 +52,8 @@ export class CoverService {
             events: EventBus;
             /** Resolves the on-disk series folder of an entry (LibraryStore.seriesDirectory). */
             directoryOf?: (entryId: number) => string | null;
+            /** Activity job registry: makes regeneration visible (progress + cancel) in the dashboard. */
+            jobs?: JobRunner;
         }
     ) {
         this.opts.db.db.exec(`
@@ -98,6 +101,11 @@ export class CoverService {
         this.opts.db.db.exec('DELETE FROM library_covers');
     }
 
+    /** Abort an in-flight regeneration loop without wiping the cache (cancel from the Activity tab). */
+    private abort(): void {
+        this.generation++;
+    }
+
     // ------------------------------------------------------------------
     // generation
     // ------------------------------------------------------------------
@@ -115,7 +123,7 @@ export class CoverService {
             return { started: false };
         }
         this.clear();
-        void this.run();
+        void this.run().catch(error => console.warn('[covers] regeneration failed:', (error as Error).message));
         return { started: true };
     }
 
@@ -124,28 +132,49 @@ export class CoverService {
         const generation = this.generation;
         const entries = this.opts.db.db.prepare('SELECT id, title FROM library').all() as Array<{ id: number; title: string }>;
         this.counters = { total: entries.length, done: 0, failed: 0, skipped: 0 };
+        // Activity job: progress is the settled count, hits the covers actually generated.
+        // Cancelling bumps the generation, which aborts the loop below.
+        const handle = this.opts.jobs?.begin('covers.regenerate', 'Régénération des couvertures', entries.length, {
+            onCancel: () => this.abort()
+        });
         this.log(`regenerating cover cache for ${entries.length} series`, 'info', 'scan.covers.started', { total: entries.length });
-        for (const entry of entries) {
-            if (generation !== this.generation) {
-                this.running = false; // the cache was cleared (or a new run started): stop
-                return;
-            }
-            try {
-                const generated = await this.generateForEntry(entry.id);
-                if (generated) {
-                    this.counters.done++;
-                } else {
-                    this.counters.skipped++;
+        let cancelled = false;
+        try {
+            for (const entry of entries) {
+                if (generation !== this.generation) {
+                    cancelled = true; // the cache was cleared (or the job cancelled): stop
+                    break;
                 }
-            } catch (error) {
-                this.counters.failed++;
-                this.log(`cover failed for "${entry.title}": ${(error as Error).message}`, 'warn', 'scan.covers.entryFailed', {
-                    title: entry.title,
-                    error: (error as Error).message
-                });
+                try {
+                    const generated = await this.generateForEntry(entry.id);
+                    if (generated) {
+                        this.counters.done++;
+                    } else {
+                        this.counters.skipped++;
+                    }
+                } catch (error) {
+                    this.counters.failed++;
+                    this.log(`cover failed for "${entry.title}": ${(error as Error).message}`, 'warn', 'scan.covers.entryFailed', {
+                        title: entry.title,
+                        error: (error as Error).message
+                    });
+                }
+                const settled = this.counters.done + this.counters.failed + this.counters.skipped;
+                handle?.update({ done: settled, hits: this.counters.done });
             }
+        } finally {
+            this.running = false;
+            handle?.finish(cancelled);
         }
-        this.running = false;
+        if (cancelled) {
+            this.log(
+                `cover cache regeneration cancelled: ${this.counters.done} generated, ${this.counters.failed} failed, ${this.counters.skipped} skipped`,
+                'warn',
+                'scan.covers.cancelled',
+                { done: this.counters.done, failed: this.counters.failed, skipped: this.counters.skipped }
+            );
+            return;
+        }
         this.log(
             `cover cache done: ${this.counters.done} generated, ${this.counters.skipped} skipped, ${this.counters.failed} failed`,
             'info',

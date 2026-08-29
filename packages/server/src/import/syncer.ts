@@ -24,6 +24,8 @@ export interface SyncerContext {
     getJob(jobId: number): JobRow | undefined;
     /** Persist a job status transition — the service's _setStatus. */
     setStatus(jobId: number, status: JobStatus): void;
+    /** Notified after each settled series (Activity job progress). */
+    onProgress?: (jobId: number) => void;
 }
 
 function now(): string {
@@ -58,6 +60,7 @@ export async function syncAll(ctx: SyncerContext, jobId: number): Promise<void> 
                 .prepare(`UPDATE import_series SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND path = ?`)
                 .run((error as Error).message, now(), jobId, series.path);
         }
+        ctx.onProgress?.(jobId);
     }
     ctx.setStatus(jobId, 'done');
 }

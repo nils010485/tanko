@@ -317,20 +317,28 @@ export interface ActivityLogDto extends LogEventMeta {
     at: string;
 }
 
-/** Long-running background job (bulk tools) — GET /api/activity/jobs. */
+/** Long-running background job (bulk tools, import, covers, rescan) — GET /api/activity/jobs. */
 export interface JobStatusDto {
     id: number;
-    /** i18n code prefix of the tool, e.g. 'scan.betterSources'. */
+    /** i18n code prefix of the tool, e.g. 'scan.betterSources' or 'import.run'. */
     kind: string;
     label: string;
     running: boolean;
     done: number;
     total: number;
-    /** Migrations/suggestions found, depending on the tool. */
+    /** Migrations/suggestions found, covers generated… depending on the tool. */
     hits: number;
     startedAt: string;
     finishedAt?: string;
     cancelled?: boolean;
+}
+
+/** Live snapshot of the background jobs — GET /api/activity/jobs. */
+export interface ActivityJobsDto {
+    /** Jobs currently running (at most one "crawl" job, any number of local ones). */
+    running: JobStatusDto[];
+    /** Most recently finished jobs, newest first (bounded). */
+    history: JobStatusDto[];
 }
 
 /** System pulse — GET /api/activity/stats. */

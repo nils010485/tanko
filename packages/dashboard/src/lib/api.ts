@@ -2,6 +2,7 @@
  * Minimal REST client for the dashboard.
  */
 import type {
+    ActivityJobsDto,
     ActivityLogDto,
     ActivityStatsDto,
     ApiError,
@@ -13,7 +14,6 @@ import type {
     DownloadsPageDto,
     GlobalSearchStatusDto,
     ImportJobStatusDto,
-    JobStatusDto,
     LibraryBulkAction,
     LibraryBulkSummary,
     LibraryChapterDto,
@@ -221,7 +221,7 @@ export const api = {
         return request<{ logs: ActivityLogDto[] }>(`/api/activity${query ? `?${query}` : ''}`);
     },
     activityStats: (since?: string) => request<ActivityStatsDto>(`/api/activity/stats${since ? `?since=${encodeURIComponent(since)}` : ''}`),
-    activityJobs: () => request<{ current: JobStatusDto | null; last: JobStatusDto | null }>('/api/activity/jobs'),
+    activityJobs: () => request<ActivityJobsDto>('/api/activity/jobs'),
     cancelJob: (jobId: number) => request<{ ok: boolean }>(`/api/activity/jobs/${jobId}/cancel`, { method: 'POST' }),
 
     // schedule

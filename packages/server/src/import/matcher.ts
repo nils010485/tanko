@@ -23,6 +23,8 @@ export interface MatcherContext {
     cancelRequested: Set<number>;
     getPreferredLanguages: () => string[];
     listSources: () => Promise<SourceInfo[]>;
+    /** Notified after each settled series (Activity job progress). */
+    onProgress?: (jobId: number) => void;
 }
 
 function now(): string {
@@ -83,6 +85,7 @@ export async function matchAll(ctx: MatcherContext, jobId: number, options: Impo
                     )
                     .run((error as Error).message, now(), jobId, series.path);
             }
+            ctx.onProgress?.(jobId);
         }
     };
     await Promise.all(Array.from({ length: concurrency }, worker));

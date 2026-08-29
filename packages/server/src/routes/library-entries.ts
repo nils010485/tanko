@@ -27,7 +27,7 @@ const anilistTriedAt = new Map<number, number>();
 const BULK_ACTIONS: readonly LibraryBulkAction[] = ['pause', 'resume', 'hide', 'unhide', 'check', 'downloadNew', 'rematch', 'delete'];
 
 export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: LibraryRouteDeps): void {
-    const { store, queue, events, failover, covers } = deps;
+    const { store, queue, events, failover, covers, jobs } = deps;
     const publishEntry = deps.publishEntry;
 
     /** Entries with their cached cover URL when the first-chapter cover cache is enabled. */
@@ -102,10 +102,50 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
     });
 
     // Disk sync: re-attach local files to their chapters (by number), then
-    // list entries whose files disappeared from the library folder (dry-run)
+    // list entries whose files disappeared from the library folder (dry-run).
+    // Local Activity job + feed lines: a resync on a large library can block
+    // for a while and must stay visible while it runs.
     app.post('/api/library/rescan', async () => {
-        const resync = await store.resyncLocalFiles();
-        return { dead: store.findDeadEntries(), ...resync };
+        let cancelled = false;
+        const handle = jobs.begin('library.rescan', 'Resynchronisation disque', 1, {
+            onCancel: () => {
+                cancelled = true;
+            }
+        });
+        events.publishLog({
+            level: 'info',
+            category: 'scan',
+            code: 'scan.rescan.started',
+            message: 'Resynchronisation disque lancée : rattachement des fichiers locaux'
+        });
+        try {
+            const resync = await store.resyncLocalFiles(() => cancelled);
+            const dead = store.findDeadEntries();
+            if (!cancelled) {
+                handle?.update({ done: 1 });
+            }
+            events.publishLog({
+                level: 'info',
+                category: 'scan',
+                code: cancelled ? 'scan.rescan.cancelled' : 'scan.rescan.finished',
+                params: { attached: resync.attached, entries: resync.entries, checked: resync.checked, dead: dead.length },
+                message: cancelled
+                    ? `Resynchronisation annulée : ${resync.attached} chapitre(s) rattaché(s) sur ${resync.entries} série(s)`
+                    : `Resynchronisation terminée : ${resync.attached} chapitre(s) rattaché(s) sur ${resync.entries} série(s), ${dead.length} série(s) sans fichiers`
+            });
+            return { dead, ...resync };
+        } catch (error) {
+            events.publishLog({
+                level: 'error',
+                category: 'scan',
+                code: 'scan.rescan.failed',
+                params: { error: (error as Error).message },
+                message: `Resynchronisation échouée : ${(error as Error).message}`
+            });
+            throw error;
+        } finally {
+            handle?.finish(cancelled);
+        }
     });
 
     // Apply a rescan: drop the dead entries listed by a previous /rescan
