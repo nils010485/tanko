@@ -87,7 +87,29 @@ function resolveSeriesDirectory(directory: string): string {
             return variant;
         }
     }
+    // last resort: a sibling folder whose name differs only by case or
+    // punctuation (« Into the light once again » on disk for a source titled
+    // « Into the Light, Once Again ») — without it the disk pass scans a
+    // folder that does not exist and local chapters stay invisible
+    const parent = path.dirname(directory);
+    const wanted = directoryKey(path.basename(directory));
+    try {
+        for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+            if ((entry.isDirectory() || entry.isSymbolicLink()) && directoryKey(entry.name) === wanted) {
+                return path.join(parent, entry.name);
+            }
+        }
+    } catch {
+        // parent folder missing too: keep the configured spelling
+    }
     return directory;
+}
+
+/** Loose comparison key for folder lookup: lowercase letters/digits only, so
+ *  case and punctuation differences (comma, colon, extra spaces…) don't
+ *  prevent matching an existing series folder. */
+function directoryKey(name: string): string {
+    return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 export function chapterPaths(

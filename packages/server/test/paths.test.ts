@@ -53,6 +53,30 @@ describe('chapterPaths', () => {
             }
         }
     });
+
+    it('accepts a series folder differing only by case or punctuation', () => {
+        // the disk folder predates the source title spelling (« Into the Light, Once Again » on Tapas)
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-paths-'));
+        try {
+            const folder = path.join(base, 'Into the light once again');
+            fs.mkdirSync(folder, { recursive: true });
+            const paths = chapterPaths(base, 'Tapas', 'Into the Light, Once Again', 'Ch.1', 'series');
+            expect(paths.cbzFile.startsWith(folder)).toBe(true);
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not fuzzy-match a different series folder', () => {
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-paths-'));
+        try {
+            fs.mkdirSync(path.join(base, 'Other Series'), { recursive: true });
+            const paths = chapterPaths(base, 'Tapas', 'Into the Light, Once Again', 'Ch.1', 'series');
+            expect(paths.cbzFile.startsWith(path.join(base, 'Other Series'))).toBe(false);
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
 });
 
 describe('chapterFileNames', () => {
