@@ -1384,13 +1384,14 @@ export class LibraryStore {
     }
 
     private _entryToDto(row: EntryRow): LibraryEntryDto {
-        const counts = this._get<{ total: number | null; downloaded: number | null; fresh: number | null }>(
+        const counts = this._get<{ total: number | null; downloaded: number | null; fresh: number | null; failed: number | null }>(
             `SELECT COUNT(*) AS total,
                     SUM(CASE WHEN status = 'downloaded' THEN 1 ELSE 0 END) AS downloaded,
-                    SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh
+                    SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
              FROM library_chapters WHERE entry_id = ?`,
             row.id
-        ) ?? { total: null, downloaded: null, fresh: null };
+        ) ?? { total: null, downloaded: null, fresh: null, failed: null };
         const snapshot = this._get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) ?? { n: 0 };
         let suggestion: LibraryEntryDto['migrationSuggestion'];
         try {
@@ -1433,6 +1434,7 @@ export class LibraryStore {
             chapterCount,
             downloadedCount,
             newCount: Number(counts.fresh || 0),
+            failedCount: Number(counts.failed || 0),
             lastCheckedAt: row.last_checked_at || undefined,
             lastChapterAt: row.last_chapter_at || undefined,
             addedAt: row.added_at,

@@ -674,7 +674,12 @@ export default function Library({
             <IconButton title={t('library.check')} onClick={() => checkEntry(entry)} loading={busy[`check-${entry.id}`]}>
                 <IconRefresh size={14} />
             </IconButton>
-            <IconButton title={t('library.downloadNew')} onClick={() => downloadNew(entry)} disabled={entry.newCount === 0} loading={busy[`dl-${entry.id}`]}>
+            <IconButton
+                title={t('library.downloadNew')}
+                onClick={() => downloadNew(entry)}
+                disabled={entry.newCount === 0 && (entry.failedCount ?? 0) === 0}
+                loading={busy[`dl-${entry.id}`]}
+            >
                 <IconDownload size={14} />
             </IconButton>
             {withChapters && (

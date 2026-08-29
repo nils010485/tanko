@@ -12,16 +12,21 @@ export function ConfirmDialog({
     title,
     body,
     confirmLabel,
+    secondaryLabel,
     danger = true,
     onConfirm,
+    onSecondary,
     onCancel
 }: {
     open: boolean;
     title: string;
     body?: ReactNode;
     confirmLabel?: string;
+    /** Optional middle action (e.g. a narrower alternative to the confirm). */
+    secondaryLabel?: string;
     danger?: boolean;
     onConfirm: () => void;
+    onSecondary?: () => void;
     onCancel: () => void;
 }) {
     const { t } = useI18n();
@@ -50,6 +55,11 @@ export function ConfirmDialog({
                     <Button small variant="ghost" onClick={onCancel}>
                         {t('common.cancel')}
                     </Button>
+                    {secondaryLabel && onSecondary && (
+                        <Button small variant="ghost" onClick={onSecondary}>
+                            {secondaryLabel}
+                        </Button>
+                    )}
                     <Button small variant={danger ? 'danger' : 'primary'} onClick={onConfirm} autoFocus>
                         {resolvedConfirmLabel}
                     </Button>

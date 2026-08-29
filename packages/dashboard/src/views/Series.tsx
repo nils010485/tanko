@@ -7,6 +7,7 @@ import type { LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAl
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChapterList, ChapterStatusBadge } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
+import { ConfirmDialog } from '../components/confirm.js';
 import { IconArrowLeft, IconDownload, IconEye, IconGlobe, IconLibrary, IconRefresh, IconSearch, IconUndo, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
@@ -45,6 +46,7 @@ export default function Series({
     const [busy, setBusy] = useState<Record<string, boolean>>({});
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
+    const [missingDialog, setMissingDialog] = useState(false);
     const toast = useToast();
     /** Source picker dialog: alternatives with chapter counts. */
     const [picker, setPicker] = useState<{ open: boolean; loading: boolean; error: string; data: SourceAlternativesResponseDto | null }>({
@@ -125,14 +127,30 @@ export default function Series({
         }
     };
 
-    /** Grab the chapters never downloaded ('missing') or whose download failed. */
+    /** Sonarr-style single action: grab everything not on disk yet ('new' +
+     *  'missing' + 'failed'). Chapters that predate the follow ('missing')
+     *  ask first — the confirm dialog is the monitor-only guard a 500-chapter
+     *  backlog needs. */
     const downloadMissing = async () => {
         if (!entry) return;
-        const missing = toQueueChapters((chapters ?? []).filter(chapter => chapter.status === 'missing' || chapter.status === 'failed'));
-        if (missing.length === 0) return;
+        if (missingOnly === 0) {
+            await downloadNewChapters();
+            return;
+        }
+        setMissingDialog(true);
+    };
+
+    /** Everything not on disk: 'new' + 'missing' + 'failed' via the ad-hoc
+     *  enqueue endpoint (the scheduler's fresh-only semantics stay untouched). */
+    const downloadEverything = async () => {
+        if (!entry) return;
+        const pending = toQueueChapters(
+            (chapters ?? []).filter(chapter => chapter.status === 'new' || chapter.status === 'missing' || chapter.status === 'failed')
+        );
+        if (pending.length === 0) return;
         setBusyFlag('dlMissing', true);
         try {
-            const result = await api.enqueue({ sourceId: entry.sourceId, mangaId: entry.mangaId, mangaTitle: entry.title, chapters: missing });
+            const result = await api.enqueue({ sourceId: entry.sourceId, mangaId: entry.mangaId, mangaTitle: entry.title, chapters: pending });
             toast.success(t('series.chaptersQueued', { n: result.added + result.retried }));
             await refreshLibrary();
             await loadChapters();
@@ -337,8 +355,8 @@ export default function Series({
 
     const missingOnly = chapters?.filter(chapter => chapter.status === 'missing').length ?? 0;
     const failedCount = chapters?.filter(chapter => chapter.status === 'failed').length ?? 0;
-    // the "download existing" button grabs both the never-downloaded backlog and failed retries
-    const missingCount = missingOnly + failedCount;
+    // the single Sonarr-style action grabs everything not on disk yet
+    const pendingCount = (chapters?.filter(chapter => chapter.status === 'new').length ?? 0) + missingOnly + failedCount;
 
     const chapterNode = (chapter: LibraryChapterDto) => (
         <span className="flex flex-none items-center gap-1.5">
@@ -409,19 +427,15 @@ export default function Series({
                         <Button small onClick={checkNow} loading={busy.check}>
                             <IconRefresh size={13} /> {t('library.check')}
                         </Button>
-                        <Button small onClick={downloadNewChapters} disabled={entry.newCount === 0 && failedCount === 0} loading={busy.dlNew}>
-                            <IconDownload size={13} /> {t('library.downloadNew')}
-                        </Button>
                         <Button
                             small
-                            variant="ghost"
                             onClick={downloadMissing}
-                            disabled={missingCount === 0}
+                            disabled={pendingCount === 0}
                             loading={busy.dlMissing}
-                            title={t('series.downloadMissingHint', { n: missingCount })}
+                            title={t('series.downloadMissingHint', { n: pendingCount })}
                         >
                             <IconDownload size={13} /> {t('series.downloadMissing')}
-                            {missingCount > 0 ? ` (${missingCount})` : ''}
+                            {pendingCount > 0 ? ` (${pendingCount})` : ''}
                         </Button>
                         {/* gestion de la source */}
                         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
@@ -603,6 +617,24 @@ export default function Series({
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                open={missingDialog}
+                title={t('series.downloadMissingTitle')}
+                body={t('series.downloadMissingBody', { n: missingOnly })}
+                danger={false}
+                confirmLabel={t('series.downloadAllLabel', { n: missingOnly })}
+                secondaryLabel={t('series.downloadNewOnly')}
+                onConfirm={() => {
+                    setMissingDialog(false);
+                    void downloadEverything();
+                }}
+                onSecondary={() => {
+                    setMissingDialog(false);
+                    void downloadNewChapters();
+                }}
+                onCancel={() => setMissingDialog(false)}
+            />
         </div>
     );
 }
