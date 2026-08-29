@@ -27,7 +27,7 @@ import {
 } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, Input, SectionTitle, Spinner } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spinner } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
@@ -317,7 +317,6 @@ export default function Discover({
 
     const openChapters = async (manga: MangaDto) => {
         setSelected(manga);
-        setSelected(manga);
         setChapters(null);
         setChaptersError('');
         try {
@@ -596,11 +595,14 @@ export default function Discover({
             {searchError && (
                 <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
                     <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
-                    <span>{searchError}</span>
+                    <ErrorDetail error={searchError} className="min-w-0 flex-1" />
                     <button type="button" onClick={() => setSearchError('')} className="ml-auto text-red-400/70 hover:text-red-300">
                         <IconX size={14} />
                     </button>
                 </Card>
+            )}
+            {results === null && !globalStatus && !searching && !globalSearching && !searchError && !globalError && (
+                <EmptyState title={t('discover.startTitle')} hint={t('discover.startHint')} icon={<IconSearch size={28} />} />
             )}
 
             {results && results.length === 0 && <EmptyState title={t('discover.noResults')} hint={t('discover.noResultsHint')} />}
@@ -627,7 +629,7 @@ export default function Discover({
             {globalError && (
                 <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
                     <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
-                    <span>{globalError}</span>
+                    <ErrorDetail error={globalError} className="min-w-0 flex-1" />
                     <button type="button" onClick={() => setGlobalError('')} className="ml-auto text-red-400/70 hover:text-red-300">
                         <IconX size={14} />
                     </button>
@@ -757,7 +759,7 @@ export default function Discover({
                                 </div>
                             ) : chapters.length === 0 ? (
                                 <div className="py-8 text-center text-sm text-zinc-500">
-                                    {chaptersError ? <span className="text-red-400">{chaptersError}</span> : t('discover.noChapter')}
+                                    {chaptersError ? <ErrorDetail error={chaptersError} /> : t('discover.noChapter')}
                                 </div>
                             ) : (
                                 <ChapterList

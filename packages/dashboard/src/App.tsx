@@ -42,6 +42,8 @@ export default function App() {
     const [libraryFocusFilter, setLibraryFocusFilter] = useState<string | null>(null);
     const live = useLiveState();
     const { t } = useI18n();
+    // becomes true 3s after mount: the offline banner may then show when the WS is down
+    const [offlineReady, setOfflineReady] = useState(false);
 
     const totalNew = live.library.reduce((sum, entry) => sum + entry.newCount, 0);
     const activeLabel = t(`nav.${tab}`);
@@ -49,6 +51,11 @@ export default function App() {
     useEffect(() => {
         document.title = `Tanko — ${activeLabel}`;
     }, [activeLabel]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setOfflineReady(true), 3000);
+        return () => clearTimeout(timer);
+    }, []);
 
     // entering the Activity tab marks the unread error counter as seen
     useEffect(() => {
@@ -137,6 +144,12 @@ export default function App() {
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col">
+                {offlineReady && !live.connected && (
+                    <div className="flex items-center justify-center gap-2 border-b border-orange-500/30 bg-orange-500/10 px-4 py-2 text-xs text-orange-300">
+                        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-orange-400" />
+                        {t('app.disconnected')}
+                    </div>
+                )}
                 {/* Mobile top bar */}
                 <header className="flex items-center gap-3 border-b border-line px-4 py-3 lg:hidden">
                     <button
@@ -168,6 +181,7 @@ export default function App() {
                                 focusFilter={libraryFocusFilter}
                                 onFocusFilterDone={() => setLibraryFocusFilter(null)}
                                 onOpenSeries={navigateSeries}
+                                onNavigateTab={navigate}
                             />
                         )}
                         {tab === 'library' && seriesId !== null && (
@@ -179,7 +193,7 @@ export default function App() {
                                 refreshLibrary={live.refreshLibrary}
                             />
                         )}
-                        {tab === 'downloads' && <Downloads library={live.library} />}
+                        {tab === 'downloads' && <Downloads library={live.library} onOpenSeries={navigateSeries} />}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
                         {tab === 'tasks' && <Tasks schedule={live.schedule} library={live.library} />}
                         {tab === 'activity' && <Activity logs={live.logs} library={live.library} onOpenSeries={navigateSeries} />}

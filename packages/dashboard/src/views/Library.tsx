@@ -16,12 +16,14 @@ import {
     IconBookmark,
     IconBookmarkFilled,
     IconCheck,
+    IconChevronDown,
     IconDots,
     IconDownload,
     IconEyeOff,
     IconFolder,
     IconGrid,
     IconGridSmall,
+    IconImport,
     IconLibrary,
     IconList,
     IconPause,
@@ -125,7 +127,8 @@ export default function Library({
     refreshLibrary,
     focusFilter,
     onFocusFilterDone,
-    onOpenSeries
+    onOpenSeries,
+    onNavigateTab
 }: {
     library: LibraryEntryDto[];
     loaded: boolean;
@@ -133,11 +136,13 @@ export default function Library({
     focusFilter?: string | null;
     onFocusFilterDone?: () => void;
     onOpenSeries?: (id: number) => void;
+    onNavigateTab?: (tab: 'discover' | 'import') => void;
 }) {
     const [busy, setBusy] = useState<Record<string, boolean>>({});
     const [expanded, setExpanded] = useState<number | null>(null);
     const [chapters, setChapters] = useState<LibraryChapterDto[] | null>(null);
     const [filter, setFilter] = useState('');
+    const [filtersOpen, setFiltersOpen] = useState(false);
     const [pendingRemove, setPendingRemove] = useState<LibraryEntryDto | null>(null);
     const [pendingDisk, setPendingDisk] = useState<LibraryEntryDto | null>(null);
     const [pendingBulkRemove, setPendingBulkRemove] = useState(false);
@@ -825,7 +830,16 @@ export default function Library({
         >
             <div className="relative aspect-[2/3] overflow-hidden rounded-t-xl">
                 <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
-                <div className="absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry)}</div>
+                {/* full-cover click target (pointer only): opens the series (or toggles selection); the title button stays the keyboard path */}
+                <button
+                    type="button"
+                    title={entry.title}
+                    aria-label={entry.title}
+                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
+                    className="absolute inset-0"
+                    tabIndex={-1}
+                />
+                <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry)}</div>
                 {selecting ? (
                     <button
                         type="button"
@@ -888,7 +902,16 @@ export default function Library({
                         className="flex-none accent-orange-500"
                     />
                 )}
-                <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 flex-none rounded-md" />
+                <button
+                    type="button"
+                    title={entry.title}
+                    aria-label={entry.title}
+                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
+                    tabIndex={-1}
+                    className="flex-none"
+                >
+                    <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 rounded-md" />
+                </button>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -1052,6 +1075,17 @@ export default function Library({
                     </div>
                 </div>
                 <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+                    {/* mobile: chips collapse behind a toggle — active ones stay visible */}
+                    <button
+                        type="button"
+                        onClick={() => setFiltersOpen(current => !current)}
+                        aria-expanded={filtersOpen}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-xs text-muted transition-colors hover:border-zinc-600 lg:hidden"
+                    >
+                        <IconChevronDown size={12} className={`flex-none transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+                        {t('library.filtersToggle')}
+                        {activeFilters.size > 0 && <span className="rounded-full bg-accent/10 px-1 text-[10px] text-accent-soft">{activeFilters.size}</span>}
+                    </button>
                     {FILTER_IDS.map(id => {
                         const on = activeFilters.has(id);
                         const count = source.filter(FILTER_PREDS[id]).length;
@@ -1060,7 +1094,11 @@ export default function Library({
                                 key={id}
                                 type="button"
                                 onClick={() => toggleFilter(id)}
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${on ? 'border-accent/50 bg-accent/10 text-accent-soft' : 'border-line bg-canvas text-muted hover:border-zinc-600'}`}
+                                className={`items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                                    on
+                                        ? 'inline-flex border-accent/50 bg-accent/10 text-accent-soft'
+                                        : `border-line bg-canvas text-muted hover:border-zinc-600 ${filtersOpen ? 'inline-flex' : 'hidden lg:inline-flex'}`
+                                }`}
                             >
                                 {filterLabel(id)}
                                 <span className={`rounded-full px-1 text-[10px] ${on ? 'text-accent-soft' : 'text-faint'}`}>{count}</span>
@@ -1146,7 +1184,16 @@ export default function Library({
             )}
 
             {loaded && filtered.length === 0 && source.length === 0 && !showHidden && (
-                <EmptyState title={t('library.noSeries')} hint={t('library.noSeriesHint')} icon={<IconLibrary size={28} />} />
+                <EmptyState title={t('library.noSeries')} hint={t('library.noSeriesHint')} icon={<IconLibrary size={28} />}>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button small onClick={() => onNavigateTab?.('discover')}>
+                            <IconSearch size={13} /> {t('library.emptyDiscoverCta')}
+                        </Button>
+                        <Button small variant="ghost" onClick={() => onNavigateTab?.('import')}>
+                            <IconImport size={13} /> {t('library.emptyImportCta')}
+                        </Button>
+                    </div>
+                </EmptyState>
             )}
             {loaded && filtered.length === 0 && source.length === 0 && showHidden && (
                 <EmptyState title={t('library.noHidden')} hint={t('library.noHiddenHint')} icon={<IconEyeOff size={28} />} />

@@ -4,7 +4,7 @@
  */
 import { useI18n } from '../i18n/index.js';
 import { IconX } from './icons.js';
-import { Spinner } from './ui.js';
+import { ErrorDetail, Spinner } from './ui.js';
 
 export function PagePreview({
     open,
@@ -56,7 +56,7 @@ export function PagePreview({
                             <Spinner /> {t('discover.loadingPages')}
                         </div>
                     ) : error ? (
-                        <div className="py-10 text-center text-sm text-red-400">{error}</div>
+                        <ErrorDetail error={error} className="py-10 text-center text-sm text-red-400" />
                     ) : (pages || []).length === 0 ? (
                         <div className="py-10 text-center text-sm text-zinc-500">{t('discover.noPages')}</div>
                     ) : (

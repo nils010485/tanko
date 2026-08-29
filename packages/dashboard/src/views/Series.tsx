@@ -4,14 +4,25 @@
  * download, retry, preview and restore. Reached via #/library/:id.
  */
 import type { LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChapterList, ChapterStatusBadge } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
-import { IconArrowLeft, IconDownload, IconEye, IconGlobe, IconLibrary, IconRefresh, IconSearch, IconUndo, IconX } from '../components/icons.js';
+import {
+    IconArrowLeft,
+    IconArrowLeftRight,
+    IconDownload,
+    IconEye,
+    IconGlobe,
+    IconLibrary,
+    IconRefresh,
+    IconSearch,
+    IconUndo,
+    IconX
+} from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, IconButton, SectionTitle, Spinner, Toggle } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { chapterDownloadable, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
@@ -28,6 +39,11 @@ interface PreviewState {
  *  (mirrors INCOMPLETE_SOURCE_CHAPTERS on the server). */
 const INCOMPLETE_BADGE_CHAPTERS = 10;
 
+/** Chapter-list order, persisted across sessions ('asc' keeps the source order). */
+const CHAPTERS_SORT_KEY = 'tanko.series.chaptersSort';
+type ChapterSort = 'asc' | 'desc';
+const readChapterSort = (): ChapterSort => (localStorage.getItem(CHAPTERS_SORT_KEY) === 'desc' ? 'desc' : 'asc');
+
 export default function Series({
     entryId,
     library,
@@ -43,6 +59,9 @@ export default function Series({
 }) {
     const entry = library.find(item => item.id === entryId);
     const [chapters, setChapters] = useState<LibraryChapterDto[] | null>(null);
+    const [chapterQuery, setChapterQuery] = useState('');
+    const [chapterSort, setChapterSort] = useState<ChapterSort>(readChapterSort);
+
     const [busy, setBusy] = useState<Record<string, boolean>>({});
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
@@ -62,6 +81,18 @@ export default function Series({
     const { t, formatDate } = useI18n();
     /** Ignore responses that resolve after a newer fetch started (series switch, poll, refresh). */
     const requestSeq = useRef(0);
+
+    useEffect(() => {
+        localStorage.setItem(CHAPTERS_SORT_KEY, chapterSort);
+    }, [chapterSort]);
+
+    // filtered + reordered view of the chapter list (search box + sort toggle)
+    const visibleChapters = useMemo(() => {
+        const list = chapters ?? [];
+        const needle = chapterQuery.trim().toLowerCase();
+        const filtered = needle === '' ? list : list.filter(chapter => chapter.title.toLowerCase().includes(needle));
+        return chapterSort === 'asc' ? filtered : [...filtered].reverse();
+    }, [chapters, chapterQuery, chapterSort]);
     const loadChapters = useCallback(async () => {
         const seq = ++requestSeq.current;
         try {
@@ -79,6 +110,7 @@ export default function Series({
     // switching series restarts from a clean slate
     useEffect(() => {
         setChapters(null);
+        setChapterQuery('');
         setSelectedChapters(new Set());
         setPreview(null);
         setBusy({});
@@ -482,15 +514,26 @@ export default function Series({
             >
                 {t('series.chaptersTitle')}
             </SectionTitle>
+            {chapters !== null && chapters.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Input value={chapterQuery} onChange={setChapterQuery} placeholder={t('series.filterPlaceholder')} className="w-44" />
+                    <Button small variant="ghost" onClick={() => setChapterSort(current => (current === 'asc' ? 'desc' : 'asc'))} title={t('series.sortHint')}>
+                        <IconArrowLeftRight size={13} />
+                        {chapterSort === 'asc' ? t('series.sortNewestFirst') : t('series.sortOldestFirst')}
+                    </Button>
+                </div>
+            )}
             {chapters === null ? (
                 <Card className="flex items-center gap-2 p-4 text-sm text-zinc-500">
                     <Spinner /> {t('common.loading')}
                 </Card>
             ) : chapters.length === 0 ? (
                 <EmptyState title={t('discover.noChapter')} />
+            ) : visibleChapters.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-line px-6 py-8 text-center text-sm text-zinc-500">{t('series.filterNoMatch')}</div>
             ) : (
                 <ChapterList
-                    items={chapters.map(chapter => ({ key: String(chapter.id), title: chapter.title, node: chapterNode(chapter) }))}
+                    items={visibleChapters.map(chapter => ({ key: String(chapter.id), title: chapter.title, node: chapterNode(chapter) }))}
                     selection={{ selected: selectedChapters, onChange: setSelectedChapters }}
                     resetKey={entryId}
                 />

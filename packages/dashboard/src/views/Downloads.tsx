@@ -50,7 +50,7 @@ type CleanAction = 'queue' | 'failed' | 'completed' | 'all';
 
 const HISTORY_JOB = new Set(['completed', 'failed', 'cancelled']);
 
-export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
+export default function Downloads({ library, onOpenSeries }: { library: LibraryEntryDto[]; onOpenSeries?: (id: number) => void }) {
     const { t, formatDate } = useI18n();
     const [jobs, setJobs] = useState<DownloadJobDto[]>([]);
     const [total, setTotal] = useState(0);
@@ -233,6 +233,9 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
     const renderJob = (job: DownloadJobDto) => {
         const active = job.status === 'queued' || job.status === 'downloading';
         const errorOpen = expandedErrors.has(job.id);
+        // const local so TS keeps the non-null narrowing inside the closure
+        const entryId = job.entryId;
+        const openSeries = entryId != null && onOpenSeries ? () => onOpenSeries(entryId) : null;
         return (
             <Card key={job.id} className="group p-3">
                 <div className="flex items-start gap-3">
@@ -244,7 +247,18 @@ export default function Downloads({ library }: { library: LibraryEntryDto[] }) {
                     />
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium">{job.mangaTitle}</span>
+                            {openSeries ? (
+                                <button
+                                    type="button"
+                                    className="truncate text-sm font-medium transition-colors hover:text-accent-soft"
+                                    title={t('downloads.openSeriesHint')}
+                                    onClick={openSeries}
+                                >
+                                    {job.mangaTitle}
+                                </button>
+                            ) : (
+                                <span className="truncate text-sm font-medium">{job.mangaTitle}</span>
+                            )}
                             <span className="truncate text-sm text-zinc-500">— {job.chapterTitle}</span>
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">

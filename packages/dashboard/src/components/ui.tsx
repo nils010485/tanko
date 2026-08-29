@@ -2,8 +2,9 @@
  * Small shared UI primitives (dark theme, Tailwind).
  * Colors come from the @theme tokens in index.css (accent, surface, line…).
  */
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, useState } from 'react';
 import { useI18n } from '../i18n/index.js';
+import { IconChevronDown } from './icons.js';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
     return <div className={`rounded-xl border border-line bg-surface/60 ${className}`}>{children}</div>;
@@ -219,6 +220,36 @@ export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: (
                 <Button small variant="ghost" onClick={onRetry}>
                     {t('ui.retry')}
                 </Button>
+            )}
+        </div>
+    );
+}
+
+/** Friendly error display: translated headline with the raw technical
+ *  message collapsed behind a toggle (color inherits from the parent). */
+export function ErrorDetail({ error, className = '' }: { error: string; className?: string }) {
+    const { t } = useI18n();
+    const [open, setOpen] = useState(false);
+    return (
+        <div className={`min-w-0 ${className}`}>
+            <div>{t('common.errorGeneric')}</div>
+            {error.trim() !== '' && (
+                <>
+                    <button
+                        type="button"
+                        onClick={() => setOpen(current => !current)}
+                        aria-expanded={open}
+                        className="mt-1 inline-flex items-center gap-1 text-xs text-current opacity-70 transition-opacity hover:opacity-100"
+                    >
+                        <IconChevronDown size={11} className={`flex-none transition-transform ${open ? 'rotate-180' : ''}`} />
+                        {t('common.errorDetail')}
+                    </button>
+                    {open && (
+                        <div className="mt-1 rounded-lg border border-red-400/15 bg-red-400/5 p-2 text-left font-mono text-[11px] leading-relaxed break-all text-red-300/90">
+                            {error}
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );
