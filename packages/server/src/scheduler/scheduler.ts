@@ -2,6 +2,9 @@
  * Scheduler: periodically checks every library entry for new chapters.
  * New chapters are flagged in the library and (optionally) auto-enqueued
  * into the download queue. Status is published on the WebSocket bus.
+ *
+ * The scheduler is a facade over focused modules: settings.ts (settings +
+ * last-run persistence) and notify.ts (webhook notifications).
  */
 
 import type { LibraryEntryDto, ScheduleStatusDto } from '@tanko/shared';
@@ -9,19 +12,12 @@ import { Cron } from 'croner';
 import type { Database } from '../db.js';
 import type { DownloadQueue } from '../downloader/queue.js';
 import { DOWNLOAD_FAILOVER_FAILURES, INCOMPLETE_SOURCE_CHAPTERS, OUTAGE_SILENCE_MS, SOURCE_OUTAGE_ENTRIES } from '../library/failover.js';
-import {
-    DEFAULT_EVENT_TOGGLES,
-    mergeNotificationSettings,
-    type NotificationEvent,
-    type NotificationSettings,
-    notificationEnabled,
-    sendNotification
-} from '../library/notify.js';
+import { mergeNotificationSettings, type NotificationEvent, type NotificationSettings, notificationEnabled, sendNotification } from '../library/notify.js';
 import type { ChapterRow, LibraryStore } from '../library/store.js';
 import type { EventBus } from '../ws.js';
+import { failoverMessage, notifyNewChapters } from './notify.js';
+import { type LastRunSummary, loadLastRun, loadSettings, type ScheduleSettings, saveLastRun, saveSettings } from './settings.js';
 
-const SETTINGS_KEY = 'schedule';
-const LAST_RUN_KEY = 'schedule.lastrun';
 /** Delay before re-checking the entries that failed a run (transient errors
  *  self-heal within minutes; real outages arm the failover in ~30min instead
  *  of ~18h at cron 6h × 3 failures). */
@@ -39,31 +35,15 @@ const NO_USABLE_CHAPTERS = 'la source ne référence plus aucun chapitre dans le
  *  (autoUnfollow setting). 120 days: monthly series publish every ~30 days,
  *  quarterly ones every ~92. */
 const UNFOLLOW_STALE_DAYS = 120;
-export interface ScheduleSettings {
-    enabled: boolean;
-    cron: string;
-    autoDownload: boolean;
-    autoUnfollow: boolean;
-    notifications: NotificationSettings;
-}
 
-const DEFAULTS: ScheduleSettings = {
-    enabled: true,
-    cron: '0 */6 * * *',
-    autoDownload: true,
-    autoUnfollow: false,
-    notifications: { enabled: false, webhookUrl: '', events: { ...DEFAULT_EVENT_TOGGLES } }
-};
+export type { ScheduleSettings } from './settings.js';
 
 export class Scheduler {
     private job: Cron | undefined;
     private retryTimer: ReturnType<typeof setTimeout> | undefined;
     private settings: ScheduleSettings;
     private running = false;
-    private lastRunAt?: string;
-    private lastRunResult?: string;
-    private seriesChecked = 0;
-    private newChaptersFound = 0;
+    private lastRun: LastRunSummary = { seriesChecked: 0, newChaptersFound: 0 };
     /** A suggestion-detection pass is in flight (prevents overlapping passes). */
     private detectPassRunning = false;
 
@@ -92,8 +72,8 @@ export class Scheduler {
             };
         }
     ) {
-        this.settings = this._load();
-        this._loadLastRun();
+        this.settings = loadSettings(this.opts.db);
+        this.lastRun = loadLastRun(this.opts.db);
         this._startJob();
     }
 
@@ -126,7 +106,7 @@ export class Scheduler {
         if (typeof this.settings.autoUnfollow !== 'boolean') {
             this.settings.autoUnfollow = false;
         }
-        this.opts.db.kvSet(SETTINGS_KEY, JSON.stringify(this.settings));
+        saveSettings(this.opts.db, this.settings);
         this._startJob();
         this._publishStatus();
         return this.getSettings();
@@ -227,7 +207,7 @@ export class Scheduler {
                             params: { title: entry.title, failures: entry.downloadFailures },
                             entryId: entry.id,
                             sourceId: entry.sourceId,
-                            message: `${this._failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`
+                            message: `${failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`
                         });
                         if (outcome === 'migrated') {
                             this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
@@ -244,19 +224,22 @@ export class Scheduler {
             }
 
             const pausedStale = this._pauseStaleEntries();
-            this.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s)${pausedStale > 0 ? `, ${pausedStale} stale series paused` : ''} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+            this.lastRun.lastRunResult = `checked ${checked} series, ${totalNew} new chapter(s)${pausedStale > 0 ? `, ${pausedStale} stale series paused` : ''} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
             this._detectIncompleteSources(); // background, opt-in
             if (totalNew > 0) {
-                await this._notifyNewChapters(newBySeries);
+                await notifyNewChapters(this.settings.notifications, newBySeries);
             }
         } catch (error) {
-            this.lastRunResult = `failed: ${(error as Error).message}`;
+            this.lastRun.lastRunResult = `failed: ${(error as Error).message}`;
         } finally {
             this.running = false;
-            this.lastRunAt = new Date().toISOString();
-            this.seriesChecked = checked;
-            this.newChaptersFound = totalNew;
-            this._saveLastRun();
+            this.lastRun = {
+                lastRunAt: new Date().toISOString(),
+                lastRunResult: this.lastRun.lastRunResult,
+                seriesChecked: checked,
+                newChaptersFound: totalNew
+            };
+            saveLastRun(this.opts.db, this.lastRun);
             this._publishStatus();
             this._scheduleRetry(failedIds, 0);
         }
@@ -395,10 +378,10 @@ export class Scheduler {
             enabled: this.settings.enabled,
             cron: this.settings.cron,
             nextRunAt: next ? next.toISOString() : undefined,
-            lastRunAt: this.lastRunAt,
-            lastRunResult: this.lastRunResult,
-            seriesChecked: this.seriesChecked,
-            newChaptersFound: this.newChaptersFound
+            lastRunAt: this.lastRun.lastRunAt,
+            lastRunResult: this.lastRun.lastRunResult,
+            seriesChecked: this.lastRun.seriesChecked,
+            newChaptersFound: this.lastRun.newChaptersFound
         };
     }
 
@@ -505,7 +488,7 @@ export class Scheduler {
                 code: `failover.afterCheckFailures.${outcome}`,
                 params: { title: entry.title },
                 entryId: entry.id,
-                message: this._failoverMessage(entry.title, outcome)
+                message: failoverMessage(entry.title, outcome)
             });
             if (outcome === 'migrated') {
                 this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
@@ -554,18 +537,6 @@ export class Scheduler {
         this._scheduleRetry(stillFailing, round + 1);
     }
 
-    /** Log message for a failover outcome. */
-    private _failoverMessage(title: string, outcome: 'migrated' | 'suggested' | 'none'): string {
-        switch (outcome) {
-            case 'migrated':
-                return `"${title}" migré automatiquement vers une autre source`;
-            case 'suggested':
-                return `"${title}" : migration de source suggérée (à confirmer)`;
-            default:
-                return `"${title}" : aucune source de rechange trouvée`;
-        }
-    }
-
     /** Push the current state of a library entry to the dashboard. */
     private _publishEntryUpdated(entryId: number): void {
         const entry = this.opts.store.getEntry(entryId);
@@ -574,63 +545,6 @@ export class Scheduler {
         }
     }
 
-    /** Send the new-chapters webhook notification. */
-    private async _notifyNewChapters(newBySeries: Array<{ title: string; chapters: string[] }>): Promise<void> {
-        if (!notificationEnabled(this.settings.notifications, 'newChapters')) {
-            return;
-        }
-        const body = newBySeries.map(item => `• ${item.title}: ${item.chapters.slice(0, 5).join(', ')}${item.chapters.length > 5 ? '…' : ''}`).join('\n');
-        await sendNotification(this.settings.notifications, 'New chapters available', body);
-    }
-
-    private _load(): ScheduleSettings {
-        try {
-            const raw = this.opts.db.kvGet(SETTINGS_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                return {
-                    ...DEFAULTS,
-                    ...parsed,
-                    notifications: mergeNotificationSettings(DEFAULTS.notifications, parsed.notifications)
-                };
-            }
-        } catch {
-            /* fall back to defaults */
-        }
-        return { ...DEFAULTS, notifications: { ...DEFAULTS.notifications } };
-    }
-
-    /** Restore the last-run summary so a restart doesn't wipe "Last run" in the UI. */
-    private _loadLastRun(): void {
-        try {
-            const raw = this.opts.db.kvGet(LAST_RUN_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw) as { lastRunAt?: string; lastRunResult?: string; seriesChecked?: number; newChaptersFound?: number };
-                this.lastRunAt = parsed.lastRunAt;
-                this.lastRunResult = parsed.lastRunResult;
-                this.seriesChecked = parsed.seriesChecked ?? 0;
-                this.newChaptersFound = parsed.newChaptersFound ?? 0;
-            }
-        } catch {
-            /* non-fatal: status fields stay empty */
-        }
-    }
-
-    private _saveLastRun(): void {
-        try {
-            this.opts.db.kvSet(
-                LAST_RUN_KEY,
-                JSON.stringify({
-                    lastRunAt: this.lastRunAt,
-                    lastRunResult: this.lastRunResult,
-                    seriesChecked: this.seriesChecked,
-                    newChaptersFound: this.newChaptersFound
-                })
-            );
-        } catch {
-            /* non-fatal */
-        }
-    }
     private _startJob(): void {
         this.job?.stop();
         this.job = undefined;

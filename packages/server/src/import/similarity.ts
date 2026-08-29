@@ -135,7 +135,9 @@ export function titleSimilarity(needleRaw: string, candidateRaw: string): number
     return best;
 }
 
-export type MatchConfidence = 'auto' | 'review' | 'none';
+import type { MatchConfidence } from '@tanko/shared';
+
+export type { MatchConfidence };
 
 export const AUTO_THRESHOLD = 0.92;
 export const REVIEW_THRESHOLD = 0.6;

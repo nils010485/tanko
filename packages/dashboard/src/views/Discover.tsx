@@ -3,32 +3,13 @@
  * hiding, manga search and follow (monitor-only or with the whole backlog).
  */
 
-import type { ChapterDto, GlobalSearchSourceResultDto, GlobalSearchStatusDto, MangaDto, SourceDto } from '@tanko/shared';
+import type { ChapterDto, GlobalSearchStatusDto, MangaDto, SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChapterList } from '../components/ChapterList.js';
-import { Cover } from '../components/Cover.js';
-import {
-    IconAlert,
-    IconBookmark,
-    IconCheck,
-    IconChevronDown,
-    IconDownload,
-    IconEye,
-    IconEyeOff,
-    IconGitHub,
-    IconGlobe,
-    IconLibrary,
-    IconPlus,
-    IconRefresh,
-    IconSearch,
-    IconSquare,
-    IconStar,
-    IconX
-} from '../components/icons.js';
+import { ChaptersModal, FollowDialog, GlobalResults, healthDot, MangaResultCard, SourcePicker } from '../components/discover/index.js';
+import { IconAlert, IconEyeOff, IconGitHub, IconGlobe, IconRefresh, IconSearch, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spinner } from '../components/ui.js';
-import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { useEscapeKey } from '../lib/hooks.js';
@@ -36,72 +17,11 @@ import { useEscapeKey } from '../lib/hooks.js';
 /** Injected by vite at build time from package.json (see vite.config.ts). */
 declare const __APP_VERSION__: string;
 
-function healthDot(health: string | undefined, t: TFunction) {
-    switch (health) {
-        case 'ok':
-            return <span className="inline-block h-2 w-2 flex-none rounded-full bg-emerald-400" title={t('discover.healthOk')} />;
-        case 'error':
-            return <span className="inline-block h-2 w-2 flex-none rounded-full bg-red-400" title={t('discover.healthError')} />;
-        case 'checking':
-            return <span className="inline-block h-2 w-2 flex-none rounded-full bg-sky-400" title={t('discover.healthChecking')} />;
-        default:
-            return <span className="inline-block h-2 w-2 flex-none rounded-full bg-zinc-600" title={t('discover.healthUntested')} />;
-    }
-}
-
 function sourceRank(source: SourceDto): number {
     if (source.kind === 'native') return 0;
     if (source.health === 'ok') return 1;
     if (source.health === 'untested') return 2;
     return 3;
-}
-
-/** i18n key for each failed global-search status ('ok' groups show counts instead). */
-const GLOBAL_STATUS_KEYS: Record<'error' | 'timeout' | 'skipped', Parameters<TFunction>[0]> = {
-    error: 'discover.globalSourceError',
-    timeout: 'discover.globalSourceTimeout',
-    skipped: 'discover.globalSourceSkipped'
-};
-
-/** Search result card shared by the single-source and the global results. */
-function MangaResultCard({
-    manga,
-    sourceLabel,
-    isAdded,
-    isAdding,
-    followDisabled,
-    onChapters,
-    onFollow
-}: {
-    manga: MangaDto;
-    sourceLabel: string;
-    isAdded: boolean;
-    isAdding: boolean;
-    followDisabled: boolean;
-    onChapters: (manga: MangaDto) => void;
-    onFollow: (manga: MangaDto) => void;
-}) {
-    const { t } = useI18n();
-    return (
-        <Card className="flex gap-3 p-3">
-            <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} className="h-24 w-16 rounded-md" />
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium" title={manga.title}>
-                    {manga.title}
-                </div>
-                <div className="mt-0.5 truncate text-xs text-zinc-500">{sourceLabel}</div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                    <Button small variant="ghost" onClick={() => onChapters(manga)}>
-                        {t('discover.chapters')}
-                    </Button>
-                    <Button small disabled={isAdded || followDisabled} loading={isAdding} onClick={() => onFollow(manga)}>
-                        {isAdded ? <IconCheck size={13} /> : <IconPlus size={13} />}
-                        {isAdded ? t('discover.followed') : t('discover.follow')}
-                    </Button>
-                </div>
-            </div>
-        </Card>
-    );
 }
 
 export default function Discover({
@@ -128,8 +48,9 @@ export default function Discover({
     const [globalStatus, setGlobalStatus] = useState<GlobalSearchStatusDto | null>(null);
     const [globalSearching, setGlobalSearching] = useState(false);
     const [globalError, setGlobalError] = useState('');
-    const globalStopped = useRef(false);
+    // lifted (not inside GlobalResults): the component unmounts between searches and must keep its open/collapsed state
     const [showMisses, setShowMisses] = useState(false);
+    const globalStopped = useRef(false);
     const [selected, setSelected] = useState<MangaDto | null>(null);
     const [chapters, setChapters] = useState<ChapterDto[] | null>(null);
     const [chaptersError, setChaptersError] = useState('');
@@ -210,7 +131,6 @@ export default function Discover({
     const currentSource = sources.find(source => source.id === sourceId);
     const hiddenCount = sources.filter(source => source.hidden).length;
     const brokenCount = sources.filter(source => source.health === 'error' && !source.hidden).length;
-    const selectedKey = selected ? `${selected.sourceId}:${selected.id}` : null;
 
     const hideBroken = async () => {
         await api.hideBroken();
@@ -256,24 +176,6 @@ export default function Discover({
 
     // global (all visible sources) search: start then poll; sources answer as
     // their cache/endpoint allows and groups render progressively
-    // global (all visible sources) search: start then poll; sources answer as
-    // their cache/endpoint allows and groups render progressively
-    const globalGroups = useMemo(() => {
-        if (!globalStatus) {
-            return [];
-        }
-        // preferred-language matches first, then out-of-language hits, then the rest
-        const rank = (group: GlobalSearchSourceResultDto) => (group.outOfLanguages ? 1 : group.status === 'ok' ? (group.mangas.length > 0 ? 0 : 2) : 3);
-        return [...globalStatus.results].sort((a, b) => rank(a) - rank(b) || b.mangas.length - a.mangas.length || a.sourceLabel.localeCompare(b.sourceLabel));
-    }, [globalStatus]);
-    // sources with hits render as cards; the rest (empty/failed/skipped)
-    // collapses into a single summary row instead of a wall of empty boxes
-    const hitGroups = globalGroups.filter(group => group.mangas.length > 0);
-    const missGroups = globalGroups.filter(group => group.mangas.length === 0);
-    const missEmptyCount = missGroups.filter(group => group.status === 'ok').length;
-    const missFailedCount = missGroups.length - missEmptyCount;
-    /** Distinct languages among the listed chapters (drives the per-chapter language badge). */
-    const chapterLanguages = useMemo(() => new Set((chapters ?? []).map(chapter => chapter.language).filter(Boolean)), [chapters]);
     const runGlobalSearch = async () => {
         if (globalSearching || !query.trim()) return;
         globalStopped.current = false;
@@ -445,88 +347,29 @@ export default function Discover({
             {/* Unified search bar: source picker, query, scope toggle and a compact icon button on one row */}
             <Card className="p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className={`relative ${scope === 'global' ? 'opacity-60' : ''}`} ref={comboRef}>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setComboOpen(open => !open);
-                                setSourceQuery('');
-                            }}
-                            className="flex h-10 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm transition-colors hover:border-zinc-600"
-                        >
-                            {currentSource ? (
-                                <>
-                                    {healthDot(currentSource.health, t)}
-                                    <span className="max-w-40 truncate font-medium">{currentSource.label}</span>
-                                    {currentSource.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
-                                </>
-                            ) : (
-                                <span className="text-zinc-500">{t('discover.pickSource')}</span>
-                            )}
-                            <IconChevronDown size={16} className="text-zinc-500" />
-                        </button>
-
-                        {comboOpen && (
-                            <div className="absolute z-20 mt-2 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl shadow-black/40">
-                                <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
-                                    <IconSearch size={14} className="text-zinc-500" />
-                                    <input
-                                        // biome-ignore lint/a11y/noAutofocus: the combobox search should be focused as soon as it opens
-                                        autoFocus
-                                        value={sourceQuery}
-                                        onChange={event => setSourceQuery(event.target.value)}
-                                        placeholder={t('discover.filterSources')}
-                                        className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-600"
-                                    />
-                                </div>
-                                <div className="max-h-80 overflow-y-auto">
-                                    {visibleSources.map(source => (
-                                        <button
-                                            type="button"
-                                            key={source.id}
-                                            onClick={() => {
-                                                setSourceId(source.id);
-                                                setComboOpen(false);
-                                                setScope('source');
-                                            }}
-                                            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-800 ${source.id === sourceId ? 'bg-zinc-800/70' : ''}`}
-                                        >
-                                            {healthDot(source.health, t)}
-                                            <span className="flex-1 truncate">{source.label}</span>
-                                            {source.kind === 'native' && <IconStar size={13} className="text-violet-400" />}
-                                            {source.id === sourceId && <IconCheck size={14} className="text-orange-400" />}
-                                        </button>
-                                    ))}
-                                    {visibleSources.length === 0 && (
-                                        <div className="px-3 py-4 text-center text-sm text-zinc-500">{t('discover.noSourceMatch')}</div>
-                                    )}
-                                </div>
-                                <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 text-xs text-zinc-500">
-                                    <span>
-                                        {showHidden
-                                            ? t('discover.sourcesCount', { n: sources.length })
-                                            : t('discover.sourcesVisible', { n: sources.length - hiddenCount })}
-                                        {hiddenCount > 0 && ` · ${t('discover.hiddenCount', { n: hiddenCount })}`}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowHidden(value => !value)}
-                                        className="flex items-center gap-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
-                                    >
-                                        {showHidden ? (
-                                            <>
-                                                <IconEyeOff size={13} /> {t('discover.hideHidden')}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <IconEye size={13} /> {t('discover.showHidden')}
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <SourcePicker
+                        sources={sources}
+                        visibleSources={visibleSources}
+                        currentSource={currentSource}
+                        sourceId={sourceId}
+                        sourceQuery={sourceQuery}
+                        comboOpen={comboOpen}
+                        showHidden={showHidden}
+                        hiddenCount={hiddenCount}
+                        dimmed={scope === 'global'}
+                        comboRef={comboRef}
+                        onToggle={() => {
+                            setComboOpen(open => !open);
+                            setSourceQuery('');
+                        }}
+                        onQuery={setSourceQuery}
+                        onPick={source => {
+                            setSourceId(source.id);
+                            setComboOpen(false);
+                            setScope('source');
+                        }}
+                        onToggleShowHidden={() => setShowHidden(value => !value)}
+                    />
 
                     <div className="relative min-w-56 flex-1">
                         <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -637,178 +480,33 @@ export default function Discover({
             )}
 
             {globalStatus && (
-                <div className="space-y-3">
-                    <Card className="flex flex-wrap items-center gap-3 p-3 text-sm text-zinc-400">
-                        {globalSearching ? (
-                            <>
-                                <Spinner />
-                                <span>{t('discover.globalProgress', { done: globalStatus.completed, total: globalStatus.total })}</span>
-                                <span className="ml-auto">
-                                    <Button small variant="ghost" onClick={stopGlobalSearch}>
-                                        <IconSquare size={13} /> {t('discover.globalStop')}
-                                    </Button>
-                                </span>
-                            </>
-                        ) : (
-                            <span>{t('discover.globalDone', { total: globalStatus.total })}</span>
-                        )}
-                    </Card>
-                    {hitGroups.map(group => {
-                        const source = sources.find(item => item.id === group.sourceId);
-                        return (
-                            <Card key={group.sourceId} className="p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {healthDot(source?.health, t)}
-                                    <span className="text-sm font-medium">{group.sourceLabel}</span>
-                                    {group.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
-                                    <span className="text-xs text-zinc-500">
-                                        {t('discover.globalResultsCount', { n: group.mangas.length })}
-                                        {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
-                                    </span>
-                                    {group.outOfLanguages && (
-                                        <Badge tone="orange">
-                                            <IconGlobe size={12} /> {t('discover.outOfLanguages')}
-                                        </Badge>
-                                    )}
-                                </div>
-                                <div className={`mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3${group.outOfLanguages ? ' opacity-60' : ''}`}>
-                                    {group.mangas.map(manga => {
-                                        const key = `${manga.sourceId}:${manga.id}`;
-                                        return (
-                                            <MangaResultCard
-                                                key={key}
-                                                manga={manga}
-                                                sourceLabel={group.sourceLabel}
-                                                isAdded={added.has(key)}
-                                                isAdding={addingKey === key}
-                                                followDisabled={addingKey !== null}
-                                                onChapters={openChapters}
-                                                onFollow={openFollowChoice}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            </Card>
-                        );
-                    })}
-                    {missGroups.length > 0 && (
-                        <Card className="p-3">
-                            <button
-                                type="button"
-                                onClick={() => setShowMisses(open => !open)}
-                                className="flex w-full items-center gap-2 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-                            >
-                                <IconChevronDown size={14} className={`flex-none transition-transform ${showMisses ? 'rotate-180' : ''}`} />
-                                <span>{t('discover.globalMissSummary', { empty: missEmptyCount, failed: missFailedCount })}</span>
-                            </button>
-                            {showMisses && (
-                                <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
-                                    {missGroups.map(group => (
-                                        <div key={group.sourceId} className="flex min-w-0 items-center gap-2 text-xs text-zinc-500">
-                                            <span
-                                                className="min-w-0 flex-1 truncate"
-                                                title={group.error ? `${group.sourceLabel} — ${group.error}` : group.sourceLabel}
-                                            >
-                                                {group.sourceLabel}
-                                            </span>
-                                            {group.status === 'ok' ? (
-                                                <span className="flex-none text-zinc-600">{t('discover.noResults')}</span>
-                                            ) : (
-                                                <Badge tone={group.status === 'skipped' ? undefined : 'red'}>{t(GLOBAL_STATUS_KEYS[group.status])}</Badge>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </Card>
-                    )}
-                    {!globalSearching && globalStatus.completed > 0 && hitGroups.length === 0 && (
-                        <EmptyState title={t('discover.globalNoResults')} hint={t('discover.globalNoResultsHint')} />
-                    )}
-                </div>
+                <GlobalResults
+                    globalStatus={globalStatus}
+                    globalSearching={globalSearching}
+                    sources={sources}
+                    added={added}
+                    addingKey={addingKey}
+                    showMisses={showMisses}
+                    onToggleMisses={() => setShowMisses(open => !open)}
+                    onStop={stopGlobalSearch}
+                    onChapters={openChapters}
+                    onFollow={openFollowChoice}
+                />
             )}
 
             {selected && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the modal also closes with Escape (document listener above)
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-                    onClick={e => {
-                        if (e.target === e.currentTarget) setSelected(null);
-                    }}
-                >
-                    <div className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/60">
-                        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-                            <div className="min-w-0 truncate text-sm font-semibold" title={selected.title}>
-                                {selected.title}
-                                {chapters && <span className="ml-1 font-normal text-zinc-500">— {t('discover.chaptersCount', { n: chapters.length })}</span>}
-                            </div>
-                            <button
-                                type="button"
-                                className="flex-none rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-                                onClick={() => setSelected(null)}
-                                title={t('common.close')}
-                            >
-                                <IconX size={16} />
-                            </button>
-                        </div>
-
-                        <div className="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
-                            {!chapters ? (
-                                <div className="flex items-center justify-center gap-2 py-8 text-zinc-500">
-                                    <Spinner /> {t('common.loading')}
-                                </div>
-                            ) : chapters.length === 0 ? (
-                                <div className="py-8 text-center text-sm text-zinc-500">
-                                    {chaptersError ? <ErrorDetail error={chaptersError} /> : t('discover.noChapter')}
-                                </div>
-                            ) : (
-                                <ChapterList
-                                    items={chapters.map(chapter => ({
-                                        key: chapter.id,
-                                        title: chapter.title,
-                                        badge: chapterLanguages.size > 1 && chapter.language ? <Badge>{chapter.language}</Badge> : undefined,
-                                        node: (
-                                            <div className="flex flex-none items-center gap-1">
-                                                <Button small variant="ghost" title={t('discover.previewHint')} onClick={() => openPreview(chapter)}>
-                                                    <IconEye size={14} />
-                                                </Button>
-                                                <Button small variant="ghost" onClick={() => enqueueChapters(selected, [chapter])}>
-                                                    <span className="flex items-center gap-1">
-                                                        <IconDownload size={12} /> DL
-                                                    </span>
-                                                </Button>
-                                            </div>
-                                        )
-                                    }))}
-                                    resetKey={selected.id}
-                                />
-                            )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 p-3">
-                            {selectedKey !== null && (
-                                <Button
-                                    small
-                                    onClick={() => openFollowChoice(selected)}
-                                    disabled={added.has(selectedKey) || addingKey !== null}
-                                    loading={addingKey === selectedKey}
-                                >
-                                    {added.has(selectedKey) ? <IconCheck size={13} /> : <IconPlus size={13} />}
-                                    {added.has(selectedKey) ? t('discover.inLibrary') : t('discover.followSeries')}
-                                </Button>
-                            )}
-                            <Button small variant="ghost" onClick={() => enqueueChapters(selected, chapters ?? [])} disabled={(chapters ?? []).length === 0}>
-                                <IconDownload size={13} /> {t('discover.downloadAll')}
-                                {(chapters ?? []).length > 0 ? ` (${chapters?.length})` : ''}
-                            </Button>
-                            {selectedKey !== null && added.has(selectedKey) && (
-                                <Button small variant="ghost" onClick={() => onOpenSeries?.(added.get(selectedKey) ?? 0)}>
-                                    <IconLibrary size={13} /> {t('discover.openSeries')}
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <ChaptersModal
+                    selected={selected}
+                    chapters={chapters}
+                    chaptersError={chaptersError}
+                    added={added}
+                    addingKey={addingKey}
+                    onOpenSeries={id => onOpenSeries?.(id)}
+                    onClose={() => setSelected(null)}
+                    onFollow={openFollowChoice}
+                    onPreview={openPreview}
+                    onEnqueue={enqueueChapters}
+                />
             )}
             <PagePreview
                 open={previewLoading || preview !== null}
@@ -820,54 +518,13 @@ export default function Discover({
                 onClose={() => setPreview(null)}
             />
             {followTarget !== null && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (document listener above)
-                <div
-                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-                    onClick={e => {
-                        if (e.target === e.currentTarget) setFollowTarget(null);
-                    }}
-                >
-                    <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50">
-                        <div className="text-sm font-semibold text-fg">{t('discover.followChoiceTitle', { title: followTarget.title })}</div>
-                        <div className="mt-4 space-y-2">
-                            <button
-                                type="button"
-                                disabled={addingKey !== null}
-                                onClick={() => followManga(followTarget, 'ignore')}
-                                className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900 disabled:opacity-50"
-                            >
-                                <span className="mt-0.5 text-zinc-400">
-                                    <IconBookmark size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-fg">{t('discover.followMonitor')}</span>
-                                    <span className="mt-0.5 block text-xs text-muted">{t('discover.followMonitorHint')}</span>
-                                </span>
-                            </button>
-                            <button
-                                type="button"
-                                disabled={addingKey !== null}
-                                onClick={() => followManga(followTarget, 'grab')}
-                                className="flex w-full items-start gap-3 rounded-lg border border-accent/30 bg-accent/5 p-3 text-left transition-colors hover:border-accent/60 hover:bg-accent/10 disabled:opacity-50"
-                            >
-                                <span className="mt-0.5 text-accent-soft">
-                                    <IconDownload size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-fg">{t('discover.followGrab')}</span>
-                                    <span className="mt-0.5 block text-xs text-muted">
-                                        {followCount !== null ? t('discover.followGrabHint', { n: followCount }) : t('discover.followGrabHintUnknown')}
-                                    </span>
-                                </span>
-                            </button>
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <Button small variant="ghost" onClick={() => setFollowTarget(null)}>
-                                {t('common.cancel')}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <FollowDialog
+                    followTarget={followTarget}
+                    followCount={followCount}
+                    addingKey={addingKey}
+                    onFollow={followManga}
+                    onClose={() => setFollowTarget(null)}
+                />
             )}
         </div>
     );

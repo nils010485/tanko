@@ -9,38 +9,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
-import { createComicInfoXML, LegacySourceAdapter, randomUserAgent } from '@tanko/core';
-import type { DownloadJobDto, DownloadStatus, QueueStatusDto } from '@tanko/shared';
+import type { DownloadJobDto, DownloadStatus, QueueSettingsDto, QueueStatusDto } from '@tanko/shared';
 import JSZip from 'jszip';
 import type { Database } from '../db.js';
-import { withTimeout } from '../util/timeout.js';
 import type { EventBus } from '../ws.js';
+import { CBZ_MEMORY_GUARD_BYTES, finalizeCbz, spillArchiveToDirectory } from './archive.js';
+import { fetchPageWithRetries, getPageListWithRetries, PAGE_LIST_REFRESHES } from './pages.js';
 import type { ChapterPaths } from './paths.js';
-import { chapterPaths, type DirectoryLayout, detectMime, outputExists, pageFileName } from './paths.js';
+import { chapterPaths, type DirectoryLayout, outputExists, pageFileName } from './paths.js';
 import { DomainGate } from './rate-limiter.js';
-
-/** Human-readable page URL for error messages: 'connector://' payloads are
- *  opaque base64 blobs that bury the real (signed) image URL and wreck the
- *  dashboard layout — decode them and strip the query string instead. */
-function describePageUrl(url: string): string {
-    if (url.startsWith('connector://')) {
-        try {
-            const decoded = Buffer.from(new URL(url).searchParams.get('payload') ?? '', 'base64').toString('utf8');
-            // createConnectorURI base64-encodes JSON.stringify(payload): most
-            // connectors pass the plain image URL string, a few an object
-            // carrying it — decode both shapes.
-            const parsed: unknown = JSON.parse(decoded);
-            const real = typeof parsed === 'string' ? parsed : (parsed as { url?: unknown } | null)?.url;
-            if (typeof real === 'string' && real.startsWith('http')) {
-                return real.replace(/[?#].*$/, '');
-            }
-        } catch {
-            /* malformed connector URI: fall through to truncation */
-        }
-        return `${url.slice(0, 64)}…`;
-    }
-    return url.length > 160 ? `${url.slice(0, 160)}…` : url;
-}
 
 /** Map a job row back to enqueue() input (retry paths). */
 function toChapterInput(row: JobRow) {
@@ -54,22 +31,12 @@ function toChapterInput(row: JobRow) {
     };
 }
 
-export interface QueueSettings {
-    /** Base directory for downloads. */
-    dataDirectory: string;
-    /** 'source' = <base>/<Source>/<Série>/ (Hakuneko), 'series' = <base>/<Série>/. */
+/** Server-side queue settings: the shared DTO shape, with the paths.ts layout
+ *  alias and a retention that stays optional until defaults are applied. */
+export type QueueSettings = Omit<QueueSettingsDto, 'directoryLayout' | 'historyRetentionDays'> & {
     directoryLayout: DirectoryLayout;
-    /** 'img' = folder of images, 'cbz' = comic archive. */
-    chapterFormat: 'img' | 'cbz';
-    /** Max number of distinct sources downloading at the same time. */
-    parallelSources: number;
-    /** Max number of chapters downloaded in parallel per source. */
-    concurrencyPerSource: number;
-    /** Minimum delay (ms) between two requests to the same domain. */
-    throttleMs: number;
-    /** Days to keep finished jobs (completed/failed/cancelled); 0 keeps them forever. */
     historyRetentionDays?: number;
-}
+};
 
 /** SQL filter matching finished jobs (history pruning / manual clearing). */
 const FINISHED_JOBS = "status IN ('completed', 'failed', 'cancelled')";
@@ -80,11 +47,6 @@ const DEFAULT_HISTORY_RETENTION_DAYS = 30;
 /** Re-run the automatic pruning once a day. */
 const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-const USER_AGENT = randomUserAgent();
-const PAGE_ATTEMPTS = 3;
-/** Max page-list refreshes per chapter: pages fetched through signed URLs
- *  (connector:// payloads with ?expires=…) can go stale mid-chapter. */
-const PAGE_LIST_REFRESHES = 2;
 /** Auto-retry of failed jobs: after its n-th failure a job waits
  *  min(AUTO_RETRY_BASE_MS × 2^n, AUTO_RETRY_CAP_MS) before the sweep requeues
  *  it — a dead source is re-probed for ~31 h (30 min, 1 h, 2 h then 4-hourly)
@@ -107,17 +69,9 @@ const REVALIDATE_CAP_MS = 7 * 24 * 60 * 60 * 1000;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
 const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
-/** Past this in-memory zip size, the chapter falls back to the img-folder
- *  layout: giant chapters (artbooks) must not double their RAM footprint. */
-const CBZ_MEMORY_GUARD_BYTES = 200 * 1024 * 1024;
 
 /** Statuses that make an existing job ineligible for requeue. */
 const ACTIVE_STATUSES = new Set<DownloadStatus>(['completed', 'queued', 'downloading']);
-
-/** Shape of the legacy engine bridge installed on globalThis by core's createEngine(). */
-interface EngineGlobal {
-    Request: { fetch(request: Request): Promise<Response> };
-}
 
 interface JobRow {
     id: number;
@@ -638,7 +592,7 @@ export class DownloadQueue {
                 throw new Error(`Source "${row.source_id}" not found`);
             }
 
-            const pages = await this._getPageListWithRetries(source, row);
+            const pages = await getPageListWithRetries(source, row, () => this._checkCancel(row.id));
 
             const paths = chapterPaths(this.opts.settings.dataDirectory, source.label, row.manga_title, row.chapter_title, this.opts.settings.directoryLayout);
             const isCbz = this.opts.settings.chapterFormat === 'cbz';
@@ -663,7 +617,7 @@ export class DownloadQueue {
             }
             const { mode, pageCount } = await this._downloadPages(row, pages, source, paths, zip);
             if (mode === 'cbz' && zip) {
-                await this._finalizeCbz(zip, paths, row.manga_title, row.chapter_title, pageCount);
+                await finalizeCbz(zip, paths, row.manga_title, row.chapter_title, pageCount);
             }
 
             this._update(row.id, { status: 'completed', progress: 100, path: mode === 'cbz' ? paths.cbzFile : paths.directory });
@@ -715,7 +669,7 @@ export class DownloadQueue {
 
             let page: { mime: string; data: Uint8Array };
             try {
-                page = await this._fetchPageWithRetries(pages[index], source);
+                page = await fetchPageWithRetries(pages[index], source, this.gate);
             } catch (error) {
                 // Signed image URLs (connector:// payloads carrying ?acc=…&expires=…)
                 // go stale while the chapter downloads: the CDN then answers with a
@@ -727,7 +681,7 @@ export class DownloadQueue {
                 refreshesLeft--;
                 let fresh: string[];
                 try {
-                    fresh = await this._getPageListWithRetries(source, row);
+                    fresh = await getPageListWithRetries(source, row, () => this._checkCancel(row.id));
                 } catch (refreshError) {
                     if ((refreshError as Error)?.message === 'cancelled') {
                         throw refreshError;
@@ -743,14 +697,14 @@ export class DownloadQueue {
                 pages = fresh;
                 // the refreshed list may be longer: keep zero-padding in step
                 leadingZeroes = String(pages.length).length;
-                page = await this._fetchPageWithRetries(pages[index], source);
+                page = await fetchPageWithRetries(pages[index], source, this.gate);
             }
             const { mime, data } = page;
             const fileName = pageFileName(index + 1, mime, leadingZeroes);
             if (archive) {
                 archiveBytes += data.length;
                 if (archiveBytes > CBZ_MEMORY_GUARD_BYTES) {
-                    await this._spillArchiveToDirectory(archive, paths, row.id);
+                    await spillArchiveToDirectory(this.opts.events, archive, paths, row.id);
                     archive = undefined;
                 }
             }
@@ -768,49 +722,6 @@ export class DownloadQueue {
         return { mode: archive ? 'cbz' : 'img', pageCount: pages.length };
     }
 
-    /** Memory guard tripped: write every buffered zip entry to the img directory
-     *   and drop the archive; the rest of the chapter lands on disk directly. */
-    private async _spillArchiveToDirectory(zip: JSZip, paths: ChapterPaths, jobId: number): Promise<void> {
-        this.opts.events.publishLog({
-            level: 'warn',
-            category: 'system',
-            code: 'system.cbzBudget',
-            params: { jobId },
-            message: `Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #${jobId})`
-        });
-        fs.mkdirSync(paths.directory, { recursive: true });
-        for (const file of Object.values(zip.files)) {
-            if (!file.dir) {
-                fs.writeFileSync(path.join(paths.directory, file.name), await file.async('nodebuffer'));
-            }
-        }
-    }
-
-    /** Write the CBZ archive (ComicInfo.xml + downloaded pages) to disk. */
-    private async _finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: string, chapterTitle: string, pageCount: number): Promise<void> {
-        zip.file('ComicInfo.xml', createComicInfoXML(mangaTitle, chapterTitle, pageCount));
-        fs.mkdirSync(path.dirname(paths.cbzFile), { recursive: true });
-        const buffer = await zip.generateAsync({ compression: 'STORE', type: 'nodebuffer' });
-        fs.writeFileSync(paths.cbzFile, buffer);
-        // integrity check: the archive must re-open and hold every page. A
-        // corrupt file is removed so a later run retries instead of treating
-        // it as "already downloaded".
-        try {
-            const reread = await JSZip.loadAsync(fs.readFileSync(paths.cbzFile));
-            const entries = Object.values(reread.files).filter(file => !file.dir && file.name !== 'ComicInfo.xml');
-            if (entries.length !== pageCount) {
-                throw new Error(`archive incohérente : ${entries.length}/${pageCount} pages`);
-            }
-        } catch (error) {
-            try {
-                fs.unlinkSync(paths.cbzFile);
-            } catch {
-                /* already gone */
-            }
-            throw new Error(`CBZ invalide après écriture : ${(error as Error).message}`);
-        }
-    }
-
     private _notifyFinished(jobId: number): void {
         if (!this.opts.onJobFinished) {
             return;
@@ -819,97 +730,6 @@ export class DownloadQueue {
         if (row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled') {
             this.opts.onJobFinished(this._toDto(row));
         }
-    }
-
-    /**
-     * Page lists can fail intermittently (protected chapter scripts, rate
-     * limiting, transient anti-bot pages) — retry with backoff before
-     * failing the whole job.
-     */
-    private async _getPageListWithRetries(source: SourceAdapter, row: JobRow): Promise<Awaited<ReturnType<SourceAdapter['getPages']>>> {
-        let lastError: unknown;
-        for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {
-            // throws Error('cancelled') — must propagate untouched (job status contract)
-            this._checkCancel(row.id);
-            try {
-                const pages = await withTimeout(
-                    source.getPages({ id: row.manga_id, title: row.manga_title }, { id: row.chapter_id, title: row.chapter_title }),
-                    90 * 1000,
-                    `getPages(${row.manga_title} - ${row.chapter_title})`
-                );
-                if (!pages.length) {
-                    throw new Error('Page list is empty');
-                }
-                return pages;
-            } catch (error) {
-                if ((error as Error)?.message === 'cancelled') {
-                    throw error;
-                }
-                lastError = error;
-                if (attempt < PAGE_ATTEMPTS - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)));
-                }
-            }
-        }
-        throw new Error(`Failed to get page list: ${String((lastError as Error)?.message || lastError)}`);
-    }
-
-    private async _fetchPageWithRetries(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {
-        let lastError: unknown;
-        for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {
-            try {
-                await this.gate.pass(url);
-                const page = await this._fetchPage(url, source);
-                // a "successfully" fetched page that is not an image (HTML error
-                // page, cloudflare challenge, JSON error) must not end up in the
-                // chapter: treat it as a failure so the retry/backoff kicks in
-                if (!page.mime.toLowerCase().startsWith('image/')) {
-                    throw new Error(`non-image page (${page.mime}, ${page.data.length} bytes)`);
-                }
-                return page;
-            } catch (error) {
-                lastError = error;
-                if (attempt < PAGE_ATTEMPTS - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
-                }
-            }
-        }
-        throw new Error(`Failed to download page "${describePageUrl(url)}": ${String((lastError as Error)?.message || lastError)}`);
-    }
-
-    private async _fetchPage(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {
-        let response: Response;
-        if (url.startsWith('connector://')) {
-            // routed to the owning connector by the global fetch wrapper
-            response = await fetch(url);
-        } else if (source instanceof LegacySourceAdapter) {
-            // apply legacy x-* header transformations + cookie jar via the legacy engine bridge
-            const engine = (globalThis as unknown as { Engine: EngineGlobal }).Engine;
-            const request = new Request(url, source.connector.requestOptions);
-            response = await engine.Request.fetch(request);
-        } else {
-            let referer: string;
-            if (url.startsWith('http') && source.url) {
-                referer = `${source.url}/`;
-            } else {
-                referer = source.url || url;
-            }
-            response = await fetch(url, {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
-                    Referer: referer
-                },
-                redirect: 'follow',
-                signal: AbortSignal.timeout(120000)
-            });
-        }
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const data = new Uint8Array(await response.arrayBuffer());
-        const mime = detectMime(data, response.headers.get('content-type') || 'image/');
-        return { mime, data };
     }
 
     private _checkCancel(jobId: number): void {

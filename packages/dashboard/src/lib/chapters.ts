@@ -1,7 +1,8 @@
 /**
  * Shared chapter / rematch helpers used by the Library and Series views.
  */
-import type { LibraryChapterDto } from '@tanko/shared';
+import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
+import { api } from './api.js';
 
 /** Chapters that can be (re)queued through the ad-hoc download endpoint
  *  ('lost' included: the user may know better than the source's listing). */
@@ -48,4 +49,18 @@ export function rematchOutcomeKey(outcome: string): 'library.migratedTo' | 'libr
         default:
             return 'library.noAlternateSource';
     }
+}
+
+/** Queue chapters of a library entry through the ad-hoc /api/downloads
+ *  endpoint (single chapter, selection, or pending chapters). */
+export function enqueueEntryChapters(
+    entry: Pick<LibraryEntryDto, 'sourceId' | 'mangaId' | 'title'>,
+    chapters: LibraryChapterDto[]
+): Promise<{ added: number; skipped: number; retried: number }> {
+    return api.enqueue({
+        sourceId: entry.sourceId,
+        mangaId: entry.mangaId,
+        mangaTitle: entry.title,
+        chapters: toQueueChapters(chapters)
+    });
 }

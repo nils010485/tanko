@@ -3,30 +3,24 @@
  *   scan -> match (parallel, throttled) -> confirm -> sync chapters.
  * All state lives in SQLite so closing the dashboard (or restarting the
  * server) never loses progress.
+ *
+ * The service is a facade over focused modules: matcher.ts (source
+ * matching) and syncer.ts (chapter sync). Job lifecycle and state live here.
  */
-import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import type { ChapterInfo, SourceAdapter, SourceRegistry } from '@tanko/core';
-import type { MigrationSuggestion } from '@tanko/shared';
+import type { SourceRegistry } from '@tanko/core';
+import type { AutoConfirmMode, ImportJobPhase, ImportJobStatusDto, ImportOptionsDto, MigrationSuggestion } from '@tanko/shared';
 import type { Database } from '../db.js';
-import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore } from '../library/store.js';
-import { assertValidDirectory, parseChapterNumber, scanLibrary } from './scanner.js';
-import { confidenceFor, type MatchConfidence, stripTags, titleSimilarity } from './similarity.js';
+import { type MatcherContext, matchAll } from './matcher.js';
+import { assertValidDirectory, scanLibrary } from './scanner.js';
+import type { MatchConfidence } from './similarity.js';
+import { type SyncerContext, syncAll } from './syncer.js';
 
-export type JobStatus = 'scanning' | 'matching' | 'ready' | 'syncing' | 'done' | 'error';
-export type AutoConfirmMode = 'auto' | 'all' | 'none';
-
-export interface ImportOptions {
-    /** 'auto': confirm high-confidence matches only; 'all': also review-tier; 'none': wait for the user. */
-    autoConfirm?: AutoConfirmMode;
-    /** auto-download future new chapters on imported entries (default false). */
-    autoDownload?: boolean;
-    /** parallel search workers (default: MATCH_CONCURRENCY). */
-    concurrency?: number;
-    /** restrict matching to these source ids (default: all usable). */
-    sourceIds?: string[];
-}
+/** Pipeline phase of the current job (legacy server-side name). */
+export type JobStatus = ImportJobPhase;
+export type { AutoConfirmMode };
+export type ImportOptions = ImportOptionsDto;
 
 export interface SourceInfo {
     id: string;
@@ -40,50 +34,7 @@ export interface SourceInfo {
 /** Match candidate for a local series (same shape as the dashboard's MigrationSuggestion DTO). */
 export type MatchCandidate = MigrationSuggestion;
 
-/** Dashboard-facing shape of status(): latest job, counters and per-series details. */
-export interface JobStatusDto {
-    job: {
-        id: number;
-        root: string;
-        status: JobStatus;
-        options: ImportOptions;
-        error?: string;
-        createdAt: string;
-        updatedAt: string;
-    };
-    counters: {
-        total: number;
-        matched: number;
-        auto: number;
-        review: number;
-        none: number;
-        confirmed: number;
-        synced: number;
-        failed: number;
-    };
-    series: Array<{
-        path: string;
-        name: string;
-        chapterCount: number;
-        status: string;
-        confidence?: MatchConfidence;
-        score?: number;
-        confirmed: boolean;
-        sourceId?: string;
-        sourceLabel?: string;
-        mangaId?: string;
-        mangaTitle?: string;
-        candidates: MatchCandidate[];
-        matchMode?: 'number' | 'ordinal';
-        matched?: number;
-        localChapters?: number;
-        sourceChapters?: number;
-        entryId?: number;
-        error?: string;
-    }>;
-}
-
-interface JobRow {
+export interface JobRow {
     id: number;
     root: string;
     status: JobStatus;
@@ -93,7 +44,7 @@ interface JobRow {
     updated_at: string;
 }
 
-interface SeriesRow {
+export interface SeriesRow {
     job_id: number;
     path: string;
     name: string;
@@ -117,15 +68,12 @@ interface SeriesRow {
     updated_at: string;
 }
 
-const MATCH_CONCURRENCY = 4;
-
-/** Cap on sources queried per series (exact match stops earlier); explicit sourceIds bypass it. */
-const MAX_MATCH_SOURCES = 12;
-
 export class ImportService {
     private cancelRequested = new Set<number>();
     private running = new Set<number>();
     private readonly sql: DatabaseSync;
+    private readonly matcher: MatcherContext;
+    private readonly syncer: SyncerContext;
 
     constructor(
         private readonly opts: {
@@ -137,6 +85,22 @@ export class ImportService {
         }
     ) {
         this.sql = this.opts.db.db;
+        this.matcher = {
+            sql: this.sql,
+            registry: this.opts.registry,
+            cancelRequested: this.cancelRequested,
+            getPreferredLanguages: this.opts.getPreferredLanguages,
+            listSources: this.opts.listSources
+        };
+        this.syncer = {
+            sql: this.sql,
+            registry: this.opts.registry,
+            store: this.opts.store,
+            cancelRequested: this.cancelRequested,
+            getPreferredLanguages: this.opts.getPreferredLanguages,
+            getJob: jobId => this._job(jobId),
+            setStatus: (jobId, status) => this._setStatus(jobId, status)
+        };
         this._migrate();
         // a server restart interrupts whatever was in flight; it can be resumed explicitly
         this.sql
@@ -218,11 +182,11 @@ export class ImportService {
             return;
         }
         this._setStatus(jobId, 'syncing');
-        void this._syncAll(jobId).catch(error => this._failJob(jobId, error));
+        void syncAll(this.syncer, jobId).catch(error => this._failJob(jobId, error));
     }
 
     /** Current job (latest) with counters and series. */
-    status(): JobStatusDto | { job: null } {
+    status(): ImportJobStatusDto | { job: null } {
         const job = this.sql.prepare('SELECT * FROM import_jobs ORDER BY id DESC LIMIT 1').get() as unknown as JobRow | undefined;
         if (!job) {
             return { job: null };
@@ -323,7 +287,7 @@ export class ImportService {
                 }
                 this._setStatus(jobId, 'matching');
             }
-            await this._matchAll(jobId, options);
+            await matchAll(this.matcher, jobId, options);
             if (this.cancelRequested.has(jobId)) {
                 this._setStatus(jobId, 'ready');
                 return;
@@ -332,7 +296,7 @@ export class ImportService {
             if (mode !== 'none') {
                 this.confirm(jobId, mode);
                 this._setStatus(jobId, 'syncing');
-                await this._syncAll(jobId);
+                await syncAll(this.syncer, jobId);
             } else {
                 this._setStatus(jobId, 'ready');
             }
@@ -340,306 +304,6 @@ export class ImportService {
             this.running.delete(jobId);
             this.cancelRequested.delete(jobId);
         }
-    }
-
-    /** Match every pending series against usable sources (bounded concurrency). */
-    private async _matchAll(jobId: number, options: ImportOptions): Promise<void> {
-        const preferred = this.opts.getPreferredLanguages();
-        let sources = await this.opts.listSources();
-        sources = sources.filter(
-            source => !source.hidden && (options.sourceIds ? options.sourceIds.includes(source.id) : true) && sourceUsable(source.tags, preferred)
-        );
-        // healthy sources first, native before legacy (fast endpoints), then
-        // multi-lingual catalogs (MangaDex…) before single-language legacy ones
-        const multilingual = (source: SourceInfo) => source.tags.some(tag => tag.toLowerCase() === 'multi-lingual');
-        const healthRank = (source: SourceInfo) => (source.health === 'ok' ? -1 : 1);
-        const kindRank = (source: SourceInfo) => (source.kind === 'native' ? -1 : 1);
-        sources.sort(
-            (a, b) =>
-                healthRank(a) - healthRank(b) ||
-                kindRank(a) - kindRank(b) ||
-                Number(multilingual(b)) - Number(multilingual(a)) ||
-                a.label.localeCompare(b.label)
-        );
-        // without an explicit list, avoid catalog-scanning hundreds of untested legacy sources
-        if (!options.sourceIds) {
-            sources = sources.slice(0, MAX_MATCH_SOURCES);
-        }
-        if (sources.length === 0) {
-            throw new Error('Aucune source utilisable (langue/santé) pour le matching');
-        }
-
-        const pending = () =>
-            this.sql.prepare(`SELECT * FROM import_series WHERE job_id = ? AND status = 'pending' ORDER BY name LIMIT 1`).get(jobId) as unknown as
-                | SeriesRow
-                | undefined;
-
-        const concurrency = Math.max(1, options.concurrency ?? MATCH_CONCURRENCY);
-        const worker = async () => {
-            for (;;) {
-                if (this.cancelRequested.has(jobId)) {
-                    return;
-                }
-                const series = pending();
-                if (!series) {
-                    return;
-                }
-                // claim it so another worker does not take the same row
-                this.sql
-                    .prepare(`UPDATE import_series SET status = 'matching', updated_at = ? WHERE job_id = ? AND path = ? AND status = 'pending'`)
-                    .run(this.now(), jobId, series.path);
-                try {
-                    await this._matchSeries(jobId, series, sources);
-                } catch (error) {
-                    console.warn(`[import] match failed for "${series.name}":`, (error as Error).message);
-                    this.sql
-                        .prepare(
-                            `UPDATE import_series SET status = 'matched', confidence = 'none', error = ?, updated_at = ?
-                         WHERE job_id = ? AND path = ?`
-                        )
-                        .run((error as Error).message, this.now(), jobId, series.path);
-                }
-            }
-        };
-        await Promise.all(Array.from({ length: concurrency }, worker));
-    }
-
-    private async _matchSeries(jobId: number, series: SeriesRow, sources: SourceInfo[]): Promise<void> {
-        const needle = series.needle || series.name;
-        // try the raw name, then tag-stripped variants ("Dungeon Reset [Official]" -> "Dungeon Reset")
-        const queries = [...new Set([needle, stripTags(needle).trim(), stripTags(series.name).trim()].filter(query => query.length > 2))];
-        const candidates: MatchCandidate[] = [];
-        let best: MatchCandidate | null = null;
-
-        for (const source of sources) {
-            if (this.cancelRequested.has(jobId)) {
-                return;
-            }
-            try {
-                const adapter = await this.opts.registry.get(source.id);
-                if (!adapter) {
-                    continue;
-                }
-                const results: Array<{ id: string; title: string }> = [];
-                for (const query of queries) {
-                    results.push(...(await adapter.searchMangas(query)));
-                    if (results.length > 0) {
-                        break; // a looser query is only a fallback
-                    }
-                }
-                for (const manga of results.slice(0, 10)) {
-                    const score = titleSimilarity(series.name, manga.title);
-                    const candidate: MatchCandidate = {
-                        sourceId: source.id,
-                        sourceLabel: source.label,
-                        mangaId: manga.id,
-                        mangaTitle: manga.title,
-                        score
-                    };
-                    candidates.push(candidate);
-                    if (!best || score > best.score) {
-                        best = candidate;
-                    }
-                }
-            } catch {
-                /* a broken source never blocks the others */
-            }
-            if (best && best.score >= 1) {
-                break; // exact match: no need to query the remaining sources
-            }
-        }
-
-        candidates.sort((a, b) => b.score - a.score);
-        const confidence = confidenceFor(best?.score);
-        const chosen = confidence === 'none' ? null : best;
-        this.sql
-            .prepare(
-                `UPDATE import_series SET status = 'matched', confidence = ?, score = ?,
-                    source_id = ?, source_label = ?, manga_id = ?, manga_title = ?,
-                    candidates = ?, updated_at = ?
-             WHERE job_id = ? AND path = ?`
-            )
-            .run(
-                confidence,
-                best?.score ?? null,
-                chosen?.sourceId ?? null,
-                chosen?.sourceLabel ?? null,
-                chosen?.mangaId ?? null,
-                chosen?.mangaTitle ?? null,
-                JSON.stringify(candidates.slice(0, 8)),
-                this.now(),
-                jobId,
-                series.path
-            );
-    }
-
-    /** Sync every confirmed series: add to the library, mark local chapters as downloaded. */
-    private async _syncAll(jobId: number): Promise<void> {
-        const options: ImportOptions = JSON.parse(this._job(jobId)?.options || '{}');
-        const preferred = this.opts.getPreferredLanguages();
-        const rows = this.sql
-            .prepare(`SELECT * FROM import_series WHERE job_id = ? AND confirmed = 1 AND status != 'synced' ORDER BY name`)
-            .all(jobId) as unknown as SeriesRow[];
-
-        for (const series of rows) {
-            if (this.cancelRequested.has(jobId)) {
-                this._setStatus(jobId, 'ready');
-                return;
-            }
-            try {
-                const result = await this._syncSeries(series, options.autoDownload === true, preferred);
-                this.sql
-                    .prepare(
-                        `UPDATE import_series SET status = 'synced', matched = ?, local_chapters = ?, source_chapters = ?,
-                            match_mode = ?, entry_id = ?, error = NULL, updated_at = ?
-                     WHERE job_id = ? AND path = ?`
-                    )
-                    .run(result.matched, result.localChapters, result.sourceChapters, result.mode, result.entryId, this.now(), jobId, series.path);
-            } catch (error) {
-                console.warn(`[import] sync failed for "${series.name}":`, (error as Error).message);
-                this.sql
-                    .prepare(`UPDATE import_series SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND path = ?`)
-                    .run((error as Error).message, this.now(), jobId, series.path);
-            }
-        }
-        this._setStatus(jobId, 'done');
-    }
-
-    /**
-     * One series: local files <-> source chapters, matched by chapter number.
-     * When numbers barely match but both sides agree on the count (re-numbered
-     * seasons), _pairChapters falls back to positional alignment — flagged as
-     * 'ordinal'.
-     */
-    private async _syncSeries(
-        series: SeriesRow,
-        autoDownload: boolean,
-        preferred: string[]
-    ): Promise<{
-        matched: number;
-        localChapters: number;
-        sourceChapters: number;
-        mode: 'number' | 'ordinal';
-        entryId: number;
-        reused?: boolean;
-    }> {
-        const { source_id: sourceId, manga_id: mangaId, manga_title: mangaTitle } = series;
-        if (!sourceId || !mangaId || !mangaTitle) {
-            throw new Error(`Series "${series.name}" has no confirmed source match`);
-        }
-        const local = this._localChapters(series);
-        // duplicate guard: the series is already tracked (typically on another
-        // source — a re-import whose search matched differently): attach the
-        // local files to the existing entry instead of creating a duplicate
-        const existing = this.opts.store.findEntryByTitle(mangaTitle);
-        if (existing) {
-            const { attached, registered } = this.opts.store.registerLocalChapters(existing.id, local.byNumber);
-            const matched = attached + registered;
-            console.log(
-                `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) — fichiers rattachés à l'entrée existante (${matched} chapitres, dont ${registered} locaux hors source)`
-            );
-            return {
-                matched,
-                localChapters: local.total,
-                sourceChapters: this.opts.store.listChapters(existing.id).length,
-                mode: 'number' as const,
-                entryId: existing.id,
-                reused: true
-            };
-        }
-        const source = await this.opts.registry.get(sourceId);
-        if (!source) {
-            throw new Error(`Source "${sourceId}" introuvable`);
-        }
-        // fetch the source chapters BEFORE creating the library entry: a series
-        // whose source is dead/emptied must not leave a ghost entry behind
-        const { chapters, byNumber: sourceByNumber } = await this._sourceChapters({ id: mangaId, title: mangaTitle }, source, preferred);
-        const { entry } = await this.opts.store.addEntry({
-            sourceId,
-            mangaId,
-            title: mangaTitle,
-            autoDownload
-        });
-        const { pairs, mode } = this._pairChapters(local.byNumber, sourceByNumber);
-
-        for (const pair of pairs) {
-            this.opts.store.markChapter(entry.id, pair.chapterId, 'downloaded', pair.localPath, 'import');
-        }
-        // files with no source counterpart stay visible as local-only chapters
-        const { registered } = this.opts.store.registerLocalChapters(entry.id, local.byNumber);
-        return { matched: pairs.length + registered, localChapters: local.total, sourceChapters: chapters.length, mode, entryId: entry.id };
-    }
-
-    /** Local chapters of a series folder: number -> file path (first occurrence wins), plus total count. */
-    private _localChapters(series: SeriesRow): { byNumber: Map<number, string>; total: number } {
-        const scan = scanLibrary(series.path);
-        const ownSeries = scan.series.find(item => item.path === path.resolve(series.path)) || scan.series[0];
-        const byNumber = new Map<number, string>();
-        let total = 0;
-        for (const chapter of ownSeries?.chapters || []) {
-            total++;
-            if (chapter.number !== null && !byNumber.has(chapter.number)) {
-                byNumber.set(chapter.number, path.join(series.path, chapter.file));
-            }
-        }
-        return { byNumber, total };
-    }
-
-    /** Source chapters usable for this user (language filter), keyed by parsed chapter number (first wins). */
-    private async _sourceChapters(
-        manga: { id: string; title: string },
-        source: SourceAdapter,
-        preferred: string[]
-    ): Promise<{
-        chapters: ChapterInfo[];
-        byNumber: Map<number, ChapterInfo>;
-    }> {
-        const allChapters = await source.getChapters(manga);
-        const chapters = allChapters.filter(chapter => chapterAllowed(chapter.language, preferred));
-        const byNumber = new Map<number, ChapterInfo>();
-        for (const chapter of chapters) {
-            const number = parseChapterNumber(chapter.title);
-            if (number !== null && !byNumber.has(number)) {
-                byNumber.set(number, chapter);
-            }
-        }
-        return { chapters, byNumber };
-    }
-
-    /** Pair source chapters with local files by number; ordinal fallback for re-numbered seasons. */
-    private _pairChapters(
-        localByNumber: Map<number, string>,
-        sourceByNumber: Map<number, { id: string }>
-    ): {
-        pairs: Array<{ chapterId: string; localPath: string }>;
-        mode: 'number' | 'ordinal';
-    } {
-        let pairs: Array<{ chapterId: string; localPath: string }> = [];
-        for (const [number, chapter] of sourceByNumber) {
-            const localPath = localByNumber.get(number);
-            if (localPath) {
-                pairs.push({ chapterId: chapter.id, localPath });
-            }
-        }
-
-        let mode: 'number' | 'ordinal' = 'number';
-        const minCount = Math.min(localByNumber.size, sourceByNumber.size);
-        const bothNumbered = localByNumber.size > 0 && sourceByNumber.size > 0;
-        const similarCounts = Math.abs(localByNumber.size - sourceByNumber.size) <= Math.max(3, localByNumber.size * 0.1);
-        if (bothNumbered && similarCounts && minCount > 0 && pairs.length / minCount < 0.5) {
-            // re-numbering: align both sides by sorted chapter number
-            const localSorted = [...localByNumber.entries()].sort((a, b) => a[0] - b[0]);
-            const sourceSorted = [...sourceByNumber.entries()].sort((a, b) => a[0] - b[0]);
-            const ordinalPairs: typeof pairs = [];
-            for (let i = 0; i < Math.min(localSorted.length, sourceSorted.length); i++) {
-                ordinalPairs.push({ chapterId: sourceSorted[i][1].id, localPath: localSorted[i][1] });
-            }
-            if (ordinalPairs.length > pairs.length) {
-                pairs = ordinalPairs;
-                mode = 'ordinal';
-            }
-        }
-        return { pairs, mode };
     }
 
     // ------------------------------------------------------------------

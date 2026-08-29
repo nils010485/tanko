@@ -12,13 +12,13 @@ import type {
     DeadSeriesDto,
     DownloadsPageDto,
     GlobalSearchStatusDto,
+    ImportJobStatusDto,
     JobStatusDto,
     LibraryBulkAction,
     LibraryBulkSummary,
     LibraryChapterDto,
     LibraryEntryDto,
     MangaDto,
-    MigrationSuggestion,
     NotificationSettingsDto,
     QueueSettingsDto,
     QueueStatusDto,
@@ -56,47 +56,13 @@ export interface ChapterHistoryEntry {
     at: string;
 }
 
-export interface ImportJobSeries {
-    path: string;
-    name: string;
-    chapterCount: number;
-    status: string;
-    confidence?: 'auto' | 'review' | 'none';
-    score?: number;
-    confirmed: boolean;
-    sourceId?: string;
-    sourceLabel?: string;
-    mangaId?: string;
-    mangaTitle?: string;
-    candidates: MigrationSuggestion[];
-    matchMode?: 'number' | 'ordinal';
-    matched?: number;
-    localChapters?: number;
-    sourceChapters?: number;
-    error?: string;
-}
+/** One local series of an import job (shared DTO, exposed for the Import view). */
+export type ImportJobSeries = ImportJobStatusDto['series'][number];
 
-/** Dashboard-facing shape of GET /api/import/jobs/current. */
-export interface ImportJobStatus {
-    job: {
-        id: number;
-        root: string;
-        status: 'scanning' | 'matching' | 'ready' | 'syncing' | 'done' | 'error';
-        options: { autoConfirm?: string; autoDownload?: boolean };
-        error?: string;
-    } | null;
-    counters?: {
-        total: number;
-        matched: number;
-        auto: number;
-        review: number;
-        none: number;
-        confirmed: number;
-        synced: number;
-        failed: number;
-    };
-    series?: ImportJobSeries[];
-}
+/** Dashboard-facing shape of GET /api/import/jobs/current: the server answers
+ *  { job: null } when no job ever ran, and omits counters/series while the
+ *  first scan is still running. */
+export type ImportJobStatus = Partial<Omit<ImportJobStatusDto, 'job'>> & { job: ImportJobStatusDto['job'] | null };
 
 /** Response of POST /api/import/scan. */
 export interface ImportScanResult {

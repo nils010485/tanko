@@ -373,6 +373,78 @@ export interface QueueStatusDto {
 }
 
 // ---------------------------------------------------------------------------
+// Import (existing Hakuneko library migration)
+// ---------------------------------------------------------------------------
+
+/** Phases of the persistent import pipeline (scan → match → confirm → sync). */
+export type ImportJobPhase = 'scanning' | 'matching' | 'ready' | 'syncing' | 'done' | 'error';
+
+/** Match confirmation policy: 'auto' = high-confidence only, 'all' = also
+ *  review tier, 'none' = wait for the user. */
+export type AutoConfirmMode = 'auto' | 'all' | 'none';
+
+/** Match tier assigned by the similarity scorer. */
+export type MatchConfidence = 'auto' | 'review' | 'none';
+
+/** Options of a POST /api/import/start job. */
+export interface ImportOptionsDto {
+    /** 'auto': confirm high-confidence matches only; 'all': also review-tier; 'none': wait for the user. */
+    autoConfirm?: AutoConfirmMode;
+    /** auto-download future new chapters on imported entries (default false). */
+    autoDownload?: boolean;
+    /** parallel search workers (default: server-side MATCH_CONCURRENCY). */
+    concurrency?: number;
+    /** restrict matching to these source ids (default: all usable). */
+    sourceIds?: string[];
+}
+
+/** One local series of an import job, with its match state and candidates. */
+export interface ImportJobSeriesDto {
+    path: string;
+    name: string;
+    chapterCount: number;
+    status: string;
+    confidence?: MatchConfidence;
+    score?: number;
+    confirmed: boolean;
+    sourceId?: string;
+    sourceLabel?: string;
+    mangaId?: string;
+    mangaTitle?: string;
+    candidates: MigrationSuggestion[];
+    matchMode?: 'number' | 'ordinal';
+    matched?: number;
+    localChapters?: number;
+    sourceChapters?: number;
+    entryId?: number;
+    error?: string;
+}
+
+/** Dashboard-facing shape of GET /api/import/jobs/current. */
+export interface ImportJobStatusDto {
+    job: {
+        id: number;
+        root: string;
+        status: ImportJobPhase;
+        options: ImportOptionsDto;
+        error?: string;
+        createdAt: string;
+        updatedAt: string;
+    };
+    counters: {
+        total: number;
+        matched: number;
+        auto: number;
+        review: number;
+        none: number;
+        confirmed: number;
+        synced: number;
+        failed: number;
+    };
+    series: ImportJobSeriesDto[];
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket events (server -> dashboard)
 // ---------------------------------------------------------------------------
 

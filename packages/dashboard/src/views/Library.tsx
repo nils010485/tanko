@@ -8,118 +8,48 @@
 
 import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChapterStatusBadge } from '../components/ChapterList.js';
-import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import {
     IconArrowLeftRight,
-    IconBookmark,
-    IconBookmarkFilled,
     IconCheck,
     IconChevronDown,
-    IconDots,
     IconDownload,
     IconEyeOff,
-    IconFolder,
     IconGrid,
     IconGridSmall,
     IconImport,
     IconLibrary,
     IconList,
-    IconPause,
-    IconPlay,
     IconRefresh,
     IconSearch,
-    IconSliders,
-    IconTrash,
-    IconUndo,
-    IconX
+    IconSliders
 } from '../components/icons.js';
+import { BulkActionBar } from '../components/library/BulkActionBar.js';
+import type { EntryCardHandlers, EntryCardState } from '../components/library/EntryCard.js';
+import { EntryGridCard, EntryListRow } from '../components/library/EntryCard.js';
+import { BulkRemoveDialog, RemoveEntryDialog } from '../components/library/EntryDialogs.js';
 import { MigrationModal } from '../components/MigrationModal.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, IconButton, ProgressBar, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, SectionTitle, Skeleton } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
-import { chapterDownloadable, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
-
-type ViewMode = 'grid' | 'grid-compact' | 'list';
-type SortKey = 'recent' | 'title' | 'progress' | 'new' | 'gap';
-type FilterId = 'new' | 'missing' | 'gap' | 'failing' | 'stale' | 'migration' | 'paused';
-
-interface DisplayPrefs {
-    progress: boolean;
-    date: boolean;
-    source: boolean;
-    missing: boolean;
-    actions: boolean;
-}
-
-const GAP_THRESHOLD = 10;
-const STALE_DAYS = 7;
-const VIEW_KEY = 'tanko.library.view';
-const PREFS_KEY = 'tanko.library.prefs';
-const DEFAULT_PREFS: DisplayPrefs = { progress: true, date: true, source: true, missing: true, actions: false };
-
-function missingCount(entry: LibraryEntryDto): number {
-    return Math.max(0, entry.chapterCount - entry.downloadedCount);
-}
-
-function progressOf(entry: LibraryEntryDto): number {
-    return entry.chapterCount > 0 ? (entry.downloadedCount / entry.chapterCount) * 100 : 0;
-}
-
-function checkedAt(entry: LibraryEntryDto): number {
-    return entry.lastCheckedAt ? Date.parse(entry.lastCheckedAt) : 0;
-}
-
-function isStale(entry: LibraryEntryDto): boolean {
-    return Date.now() - checkedAt(entry) > STALE_DAYS * 86_400_000;
-}
-
-function progressTone(entry: LibraryEntryDto): 'orange' | 'green' {
-    return entry.newCount > 0 ? 'orange' : 'green';
-}
-/** Column classes per grid view (kept literal for Tailwind's scanner). */
-const GRID_CLASSES: Record<Exclude<ViewMode, 'list'>, string> = {
-    grid: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5',
-    'grid-compact': 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7'
-};
-
-function gridClassName(view: ViewMode): string {
-    return `grid gap-4 ${GRID_CLASSES[view === 'grid-compact' ? 'grid-compact' : 'grid']}`;
-}
-
-const FILTER_IDS: FilterId[] = ['new', 'missing', 'gap', 'failing', 'stale', 'migration', 'paused'];
-const FILTER_PREDS: Record<FilterId, (entry: LibraryEntryDto) => boolean> = {
-    new: entry => entry.newCount > 0,
-    missing: entry => missingCount(entry) > 0,
-    gap: entry => missingCount(entry) >= GAP_THRESHOLD,
-    failing: entry => (entry.checkFailures ?? 0) > 0,
-    stale: isStale,
-    migration: entry => !!entry.migrationSuggestion,
-    paused: entry => entry.paused === true
-};
-
-const SORTERS: Record<SortKey, (a: LibraryEntryDto, b: LibraryEntryDto) => number> = {
-    recent: (a, b) => checkedAt(b) - checkedAt(a),
-    title: (a, b) => a.title.localeCompare(b.title),
-    progress: (a, b) => progressOf(a) - progressOf(b),
-    new: (a, b) => b.newCount - a.newCount,
-    gap: (a, b) => missingCount(b) - missingCount(a)
-};
-
-function loadView(): ViewMode {
-    const view = localStorage.getItem(VIEW_KEY);
-    return view === 'list' || view === 'grid-compact' ? view : 'grid';
-}
-
-function loadPrefs(): DisplayPrefs {
-    try {
-        return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
-    } catch {
-        return DEFAULT_PREFS;
-    }
-}
+import { enqueueEntryChapters, rematchOutcomeKey } from '../lib/chapters.js';
+import {
+    type DisplayPrefs,
+    FILTER_IDS,
+    FILTER_PREDS,
+    type FilterId,
+    GAP_THRESHOLD,
+    gridClassName,
+    loadPrefs,
+    loadView,
+    PREFS_KEY,
+    SORTERS,
+    type SortKey,
+    STALE_DAYS,
+    VIEW_KEY,
+    type ViewMode
+} from '../lib/library-filters.js';
 
 export default function Library({
     library,
@@ -166,7 +96,7 @@ export default function Library({
     const prefsRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
-    const { t, formatDate } = useI18n();
+    const { t } = useI18n();
 
     const refreshHidden = useCallback(async () => {
         try {
@@ -552,12 +482,7 @@ export default function Library({
      *  resolves the entry so the chapter status follows the job. */
     const downloadChapter = async (entry: LibraryEntryDto, chapter: LibraryChapterDto) => {
         try {
-            await api.enqueue({
-                sourceId: entry.sourceId,
-                mangaId: entry.mangaId,
-                mangaTitle: entry.title,
-                chapters: toQueueChapters([chapter])
-            });
+            await enqueueEntryChapters(entry, [chapter]);
             toast.success(t('library.chapterQueued', { chapter: chapter.title }));
             setChapters(await api.entryChapters(entry.id));
         } catch (error) {
@@ -640,326 +565,6 @@ export default function Library({
         onFocusFilterDone?.();
     }, [focusFilter, onFocusFilterDone]);
 
-    const statusBadges = (entry: LibraryEntryDto) => (
-        <>
-            {entry.newCount > 0 && <Badge tone="orange">+{entry.newCount}</Badge>}
-            {(entry.checkFailures ?? 0) > 0 && (
-                <Badge tone="red" solid>
-                    {t('library.failuresShort', { n: entry.checkFailures ?? 0 })}
-                </Badge>
-            )}
-        </>
-    );
-
-    const statLine = (entry: LibraryEntryDto) => (
-        <>
-            {entry.chapterCount > 0 ? (
-                <span className="text-zinc-300">{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>
-            ) : (
-                <span className="text-red-400">{t('library.noSourceBadge')}</span>
-            )}
-            {prefs.missing && missingCount(entry) > 0 && (
-                <>
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-accent-soft">{t('library.missingCount', { n: missingCount(entry) })}</span>
-                </>
-            )}
-            {prefs.date && entry.lastCheckedAt && (
-                <>
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-faint">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>
-                </>
-            )}
-        </>
-    );
-
-    /** Primary actions stay inline on the card; rare ones move to the overflow menu. */
-    const primaryActions = (entry: LibraryEntryDto, withChapters = true) => (
-        <>
-            <IconButton title={t('library.check')} onClick={() => checkEntry(entry)} loading={busy[`check-${entry.id}`]}>
-                <IconRefresh size={14} />
-            </IconButton>
-            <IconButton
-                title={t('library.downloadNew')}
-                onClick={() => downloadNew(entry)}
-                disabled={entry.newCount === 0 && (entry.failedCount ?? 0) === 0}
-                loading={busy[`dl-${entry.id}`]}
-            >
-                <IconDownload size={14} />
-            </IconButton>
-            {withChapters && (
-                <IconButton title={expanded === entry.id ? t('library.hide') : t('discover.chapters')} onClick={() => openChapters(entry)}>
-                    <IconList size={14} />
-                </IconButton>
-            )}
-        </>
-    );
-
-    /** Labeled dropdown for secondary actions (rematch, undo migration, remove/restore). */
-    const actionMenu = (entry: LibraryEntryDto, withChapters = false) => {
-        const item = (icon: React.ReactNode, label: string, onClick: () => void, danger = false, loading = false) => (
-            <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                    setMenuFor(null);
-                    onClick();
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors disabled:opacity-50 ${
-                    danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-zinc-800'
-                }`}
-            >
-                <span className="flex-none">{loading ? <Spinner size={13} /> : icon}</span>
-                {label}
-            </button>
-        );
-        return (
-            <div className="relative" ref={menuFor === entry.id ? menuRef : undefined}>
-                <IconButton title={t('library.moreActions')} onClick={() => setMenuFor(current => (current === entry.id ? null : entry.id))}>
-                    <IconDots size={14} />
-                </IconButton>
-                {menuFor === entry.id && (
-                    <div className="absolute bottom-8 right-0 z-30 w-48 rounded-xl border border-line bg-surface p-1.5 shadow-xl shadow-black/60">
-                        {withChapters &&
-                            item(<IconList size={14} />, expanded === entry.id ? t('library.hide') : t('discover.chapters'), () => openChapters(entry))}
-                        {item(<IconSearch size={14} />, t('library.rematch'), () => rematch(entry), false, busy[`rematch-${entry.id}`])}
-                        {item(
-                            entry.paused ? <IconPlay size={14} /> : <IconPause size={14} />,
-                            entry.paused ? t('library.resumeFollow') : t('library.pauseFollow'),
-                            () => togglePaused(entry)
-                        )}
-                        {entry.canRollbackMigration && item(<IconUndo size={14} />, t('library.rollbackMigrationHint'), () => undoMigration(entry))}
-                        <div className="my-1 border-t border-line" />
-                        {showHidden
-                            ? item(<IconRefresh size={14} />, t('library.reestablish'), () => restoreEntry(entry))
-                            : item(<IconTrash size={14} />, t('library.remove'), () => setPendingRemove(entry), true)}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    /** List rows have room: everything stays inline. */
-    const secondaryActions = (entry: LibraryEntryDto) => (
-        <>
-            <IconButton title={t('library.rematchHint')} onClick={() => rematch(entry)} loading={busy[`rematch-${entry.id}`]}>
-                <IconSearch size={14} />
-            </IconButton>
-            <IconButton title={entry.paused ? t('library.resumeFollow') : t('library.pauseFollow')} onClick={() => togglePaused(entry)}>
-                {entry.paused ? <IconPlay size={14} /> : <IconPause size={14} />}
-            </IconButton>
-            {entry.canRollbackMigration && (
-                <IconButton title={t('library.rollbackMigrationHint')} onClick={() => undoMigration(entry)}>
-                    <IconUndo size={14} />
-                </IconButton>
-            )}
-            {showHidden ? (
-                <IconButton title={t('library.reestablish')} onClick={() => restoreEntry(entry)}>
-                    <IconRefresh size={14} />
-                </IconButton>
-            ) : (
-                <IconButton title={t('library.remove')} variant="danger" onClick={() => setPendingRemove(entry)}>
-                    <IconTrash size={14} />
-                </IconButton>
-            )}
-        </>
-    );
-
-    const migrationBanner = (entry: LibraryEntryDto, className = '') =>
-        entry.migrationSuggestion && (
-            <div className={`flex flex-wrap items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs ${className}`}>
-                <span className="text-zinc-300">
-                    {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
-                    {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
-                </span>
-                <Button small onClick={() => confirmMigration(entry, true)}>
-                    {t('library.migrate')}
-                </Button>
-                <Button small variant="ghost" onClick={() => confirmMigration(entry, false)}>
-                    <IconX size={12} />
-                </Button>
-            </div>
-        );
-
-    const chaptersPanel = (entry: LibraryEntryDto, className = '') =>
-        expanded === entry.id && (
-            <div className={`max-h-56 space-y-1 overflow-y-auto rounded-lg bg-zinc-950/60 p-2 ${className}`}>
-                {chapters === null && (
-                    <div className="p-2 text-sm text-zinc-500">
-                        <Spinner />
-                    </div>
-                )}
-                {chapters?.map(chapter => (
-                    <div key={chapter.id} className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
-                        <span className="truncate text-zinc-300" title={chapter.path || ''}>
-                            {chapter.title}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                            {chapterDownloadable(chapter.status) && (
-                                <button
-                                    type="button"
-                                    title={chapter.status === 'failed' ? t('library.retryChapterHint') : t('library.downloadChapterHint')}
-                                    onClick={() => downloadChapter(entry, chapter)}
-                                    className="text-zinc-500 transition-colors hover:text-accent-soft"
-                                >
-                                    <IconDownload size={13} />
-                                </button>
-                            )}
-                            {(chapter.historyCount ?? 0) > 0 && (
-                                <button
-                                    type="button"
-                                    title={t('library.restoreFileHint')}
-                                    onClick={() => rollbackChapter(entry, chapter)}
-                                    className="text-zinc-500 transition-colors hover:text-orange-400"
-                                >
-                                    ⟲
-                                </button>
-                            )}
-                            <ChapterStatusBadge chapter={chapter} />
-                        </span>
-                    </div>
-                ))}
-            </div>
-        );
-
-    const renderGridCard = (entry: LibraryEntryDto) => (
-        <article
-            key={entry.id}
-            {...longPress(entry.id)}
-            className={`relative rounded-xl border bg-surface/60 transition-colors hover:border-zinc-600 ${selecting && selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
-        >
-            <div className="relative aspect-[2/3] overflow-hidden rounded-t-xl">
-                <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
-                {/* full-cover click target (pointer only): opens the series (or toggles selection); the title button stays the keyboard path */}
-                <button
-                    type="button"
-                    title={entry.title}
-                    aria-label={entry.title}
-                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
-                    className="absolute inset-0"
-                    tabIndex={-1}
-                />
-                <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry)}</div>
-                {selecting ? (
-                    <button
-                        type="button"
-                        title={entry.title}
-                        aria-label={entry.title}
-                        onClick={() => toggleSelect(entry.id)}
-                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${selectedIds.has(entry.id) ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    >
-                        {selectedIds.has(entry.id) ? <IconCheck size={13} /> : <IconBookmark size={13} />}
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        title={entry.autoDownload ? t('library.following') : t('library.manualDl')}
-                        onClick={() => toggleFollow(entry, !entry.autoDownload)}
-                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${entry.autoDownload ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    >
-                        {entry.autoDownload ? <IconBookmarkFilled size={13} /> : <IconBookmark size={13} />}
-                    </button>
-                )}
-            </div>
-            <div className="space-y-1.5 p-3">
-                <button
-                    type="button"
-                    className="line-clamp-2 min-h-[2.5em] w-full text-left text-sm font-semibold leading-tight transition-colors hover:text-accent-soft"
-                    title={entry.title}
-                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
-                >
-                    {entry.title}
-                </button>
-                <div className="flex flex-wrap items-center gap-1">
-                    {prefs.source && (entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>)}
-                    {entry.paused && <Badge>{t('library.paused')}</Badge>}
-                </div>
-                <div className="flex min-h-[2.125rem] flex-wrap content-start items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4">{statLine(entry)}</div>
-                {prefs.progress && <ProgressBar value={progressOf(entry)} tone={progressTone(entry)} />}
-                {migrationBanner(entry)}
-                <div className="card-actions flex items-center justify-between pt-0.5">
-                    <div className="flex items-center gap-1">{primaryActions(entry, view !== 'grid-compact')}</div>
-                    {actionMenu(entry, view === 'grid-compact')}
-                </div>
-                {chaptersPanel(entry)}
-            </div>
-        </article>
-    );
-
-    const renderListRow = (entry: LibraryEntryDto) => (
-        <article
-            key={entry.id}
-            {...longPress(entry.id)}
-            className={`rounded-xl border bg-surface/60 p-2.5 transition-colors hover:border-zinc-600 ${selecting && selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
-        >
-            <div className="flex items-center gap-3">
-                {selecting && (
-                    <input
-                        type="checkbox"
-                        checked={selectedIds.has(entry.id)}
-                        onChange={() => toggleSelect(entry.id)}
-                        aria-label={entry.title}
-                        className="flex-none accent-orange-500"
-                    />
-                )}
-                <button
-                    type="button"
-                    title={entry.title}
-                    aria-label={entry.title}
-                    onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
-                    tabIndex={-1}
-                    className="flex-none"
-                >
-                    <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 rounded-md" />
-                </button>
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <button
-                            type="button"
-                            className="truncate text-sm font-semibold transition-colors hover:text-accent-soft"
-                            title={entry.title}
-                            onClick={() => (selecting ? toggleSelect(entry.id) : onOpenSeries?.(entry.id))}
-                        >
-                            {entry.title}
-                        </button>
-                        {statusBadges(entry)}
-                        {entry.paused && <Badge>{t('library.paused')}</Badge>}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
-                        {prefs.source && (
-                            <>
-                                {entry.sourceLabel ? (
-                                    <span className="text-muted">{entry.sourceLabel}</span>
-                                ) : (
-                                    <span className="text-red-400">{t('library.noSourceBadge')}</span>
-                                )}
-                                <span className="text-zinc-700">·</span>
-                            </>
-                        )}
-                        {statLine(entry)}
-                    </div>
-                </div>
-                {prefs.progress && (
-                    <div className="hidden w-32 flex-none sm:block">
-                        <div className="mb-1 text-right text-[11px] text-muted">{Math.round(progressOf(entry))}%</div>
-                        <ProgressBar value={progressOf(entry)} tone={progressTone(entry)} />
-                    </div>
-                )}
-                <Toggle
-                    checked={entry.autoDownload}
-                    onChange={value => toggleFollow(entry, value)}
-                    label={entry.autoDownload ? t('library.following') : t('library.manualDl')}
-                />
-                <div className="card-actions flex flex-none items-center gap-1">
-                    {primaryActions(entry)}
-                    {secondaryActions(entry)}
-                </div>
-            </div>
-            {migrationBanner(entry, 'mt-2')}
-            {chaptersPanel(entry, 'mt-2')}
-        </article>
-    );
-
     const viewButton = (mode: ViewMode, icon: React.ReactNode, label: string) => (
         <button
             key={mode}
@@ -984,6 +589,25 @@ export default function Library({
             />
         </label>
     );
+
+    const cardState: EntryCardState = { busy, expandedId: expanded, chapters, selecting, selectedIds, showHidden, view, prefs, menuFor };
+    const cardHandlers: EntryCardHandlers = {
+        onCheck: checkEntry,
+        onDownloadNew: downloadNew,
+        onToggleChapters: openChapters,
+        onRematch: rematch,
+        onTogglePaused: togglePaused,
+        onUndoMigration: undoMigration,
+        onRestore: restoreEntry,
+        onRemove: setPendingRemove,
+        onToggleFollow: toggleFollow,
+        onConfirmMigration: confirmMigration,
+        onOpenSeries: id => onOpenSeries?.(id),
+        onDownloadChapter: downloadChapter,
+        onRollbackChapter: rollbackChapter,
+        onToggleSelect: toggleSelect,
+        onMenuFor: setMenuFor
+    };
 
     return (
         <div className={`space-y-6 ${prefs.actions ? '' : 'library-actions-hover'}`}>
@@ -1118,41 +742,17 @@ export default function Library({
             </div>
 
             {selecting && (
-                <Card className="flex flex-wrap items-center gap-2 p-3">
-                    <span className="text-sm text-muted">{t('library.selectionCount', { n: selectedInView })}</span>
-                    <Button small variant="ghost" onClick={toggleSelectAll} disabled={filtered.length === 0}>
-                        {allInViewSelected ? t('library.deselectAll') : t('library.selectAll')}
-                    </Button>
-                    <Button small onClick={() => runBulk('check')} disabled={selectedInView === 0} loading={bulkBusy === 'check'}>
-                        <IconRefresh size={13} /> {t('library.checkSelected', { n: selectedInView })}
-                    </Button>
-                    <Button small onClick={() => runBulk('downloadNew')} disabled={selectedInView === 0} loading={bulkBusy === 'downloadNew'}>
-                        <IconDownload size={13} /> {t('library.downloadSelected', { n: selectedInView })}
-                    </Button>
-                    <Button small onClick={() => runBulk('pause')} disabled={selectedInView === 0} loading={bulkBusy === 'pause'}>
-                        <IconPause size={13} /> {t('library.pauseSelected')}
-                    </Button>
-                    <Button small onClick={() => runBulk('resume')} disabled={selectedInView === 0} loading={bulkBusy === 'resume'}>
-                        <IconPlay size={13} /> {t('library.resumeSelected')}
-                    </Button>
-                    <Button small onClick={() => runBulk('hide')} disabled={selectedInView === 0} loading={bulkBusy === 'hide'}>
-                        <IconEyeOff size={13} /> {t('library.hideSelected')}
-                    </Button>
-                    {showHidden && (
-                        <Button small onClick={() => runBulk('unhide')} disabled={selectedInView === 0} loading={bulkBusy === 'unhide'}>
-                            <IconRefresh size={13} /> {t('library.unhideSelected')}
-                        </Button>
-                    )}
-                    <Button small onClick={() => runBulk('rematch')} disabled={selectedInView === 0} loading={bulkBusy === 'rematch'}>
-                        <IconSearch size={13} /> {t('library.rematch')}
-                    </Button>
-                    <Button small variant="danger" onClick={() => setPendingBulkRemove(true)} disabled={selectedInView === 0}>
-                        <IconTrash size={13} /> {t('library.removeSelected', { n: selectedInView })}
-                    </Button>
-                    <Button small variant="ghost" onClick={exitSelection}>
-                        {t('common.cancel')}
-                    </Button>
-                </Card>
+                <BulkActionBar
+                    selectedInView={selectedInView}
+                    allInViewSelected={allInViewSelected}
+                    canSelectAll={filtered.length > 0}
+                    showHidden={showHidden}
+                    bulkBusy={bulkBusy}
+                    onToggleSelectAll={toggleSelectAll}
+                    onRunBulk={runBulk}
+                    onRemoveSelected={() => setPendingBulkRemove(true)}
+                    onExit={exitSelection}
+                />
             )}
 
             {!loaded && view === 'list' && (
@@ -1200,120 +800,34 @@ export default function Library({
             )}
             {loaded && filtered.length === 0 && source.length > 0 && <EmptyState title={t('library.noMatch')} icon={<IconSearch size={28} />} />}
 
-            {loaded && filtered.length > 0 && view === 'list' && <div className="space-y-2">{filtered.map(renderListRow)}</div>}
-            {loaded && filtered.length > 0 && view !== 'list' && <div className={gridClassName(view)}>{filtered.map(renderGridCard)}</div>}
-
-            {pendingRemove !== null && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (document listener above)
-                <div
-                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-                    onClick={event => {
-                        if (event.target === event.currentTarget) setPendingRemove(null);
-                    }}
-                >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={t('library.removeTitle', { title: pendingRemove.title })}
-                        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50"
-                    >
-                        <div className="text-sm font-semibold text-fg">{t('library.removeTitle', { title: pendingRemove.title })}</div>
-                        <div className="mt-1 text-xs text-muted">{t('library.removeChoice')}</div>
-                        <div className="mt-4 space-y-2">
-                            <button
-                                type="button"
-                                onClick={hideEntry}
-                                className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900"
-                            >
-                                <span className="mt-0.5 text-zinc-400">
-                                    <IconEyeOff size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-fg">{t('library.hideFromTanko')}</span>
-                                    <span className="mt-0.5 block text-xs text-muted">{t('library.hideFromTankoHint')}</span>
-                                </span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={askRemoveFromDisk}
-                                className="flex w-full items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-left transition-colors hover:border-red-500/60 hover:bg-red-500/10"
-                            >
-                                <span className="mt-0.5 text-red-400">
-                                    <IconFolder size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-red-300">{t('library.deleteFromDisk')}</span>
-                                    <span className="mt-0.5 block text-xs text-red-300/70">{t('library.deleteFromDiskHint')}</span>
-                                </span>
-                            </button>
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <Button small variant="ghost" onClick={() => setPendingRemove(null)}>
-                                {t('common.cancel')}
-                            </Button>
-                        </div>
-                    </div>
+            {loaded && filtered.length > 0 && view === 'list' && (
+                <div className="space-y-2">
+                    {filtered.map(entry => (
+                        <EntryListRow key={entry.id} entry={entry} state={cardState} handlers={cardHandlers} menuRef={menuRef} longPress={longPress} />
+                    ))}
+                </div>
+            )}
+            {loaded && filtered.length > 0 && view !== 'list' && (
+                <div className={gridClassName(view)}>
+                    {filtered.map(entry => (
+                        <EntryGridCard key={entry.id} entry={entry} state={cardState} handlers={cardHandlers} menuRef={menuRef} longPress={longPress} />
+                    ))}
                 </div>
             )}
 
+            {pendingRemove !== null && (
+                <RemoveEntryDialog entry={pendingRemove} onHide={hideEntry} onAskRemoveFromDisk={askRemoveFromDisk} onClose={() => setPendingRemove(null)} />
+            )}
+
             {pendingBulkRemove && selecting && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; same pattern as the single-remove dialog above
-                <div
-                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-                    onClick={event => {
-                        if (event.target === event.currentTarget) {
-                            setPendingBulkRemove(false);
-                        }
+                <BulkRemoveDialog
+                    count={selectedInView}
+                    onDelete={disk => {
+                        setPendingBulkRemove(false);
+                        void runBulk('delete', disk);
                     }}
-                >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={t('library.bulkRemoveTitle', { n: selectedInView })}
-                        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50"
-                    >
-                        <div className="text-sm font-semibold text-fg">{t('library.bulkRemoveTitle', { n: selectedInView })}</div>
-                        <div className="mt-4 space-y-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPendingBulkRemove(false);
-                                    void runBulk('delete');
-                                }}
-                                className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900"
-                            >
-                                <span className="mt-0.5 text-zinc-400">
-                                    <IconLibrary size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-fg">{t('library.bulkRemoveOnly')}</span>
-                                    <span className="mt-0.5 block text-xs text-muted">{t('library.bulkRemoveOnlyHint')}</span>
-                                </span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPendingBulkRemove(false);
-                                    void runBulk('delete', true);
-                                }}
-                                className="flex w-full items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-left transition-colors hover:border-red-500/60 hover:bg-red-500/10"
-                            >
-                                <span className="mt-0.5 text-red-400">
-                                    <IconFolder size={16} />
-                                </span>
-                                <span>
-                                    <span className="block text-sm font-medium text-red-300">{t('library.bulkRemoveDisk')}</span>
-                                    <span className="mt-0.5 block text-xs text-red-300/70">{t('library.bulkRemoveDiskHint')}</span>
-                                </span>
-                            </button>
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <Button small variant="ghost" onClick={() => setPendingBulkRemove(false)}>
-                                {t('common.cancel')}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                    onClose={() => setPendingBulkRemove(false)}
+                />
             )}
 
             <ConfirmDialog

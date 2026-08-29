@@ -25,7 +25,7 @@ import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
-import { chapterDownloadable, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
+import { chapterDownloadable, enqueueEntryChapters, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
 import { useEscapeKey } from '../lib/hooks.js';
 
 interface PreviewState {
@@ -312,12 +312,7 @@ export default function Series({
     const downloadChapter = async (chapter: LibraryChapterDto) => {
         if (!entry) return;
         try {
-            await api.enqueue({
-                sourceId: entry.sourceId,
-                mangaId: entry.mangaId,
-                mangaTitle: entry.title,
-                chapters: toQueueChapters([chapter])
-            });
+            await enqueueEntryChapters(entry, [chapter]);
             toast.success(t('library.chapterQueued', { chapter: chapter.title }));
             await loadChapters();
         } catch (error) {
@@ -331,12 +326,7 @@ export default function Series({
         const picked = (chapters ?? []).filter(chapter => selectedChapters.has(String(chapter.id)));
         if (picked.length === 0) return;
         try {
-            const result = await api.enqueue({
-                sourceId: entry.sourceId,
-                mangaId: entry.mangaId,
-                mangaTitle: entry.title,
-                chapters: toQueueChapters(picked)
-            });
+            const result = await enqueueEntryChapters(entry, picked);
             toast.success(t('series.chaptersQueued', { n: result.added + result.retried }));
             setSelectedChapters(new Set());
             await loadChapters();
