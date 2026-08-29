@@ -135,20 +135,17 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
 }
 
 /** Enqueue every not-yet-downloaded chapter ('new' status plus failed
- *  downloads worth retrying) into the download queue. */
-export function enqueueNewChapters(ctx: StoreContext, entryId: number, queue: DownloadQueue): number {
+ *  downloads worth retrying) into the download queue. With `includeMissing`,
+ *  chapters that predate the follow ('missing') are grabbed too. */
+export function enqueueNewChapters(ctx: StoreContext, entryId: number, queue: DownloadQueue, includeMissing = false): number {
     const entry = getEntryRow(ctx, entryId);
     if (!entry) {
         return 0;
     }
-    const chapters = ctx.q.all<ChapterRow>(
-        "SELECT * FROM library_chapters WHERE entry_id = ? AND status IN ('new', 'failed') ORDER BY discovered_at ASC",
-        entryId
-    );
+    const statuses = includeMissing ? "('new', 'missing', 'failed')" : "('new', 'failed')";
+    const chapters = ctx.q.all<ChapterRow>(`SELECT * FROM library_chapters WHERE entry_id = ? AND status IN ${statuses} ORDER BY discovered_at ASC`, entryId);
     const markQueued = () => {
-        ctx.db.db
-            .prepare("UPDATE library_chapters SET status = ?, prev_status = status WHERE entry_id = ? AND status IN ('new', 'failed')")
-            .run('queued', entryId);
+        ctx.db.db.prepare(`UPDATE library_chapters SET status = ?, prev_status = status WHERE entry_id = ? AND status IN ${statuses}`).run('queued', entryId);
     };
     return enqueueSelected(entry, chapters, queue, markQueued);
 }

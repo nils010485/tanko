@@ -356,6 +356,13 @@ export const fr: typeof import('./en.js').en = {
     'tasks.toolsSection': 'Outils de maintenance',
     'tasks.notificationsSection': 'Notifications',
     'tasks.rematchFailedTitle': 'Re-matcher les séries en échec',
+    'tasks.downloadMissingTitle': 'Télécharger les chapitres manquants',
+    'tasks.downloadMissingHint': 'Enfile tous les chapitres absents du disque dans toute la bibliothèque — nouveaux, échoués et backlog antérieur au suivi',
+    'tasks.downloadMissing': 'Télécharger {n} manquant(s)',
+    'tasks.downloadMissingConfirmTitle': 'Télécharger les chapitres manquants ?',
+    'tasks.downloadMissingConfirmBody':
+        'Cela enfile tous les chapitres non présents sur le disque, y compris les backlogs antérieurs au suivi. Une grande bibliothèque peut générer une longue file de téléchargement.',
+    'tasks.downloadMissingConfirm': 'Tout télécharger',
     'tasks.colSeries': 'Série',
     'tasks.betterSourcesTitle': 'Chercher de meilleures sources',
     'tasks.betterSourcesHint':

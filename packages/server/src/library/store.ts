@@ -399,8 +399,8 @@ export class LibraryStore {
     }
 
     /** Enqueue every not-yet-downloaded chapter into the download queue. */
-    enqueueNewChapters(entryId: number, queue: DownloadQueue): number {
-        return chapters.enqueueNewChapters(this.ctx, entryId, queue);
+    enqueueNewChapters(entryId: number, queue: DownloadQueue, includeMissing = false): number {
+        return chapters.enqueueNewChapters(this.ctx, entryId, queue, includeMissing);
     }
 
     /** Enqueue a specific set of chapters (scheduler fresh diff only). */
@@ -486,14 +486,15 @@ export class LibraryStore {
     // ------------------------------------------------------------------
 
     private _entryToDto(row: EntryRow): LibraryEntryDto {
-        const counts = this.ctx.q.get<{ total: number | null; downloaded: number | null; fresh: number | null; failed: number | null }>(
+        const counts = this.ctx.q.get<{ total: number | null; downloaded: number | null; fresh: number | null; failed: number | null; missing: number | null }>(
             `SELECT COUNT(*) AS total,
                         SUM(CASE WHEN status = 'downloaded' THEN 1 ELSE 0 END) AS downloaded,
                         SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh,
-                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                        SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing
                  FROM library_chapters WHERE entry_id = ?`,
             row.id
-        ) ?? { total: null, downloaded: null, fresh: null, failed: null };
+        ) ?? { total: null, downloaded: null, fresh: null, failed: null, missing: null };
         const snapshot = this.ctx.q.get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) ?? { n: 0 };
         let suggestion: LibraryEntryDto['migrationSuggestion'];
         try {
@@ -537,6 +538,7 @@ export class LibraryStore {
             downloadedCount,
             newCount: Number(counts.fresh || 0),
             failedCount: Number(counts.failed || 0),
+            missingCount: Number(counts.missing || 0),
             lastCheckedAt: row.last_checked_at || undefined,
             lastChapterAt: row.last_chapter_at || undefined,
             addedAt: row.added_at,

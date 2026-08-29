@@ -86,6 +86,12 @@ describe('follow backlog semantics', () => {
         expect(enqueued).toHaveLength(0);
     });
 
+    it('download-missing sweeps the pre-follow backlog too', async () => {
+        const { entry } = await store.addEntry({ sourceId: 's', mangaId: 'monitor-only', title: 'Monitor Only', backlog: 'ignore' });
+        expect(store.enqueueNewChapters(entry.id, { enqueue: () => ({ added: 2, skipped: 0, retried: 0 }) } as never, true)).toBe(2);
+        expect(statusOf(entry.id, 'c1')).toMatchObject({ status: 'queued', prev_status: 'missing' });
+    });
+
     it('backlog "grab" keeps the catalog new and download-new queues it', async () => {
         const { entry } = await store.addEntry({ sourceId: 's', mangaId: 'grab-me', title: 'Grab Me', backlog: 'grab' });
         expect(entry.newCount).toBe(2);

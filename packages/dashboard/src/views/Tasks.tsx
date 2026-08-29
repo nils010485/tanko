@@ -6,7 +6,7 @@
 import type { LibraryEntryDto, ScheduleSettingsDto, ScheduleStatusDto } from '@tanko/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
-import { IconBell, IconRefresh, IconSliders } from '../components/icons.js';
+import { IconBell, IconDownload, IconRefresh, IconSliders } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -51,6 +51,8 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
     const [regenBusy, setRegenBusy] = useState(false);
     const [rematchBusy, setRematchBusy] = useState(false);
+    const [dlMissingBusy, setDlMissingBusy] = useState(false);
+    const [confirmMissing, setConfirmMissing] = useState(false);
     const toast = useToast();
 
     // better-source scan: threshold + confirmation + eligible list (live)
@@ -59,6 +61,11 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     const [confirmScan, setConfirmScan] = useState(false);
     const eligible = library.filter(entry => !entry.hidden && !entry.migrationSuggestion && entry.chapterCount <= threshold);
     const failingCount = library.filter(entry => !entry.hidden && (entry.checkFailures ?? 0) > 0).length;
+    // everything not on disk across the library ('new' + 'missing' + 'failed'),
+    // mirroring the per-series "Download missing" action
+    const pendingCount = library
+        .filter(entry => !entry.hidden)
+        .reduce((sum, entry) => sum + entry.newCount + (entry.missingCount ?? 0) + (entry.failedCount ?? 0), 0);
 
     useEffect(() => {
         api.schedule().then(data => {
@@ -140,6 +147,21 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
             toast.error((error as Error).message);
         } finally {
             setRematchBusy(false);
+        }
+    };
+
+    /** Bulk 'download missing' across the whole library — same sweep as the
+     *  per-series action: everything not on disk ('new' + 'missing' + 'failed'). */
+    const runDownloadMissing = async () => {
+        setConfirmMissing(false);
+        setDlMissingBusy(true);
+        try {
+            const result = await api.downloadAllMissing();
+            toast.success(t('series.chaptersQueued', { n: result.queued }));
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setDlMissingBusy(false);
         }
     };
 
@@ -334,6 +356,18 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
 
                     <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
+                            <div className="text-sm font-medium">{t('tasks.downloadMissingTitle')}</div>
+                            <div className="mt-0.5 text-xs text-zinc-500">{t('tasks.downloadMissingHint')}</div>
+                        </div>
+                        <div className="mt-auto flex justify-end">
+                            <Button small variant="ghost" onClick={() => setConfirmMissing(true)} loading={dlMissingBusy} disabled={pendingCount === 0}>
+                                <IconDownload size={13} /> {t('tasks.downloadMissing', { n: pendingCount })}
+                            </Button>
+                        </div>
+                    </Card>
+
+                    <Card className="flex h-full flex-col gap-3 p-4">
+                        <div>
                             <div className="text-sm font-medium">{t('schedule.coversTitle')}</div>
                             <div className="mt-0.5 text-xs text-zinc-500">{t('schedule.coversHint')}</div>
                         </div>
@@ -392,6 +426,16 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                 danger={false}
                 onConfirm={runScan}
                 onCancel={() => setConfirmScan(false)}
+            />
+
+            <ConfirmDialog
+                open={confirmMissing}
+                title={t('tasks.downloadMissingConfirmTitle')}
+                body={t('tasks.downloadMissingConfirmBody')}
+                confirmLabel={t('tasks.downloadMissingConfirm')}
+                danger={false}
+                onConfirm={runDownloadMissing}
+                onCancel={() => setConfirmMissing(false)}
             />
         </div>
     );

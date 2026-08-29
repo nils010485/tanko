@@ -355,6 +355,13 @@ export const en = {
     'tasks.toolsSection': 'Maintenance tools',
     'tasks.notificationsSection': 'Notifications',
     'tasks.rematchFailedTitle': 'Re-match failed sources',
+    'tasks.downloadMissingTitle': 'Download missing chapters',
+    'tasks.downloadMissingHint': 'Queue every chapter not on disk across the library — new, failed and pre-follow backlog',
+    'tasks.downloadMissing': 'Download {n} missing',
+    'tasks.downloadMissingConfirmTitle': 'Download missing chapters?',
+    'tasks.downloadMissingConfirmBody':
+        'This queues every chapter not on disk yet, including backlogs from before each follow. Large libraries may generate a long download queue.',
+    'tasks.downloadMissingConfirm': 'Download everything',
     'tasks.colSeries': 'Series',
     'tasks.betterSourcesTitle': 'Find better sources',
     'tasks.betterSourcesHint':

@@ -137,6 +137,8 @@ export interface LibraryEntryDto {
     newCount: number;
     /** Chapters currently in 'failed' state (drives the download-new disabled rule). */
     failedCount?: number;
+    /** Chapters that predate the follow ('missing' state — monitor-only backlog). */
+    missingCount?: number;
     lastCheckedAt?: string;
     /** Date the last new chapter was discovered (drives the stale-series auto-pause). */
     lastChapterAt?: string;

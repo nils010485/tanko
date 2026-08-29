@@ -76,6 +76,23 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
         return { queued, entries: affected };
     });
 
+    // Same sweep including the pre-follow backlog ('new' + 'missing' + 'failed')
+    // across all visible entries — the Tasks-page bulk "download missing".
+    app.post('/api/library/download-missing', async () => {
+        const entries = await store.listEntries('visible');
+        let queued = 0;
+        let affected = 0;
+        for (const entry of entries) {
+            const count = store.enqueueNewChapters(entry.id, queue, true);
+            if (count > 0) {
+                queued += count;
+                affected += 1;
+                publishEntry(entry.id);
+            }
+        }
+        return { queued, entries: affected };
+    });
+
     // Change history of an entry's chapters
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/history', async request => {
         const { entryId } = request.params;
