@@ -304,7 +304,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                                 className="w-20 text-center"
                             />
                         </label>
-                        <div className="flex items-center gap-2 pb-0.5">
+                        <div className="flex flex-wrap items-center gap-2 pb-0.5">
                             <Button onClick={() => setConfirmScan(true)} disabled={eligible.length === 0}>
                                 <IconRefresh size={13} /> {t('tasks.betterSourcesScan', { n: eligible.length })}
                             </Button>
