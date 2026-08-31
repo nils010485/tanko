@@ -32,6 +32,17 @@ you ever managing source outages.
 - Existing library import and source failover
 
 ## Quickstart (Docker)
+## Requirements
+
+Measured on the shipped Docker image:
+
+- **RAM**: ~100 MB at idle, but the embedded headless Chromium (anti-bot
+  fallback) adds ~800 MB as soon as a protected source is checked and stays
+  resident. 1 GB works; 2 GB is comfortable.
+- **Disk**: ~1.4 GB image + your library.
+- **Docker or Podman**; or Node.js >= 22 to run outside a container (Chromium
+  is optional there — only used if a system binary is present).
+
 
 ```bash
 cp docker-compose.yml.example docker-compose.yml
