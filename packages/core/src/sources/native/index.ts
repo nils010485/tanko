@@ -6,6 +6,7 @@ import { AsuraScansConnector } from './asurascans.js';
 import { MadaraConnector } from './madara.js';
 import { MangaDexConnector } from './mangadex.js';
 import { VComicsConnector } from './vcomics.js';
+
 export function createNativeConnectors(): SourceAdapter[] {
     return [
         new MangaDexConnector(),
@@ -27,6 +28,34 @@ export function createNativeConnectors(): SourceAdapter[] {
             label: 'Manga District',
             base: 'https://mangadistrict.com',
             tags: ['manga', 'english', 'manhua']
+        }),
+        // search page fallback covers NoAjax Madara sites (ToonGod, KunManga)
+        new MadaraConnector({
+            id: 'toongod',
+            label: 'ToonGod',
+            base: 'https://toongod.org',
+            tags: ['webtoon', 'english', 'manhwa']
+        }),
+        new MadaraConnector({
+            id: 'kunmanga',
+            label: 'KunManga',
+            base: 'https://www.kunmanga.online',
+            chapterApiPath: '/api/comics',
+            tags: ['webtoon', 'english']
+        }),
+        new MadaraConnector({
+            id: 'raijinscans',
+            label: 'Raijin Scans',
+            base: 'https://raijin-scans.fr',
+            tags: ['manga', 'french', 'webtoon']
+        }),
+        // Aqua theme renamed the Madara classes (aqua-*)
+        new MadaraConnector({
+            id: 'aquareader',
+            label: 'Aqua Manga',
+            base: 'https://aquareader.org',
+            tags: ['manga', 'english', 'manhua'],
+            selectors: { chapters: '.aqua-ch-item', chapterAnchor: '' }
         })
     ];
 }
