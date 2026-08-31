@@ -10,7 +10,7 @@
  */
 
 import { browserEnabled, isAntiBotShell } from '../../shims/browser.js';
-import { BROWSER_SESSION_MS, type BrowserResponse, browserFetch, browserFetchBinary } from '../../shims/browser-session.js';
+import { BROWSER_SESSION_MS, type BrowserResponse, browserCapturePageImages, browserFetch, browserFetchBinary } from '../../shims/browser-session.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
@@ -77,6 +77,9 @@ export interface MadaraOptions {
     /** JSON chapter API prefix (e.g. "/api/comics") for themes whose manga
      *  page loads the chapter list client-side: GET {base}{prefix}/{slug}/chapters. */
     chapterApiPath?: string;
+    /** Reader decodes pages client-side (blob: images): capture the real
+     *  image URLs during a browser render instead of parsing the HTML. */
+    capturePages?: boolean;
     /** Site-specific overrides for themes that renamed the Madara classes. */
     selectors?: {
         /** Chapter list rows (default: li.wp-manga-chapter). */
@@ -101,6 +104,7 @@ export class MadaraConnector implements SourceAdapter {
     private readonly _chapterAnchorSelector: string | null;
     private readonly _pageSelectors: string[];
     private readonly _chapterApiPath?: string;
+    private readonly _capturePages: boolean;
     /** Sticky browser-mode deadline: 0 = raw HTTP; set when a challenge was
      *  proven, so later requests skip the doomed raw attempt. */
     private _browserUntil = 0;
@@ -117,6 +121,7 @@ export class MadaraConnector implements SourceAdapter {
         this._chapterAnchorSelector = anchorSelector === undefined ? 'a' : anchorSelector || null;
         this._pageSelectors = [options.selectors?.pages || 'img.wp-manga-chapter-img', 'div.page-break img'];
         this._chapterApiPath = options.chapterApiPath;
+        this._capturePages = options.capturePages === true;
         this._ajaxHeaders = {
             'User-Agent': UA,
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -270,6 +275,14 @@ export class MadaraConnector implements SourceAdapter {
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         const chapterUrl = chapter.url || chapter.id;
+        // client-side readers (blob: images): capture the real URLs mid-render
+        if (this._capturePages) {
+            const captured = await browserCapturePageImages(this.base, chapterUrl);
+            if (captured.length === 0) {
+                throw new SourceError(`No pages captured for "${chapter.title}" on ${this.label}`, this.id);
+            }
+            return captured;
+        }
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
 

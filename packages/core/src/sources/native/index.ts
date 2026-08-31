@@ -43,10 +43,12 @@ export function createNativeConnectors(): SourceAdapter[] {
             chapterApiPath: '/api/comics',
             tags: ['webtoon', 'english']
         }),
+        // theme decodes chapter pages client-side (blob:) -> capture mode
         new MadaraConnector({
             id: 'raijinscans',
             label: 'Raijin Scans',
             base: 'https://raijin-scans.fr',
+            capturePages: true,
             tags: ['manga', 'french', 'webtoon']
         }),
         // Aqua theme renamed the Madara classes (aqua-*)

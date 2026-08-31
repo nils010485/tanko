@@ -46,6 +46,8 @@ const inflight = new Map<string, Promise<Page>>();
 const solveFailUntil = new Map<string, number>();
 /** Global solve serialization, kept separate from the per-origin dedupe. */
 let solveQueue: Promise<unknown> = Promise.resolve();
+/** Captures navigate the shared session page: one at a time, all origins. */
+let captureQueue: Promise<unknown> = Promise.resolve();
 
 /** Shared guard: every exported transport needs the optional browser backend. */
 function requireBrowser(): void {
@@ -208,6 +210,50 @@ export async function browserFetchBinary(origin: string, url: string): Promise<{
         result => result.status === 403 || result.status === 503
     );
     return { status: result.status, mime: result.mime, data: new Uint8Array(Buffer.from(result.base64, 'base64')) };
+}
+/**
+ * Readers that decode their pages client-side (blob: URLs, obfuscated ajax
+ * keys) hide the image list from the DOM — but the reader still has to fetch
+ * the real images. Render `url` on the session page and collect every image
+ * URL seen in a response body or a request, deduped and index-sorted.
+ * Captures are serialized: they navigate the shared per-origin page.
+ */
+export async function browserCapturePageImages(origin: string, url: string, timeoutMs = 30_000): Promise<string[]> {
+    requireBrowser();
+    const run = async (): Promise<string[]> => {
+        const page = await getSession(origin);
+        const seen = new Map<number, string>();
+        const collect = (text: string): void => {
+            for (const match of text.matchAll(/https?:\/\/[^\s"'\\]+?\/image_(\d+)\.(?:jpe?g|png|webp|avif)/gi)) {
+                seen.set(Number(match[1]), match[0].replace(/\\/g, ''));
+            }
+        };
+        const onRequest = (request: { url(): string }): void => collect(request.url());
+        const onResponse = (response: { url(): string; text(): Promise<string> }): void => {
+            // the full list arrives in an ajax JSON payload; DOM requests only
+            // prove what already scrolled by
+            if (response.url().includes('admin-ajax')) {
+                void response
+                    .text()
+                    .then(collect)
+                    .catch(() => undefined);
+            }
+        };
+        page.on('request', onRequest);
+        page.on('response', onResponse);
+        try {
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: timeoutMs });
+            await new Promise(resolve => setTimeout(resolve, 1000)); // late ajax settles
+        } finally {
+            page.off('request', onRequest);
+            page.off('response', onResponse);
+        }
+        return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, imageUrl]) => imageUrl);
+    };
+    // navigate the shared session page one capture at a time
+    const queued = captureQueue.catch(() => undefined).then(run);
+    captureQueue = queued.catch(() => undefined);
+    return queued;
 }
 
 /** Drop every solved session (called by closeBrowser on shutdown). */

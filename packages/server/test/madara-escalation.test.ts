@@ -18,11 +18,12 @@ vi.mock('../../core/dist/shims/browser.js', () => ({
 vi.mock('../../core/dist/shims/browser-session.js', () => ({
     browserFetch: vi.fn(),
     browserFetchBinary: vi.fn(),
+    browserCapturePageImages: vi.fn(),
     BROWSER_SESSION_MS: 30 * 60 * 1000,
     disposeSessions: vi.fn()
 }));
 
-import { browserFetch } from '../../core/dist/shims/browser-session.js';
+import { browserCapturePageImages, browserFetch } from '../../core/dist/shims/browser-session.js';
 
 const fetchMock = vi.fn();
 const challenge403 = () =>
@@ -85,6 +86,29 @@ describe('MadaraConnector anti-bot escalation', () => {
         } finally {
             vi.mocked(browserEnabled).mockReturnValue(true);
         }
+    });
+
+    it('capture mode returns the rendered reader images in order', async () => {
+        vi.mocked(browserCapturePageImages).mockResolvedValue([
+            'https://madara.test/wp-content/uploads/WP-manga/data/manga_x/h/image_0.jpg',
+            'https://madara.test/wp-content/uploads/WP-manga/data/manga_x/h/image_1.jpg'
+        ]);
+        const source = new MadaraConnector({ id: 'test', label: 'Test', base: 'https://madara.test', capturePages: true });
+        const pages = await source.getPages(
+            { id: '/manga/a', title: 'A' },
+            { id: 'https://madara.test/manga/a/chapter-1/', title: 'Chapter 1', url: 'https://madara.test/manga/a/chapter-1/' }
+        );
+        expect(pages).toHaveLength(2);
+        expect(pages[0]).toContain('image_0.jpg');
+        expect(browserCapturePageImages).toHaveBeenCalledWith('https://madara.test', 'https://madara.test/manga/a/chapter-1/');
+    });
+
+    it('capture mode fails honestly when nothing was captured', async () => {
+        vi.mocked(browserCapturePageImages).mockResolvedValue([]);
+        const source = new MadaraConnector({ id: 'test', label: 'Test', base: 'https://madara.test', capturePages: true });
+        await expect(
+            source.getPages({ id: '/manga/a', title: 'A' }, { id: 'https://madara.test/manga/a/c1/', title: 'C1', url: 'https://madara.test/manga/a/c1/' })
+        ).rejects.toThrow('No pages captured');
     });
 
     it('checkHealth: raw probes challenged, browser solves -> ok via browser', async () => {
