@@ -47,6 +47,7 @@ import { registerSourceUpdateRoutes } from './routes/sources-update.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { GlobalSearchService } from './sources/global-search.js';
 import { SourceHealthService } from './sources/health.js';
+import { apiToken, registerTokenGuard } from './util/token-guard.js';
 import { EventBus } from './ws.js';
 
 const config = loadConfig();
@@ -303,6 +304,8 @@ const globalSearch = new GlobalSearchService({
 const app = Fastify({ logger: false });
 await app.register(fastifyWebsocket);
 
+registerTokenGuard(app);
+
 app.decorate('config', config);
 app.decorate('database', database);
 app.decorate('events', events);
@@ -321,9 +324,13 @@ registerCoverRoutes(app, covers);
 registerImageRoutes(app);
 registerImportRoutes(app, importer);
 
-// WebSocket endpoint: dashboard live events
+// WebSocket endpoint: dashboard live events (token via query — WebSocket cannot carry headers)
 app.register(async fastify => {
-    fastify.get('/ws', { websocket: true }, (socket: WebSocket) => {
+    fastify.get<{ Querystring: { token?: string } }>('/ws', { websocket: true }, (socket: WebSocket, request) => {
+        if (request.query.token !== apiToken) {
+            socket.close(1008, 'invalid token');
+            return;
+        }
         events.attach(socket);
     });
 });

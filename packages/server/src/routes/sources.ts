@@ -2,6 +2,7 @@ import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } 
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
+import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
     if (error instanceof SourceError) {
@@ -83,12 +84,17 @@ interface ConnectorHolder {
 
 /** Global Engine injected by the boot shims (legacy fetch honouring connector requestOptions). */
 type EngineGlobal = typeof globalThis & { Engine: { Request: { fetch: (request: Request) => Promise<Response> } } };
+/** Hard cap on proxied page images (memory safety). */
+const MAX_PAGE_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /** Fetch a page image: connector:// indirection, legacy engine fetch, or plain fetch with browser-ish headers. */
 async function fetchPageImage(url: string, source: SourceAdapter | undefined): Promise<Response> {
     if (url.startsWith('connector://')) {
         return fetch(url);
     }
+    // SSRF guard: entry URL must resolve publicly; the plain-fetch branch
+    // re-checks every redirect hop (the legacy engine's internal redirects are not)
+    await assertPublicHttpUrl(url);
     if (source && source.kind === 'legacy') {
         // unwrap caching decorator to reach the legacy connector (requestOptions)
         const holder = source as unknown as ConnectorHolder;
@@ -96,13 +102,12 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
         const legacyRequest = new Request(url, connector?.requestOptions);
         return (globalThis as EngineGlobal).Engine.Request.fetch(legacyRequest);
     }
-    return fetch(url, {
+    return fetchGuarded(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0',
             Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
             Referer: source?.url ? `${source.url}/` : url
         },
-        redirect: 'follow',
         signal: AbortSignal.timeout(60000)
     });
 }
@@ -248,7 +253,7 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
             if (!response.ok) {
                 return reply.code(502).send({ error: `HTTP ${response.status}` });
             }
-            const buffer = Buffer.from(await response.arrayBuffer());
+            const buffer = await readBodyCapped(response, MAX_PAGE_IMAGE_BYTES);
             reply.header('Content-Type', response.headers.get('content-type') || 'image/jpeg');
             reply.header('Cache-Control', 'public, max-age=3600');
             return reply.send(buffer);

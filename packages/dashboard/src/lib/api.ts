@@ -84,14 +84,42 @@ function qs(params: Record<string, string>): string {
     return new URLSearchParams(params).toString();
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+/** Boot token (CSRF guard): random per server boot, readable same-origin only
+ *  via GET /api/bootstrap. Attached to every request; '' when the server has none. */
+let bootToken: string | null = null;
+let bootTokenPromise: Promise<string> | null = null;
+
+export function getBootToken(): Promise<string> {
+    bootTokenPromise ??= fetch('/api/bootstrap')
+        .then(response => (response.ok ? response.json() : { token: '' }))
+        .then((body: { token?: string }) => (bootToken = body.token ?? ''))
+        .catch(() => (bootToken = ''));
+    return bootTokenPromise;
+}
+
+/** Forget the memoized token — the server restarted and rotated it. */
+export function resetBootToken(): void {
+    bootToken = null;
+    bootTokenPromise = null;
+}
+
+async function request<T>(url: string, init?: RequestInit, retried = false): Promise<T> {
     // only declare JSON when there actually is a body, otherwise Fastify tries to
     // parse an empty payload and answers 400 (e.g. DELETE /api/library/:id)
     const headers = new Headers(init?.headers);
     if (init?.body !== undefined && init?.body !== null) {
         headers.set('Content-Type', 'application/json');
     }
+    const token = await getBootToken();
+    if (token) {
+        headers.set('x-tanko-token', token);
+    }
     const response = await fetch(url, { ...init, headers });
+    if (response.status === 403 && !retried) {
+        // token rotated (server restart) or bootstrap failed earlier: refetch and retry once
+        resetBootToken();
+        return request<T>(url, init, true);
+    }
     if (!response.ok) {
         const body: ApiError | null = await response.json().catch(() => null);
         throw new Error(body?.error || `HTTP ${response.status}`);

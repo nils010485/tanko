@@ -5,7 +5,7 @@
 
 import type { ActivityLogDto, DownloadJobDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from './api.js';
+import { api, getBootToken, resetBootToken } from './api.js';
 
 /** One Activity tab line — structured event (WS `log` + REST history). */
 export type LogLine = ActivityLogDto;
@@ -128,12 +128,17 @@ export function useLiveState(): LiveState {
         let retry: ReturnType<typeof setTimeout> | undefined;
         let socket: WebSocket | null = null;
 
-        const connect = () => {
+        const connect = async () => {
             if (disposed) {
                 return;
             }
             const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+            const token = await getBootToken();
+            if (disposed) {
+                return;
+            }
+            // browsers cannot set custom headers on WebSocket: token goes in the query
+            const ws = new WebSocket(`${protocol}://${window.location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`);
             socket = ws;
             ws.onopen = () => {
                 setConnected(true);
@@ -145,8 +150,12 @@ export function useLiveState(): LiveState {
                 refreshActivity();
                 refreshUnread();
             };
-            socket.onclose = () => {
+            socket.onclose = (event: CloseEvent) => {
                 setConnected(false);
+                if (event.code === 1008) {
+                    // stale token (server restarted): refetch before retrying
+                    resetBootToken();
+                }
                 retry = setTimeout(connect, 2500);
             };
             ws.onerror = () => ws.close();
