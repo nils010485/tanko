@@ -45,6 +45,9 @@ export const fr: typeof import('./en.js').en = {
     'sources.hiddenHint': 'Masquée après un échec de santé',
     'sources.empty': 'Aucune source ne correspond à ces filtres.',
     'sources.shown': '{n} sur {total} sources',
+    'sources.page': 'Page {a} sur {b}',
+    'sources.prevPage': 'Page précédente',
+    'sources.nextPage': 'Page suivante',
     'sources.recheckStarted': 'Vérification lancée, statuts en direct…',
 
     'app.connected': 'Connecté au serveur',

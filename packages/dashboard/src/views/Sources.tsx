@@ -7,7 +7,7 @@
 import type { SourceDto } from '@tanko/shared';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { healthDot } from '../components/discover/index.js';
-import { IconEye, IconEyeOff, IconGlobe, IconRefresh, IconSearch } from '../components/icons.js';
+import { IconChevronLeft, IconChevronRight, IconEye, IconEyeOff, IconGlobe, IconRefresh, IconSearch } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ErrorBanner, IconButton, Input, SectionTitle, Spinner } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
@@ -16,6 +16,7 @@ import { sourceRank, statusLabel, statusTextClass } from '../lib/sources.js';
 
 type KindFilter = 'all' | 'native' | 'legacy';
 type HealthFilter = 'all' | 'ok' | 'error' | 'untested';
+const PAGE_SIZE = 50;
 
 export default function Sources({ sourcesVersion }: { sourcesVersion: number }) {
     const [sources, setSources] = useState<SourceDto[]>([]);
@@ -87,6 +88,16 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
             )
             .sort((a, b) => sourceRank(a) - sourceRank(b) || a.label.localeCompare(b.label));
     }, [sources, deferredQuery, kind, health, showHidden]);
+
+    // pagination: any filter change restarts at the first page (the stored
+    // key detects it, no reset effect needed) and the page is clamped when
+    // a refresh shrinks the filtered list (e.g. hide-broken)
+    const filterKey = `${deferredQuery}|${kind}|${health}|${showHidden}`;
+    const [nav, setNav] = useState({ key: '', page: 0 });
+    const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const safePage = Math.min(nav.key === filterKey ? nav.page : 0, pageCount - 1);
+    const pageItems = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+    const goTo = (next: number) => setNav({ key: filterKey, page: next });
 
     const recheckAll = async () => {
         setRechecking(true);
@@ -230,7 +241,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                                 </tr>
                             </thead>
                             <tbody>
-                                {filtered.map(source => {
+                                {pageItems.map(source => {
                                     const checking = source.health === 'checking' || probingId === source.id;
                                     return (
                                         <tr
@@ -300,6 +311,17 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                 {/* footer */}
                 <div className="flex items-center justify-between border-t border-line px-3 py-2 text-xs text-faint">
                     <span>{t('sources.shown', { n: filtered.length, total: sources.length })}</span>
+                    {pageCount > 1 && (
+                        <div className="flex items-center gap-2">
+                            <IconButton variant="ghost" title={t('sources.prevPage')} disabled={safePage === 0} onClick={() => goTo(safePage - 1)}>
+                                <IconChevronLeft size={14} />
+                            </IconButton>
+                            <span className="tabular-nums">{t('sources.page', { a: safePage + 1, b: pageCount })}</span>
+                            <IconButton variant="ghost" title={t('sources.nextPage')} disabled={safePage >= pageCount - 1} onClick={() => goTo(safePage + 1)}>
+                                <IconChevronRight size={14} />
+                            </IconButton>
+                        </div>
+                    )}
                 </div>
             </Card>
         </div>

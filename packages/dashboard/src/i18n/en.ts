@@ -45,6 +45,9 @@ export const en = {
     'sources.hiddenHint': 'Hidden after a failed health check',
     'sources.empty': 'No source matches these filters.',
     'sources.shown': '{n} of {total} sources',
+    'sources.page': 'Page {a} of {b}',
+    'sources.prevPage': 'Previous page',
+    'sources.nextPage': 'Next page',
     'sources.recheckStarted': 'Health check started, statuses update live…',
 
     'app.connected': 'Connected to server',
