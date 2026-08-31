@@ -5,6 +5,7 @@ export { HeadlessRequest, prepareHeaders, randomUserAgent, retryAfterMs } from '
 export { HeadlessSettings } from './shims/settings.js';
 export { createComicInfoXML, HeadlessStorage } from './shims/storage.js';
 export { LegacySourceAdapter } from './sources/legacy-adapter.js';
+export { AsuraScansConnector } from './sources/native/asurascans.js';
 export { createNativeConnectors } from './sources/native/index.js';
 export { MadaraConnector } from './sources/native/madara.js';
 export { MangaDexConnector } from './sources/native/mangadex.js';
