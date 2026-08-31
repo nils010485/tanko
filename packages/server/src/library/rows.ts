@@ -89,6 +89,9 @@ export interface MigrationTarget {
     mangaTitle: string;
     url?: string;
     score?: number;
+    /** Chapters in the preferred languages, set once the candidate's chapter
+     *  list has actually been fetched (picker, detection and outage flows). */
+    chapterCount?: number;
 }
 
 /** Probe candidate of the stalled-source failover regime. */

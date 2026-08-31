@@ -10,7 +10,7 @@
 import type { SourceRegistry } from '@tanko/core';
 import type { SourceAlternativeDto } from '@tanko/shared';
 import type { SourceInfo } from '../import/service.js';
-import { AUTO_THRESHOLD, confidenceFor, stripTags, titleSimilarity } from '../import/similarity.js';
+import { AUTO_THRESHOLD, confidenceFor, REVIEW_THRESHOLD, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
 
@@ -104,6 +104,11 @@ export const OUTAGE_SILENCE_MS = 2 * 60 * 60 * 1000;
 /** Title-match score treated as an exact match for the opt-in auto-migration
  *  (float-safe 1.0). Suggestions below it always wait for confirmation. */
 const EXACT_MATCH_SCORE = 0.999;
+/** Title-match floor for automatic suggestions/migrations: below the import
+ *  review threshold the match is not even worth reviewing — a 38 % lookalike
+ *  must not burn a usability probe nor reach the dashboard. The manual
+ *  source picker is exempt: the user browses and judges scores there. */
+const MIN_SUGGESTION_SCORE = REVIEW_THRESHOLD;
 
 /** Failure taxonomy for the failover policy. 'infra': the source (or its CDN,
  *  or the network) is unhealthy — waiting/retrying makes sense and a blind
@@ -395,7 +400,10 @@ export class FailoverService {
             // never re-suggest a target the user explicitly dismissed
             const dismissed = current.dismissedMigration;
             const better = alternatives.find(
-                alternative => isBetter(alternative) && !(dismissed && dismissed.sourceId === alternative.sourceId && dismissed.mangaId === alternative.mangaId)
+                alternative =>
+                    (alternative.score ?? 0) >= MIN_SUGGESTION_SCORE &&
+                    isBetter(alternative) &&
+                    !(dismissed && dismissed.sourceId === alternative.sourceId && dismissed.mangaId === alternative.mangaId)
             );
             if (!better) {
                 return false;
@@ -457,8 +465,12 @@ export class FailoverService {
                 if (triedSources.size > MAX_VALIDATIONS_PER_ROUND) {
                     break; // bound the latency: 4 distinct sources max per round
                 }
-                if (await this._isUsable(entry, candidate, preferred)) {
-                    return this._commitMigration(entry, candidate, auto);
+                if ((candidate.score ?? 0) < MIN_SUGGESTION_SCORE) {
+                    break; // candidates are score-sorted: the rest is only weaker
+                }
+                const chapterCount = await this._usableChapterCount(entry, candidate, preferred);
+                if (chapterCount !== null) {
+                    return this._commitMigration(entry, { ...candidate, chapterCount }, auto);
                 }
             }
         }
@@ -468,35 +480,36 @@ export class FailoverService {
     /** Full usability probe: preferred-language chapters AND a working page
      * list (a connector can list chapters but serve broken pages, as the
      * MangaHere war.jpg grab showed). Failures are logged and swallowed —
-     * the hunt simply moves to the next candidate. */
-    private async _isUsable(entry: { title: string }, candidate: MigrationTarget, preferred: string[]): Promise<boolean> {
+     * the hunt simply moves to the next candidate. Returns the number of
+     * preferred-language chapters, null when the candidate is unusable. */
+    private async _usableChapterCount(entry: { title: string }, candidate: MigrationTarget, preferred: string[]): Promise<number | null> {
         try {
             const adapter = await this.opts.registry.get(candidate.sourceId);
             if (!adapter) {
-                return false;
+                return null;
             }
             const chapters = await withTimeout(
                 adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }),
                 VALIDATION_TIMEOUT_MS,
                 'chapter list timeout'
             );
-            const chapter = chapters.find(item => chapterAllowed(item.language, preferred));
-            if (!chapter) {
+            const usable = chapters.filter(item => chapterAllowed(item.language, preferred));
+            if (!usable.length) {
                 console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
-                return false;
+                return null;
             }
             const pages = await withTimeout(
-                adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: chapter.id, title: chapter.title }),
+                adapter.getPages({ id: candidate.mangaId, title: candidate.mangaTitle }, { id: usable[0].id, title: usable[0].title }),
                 PAGE_PROBE_TIMEOUT_MS,
                 'page list timeout'
             );
             if (!pages.length) {
                 throw new Error('page list is empty');
             }
-            return true;
+            return usable.length;
         } catch (error) {
             console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
-            return false;
+            return null;
         }
     }
 

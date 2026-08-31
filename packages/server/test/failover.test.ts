@@ -12,11 +12,12 @@ let database: Database;
 let store: LibraryStore;
 let detectionEnabled = false;
 
-/** Adapter factory: chapters numbered 1..count in English. */
+/** Adapter factory: chapters numbered 1..count in English, one working page. */
 const adapterWith = (count: number, title: string) => ({
     label: title,
     searchMangas: async () => [{ id: 'm1', title }],
-    getChapters: async () => Array.from({ length: count }, (_, index) => ({ id: `c${index + 1}`, title: `Chapter ${index + 1}`, language: 'en' }))
+    getChapters: async () => Array.from({ length: count }, (_, index) => ({ id: `c${index + 1}`, title: `Chapter ${index + 1}`, language: 'en' })),
+    getPages: async () => ['https://img.example/p1.jpg']
 });
 
 const adapters: Record<string, ReturnType<typeof adapterWith>> = {
@@ -306,5 +307,49 @@ describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () =>
         const entry = store.getEntry(autoId);
         expect(entry?.sourceId).toBe('richer');
         expect(entry?.migrationSuggestion?.sourceId).toBe('stranger');
+    });
+});
+
+describe('minimum match score (weak lookalikes)', () => {
+    it('never migrates, suggests, nor even probes a candidate below the review threshold', async () => {
+        let probed = 0;
+        const weakAdapters = {
+            current: adapterWith(8, 'Into the Light, Once Again'),
+            lookalike: {
+                // 0.38 against the entry title — the KunManga case
+                searchMangas: async () => [{ id: 'w1', title: 'Bait For Returning to The Cage' }],
+                getChapters: async () => {
+                    probed++;
+                    return Array.from({ length: 100 }, (_, index) => ({ id: `w${index + 1}`, title: `Ch.${index + 1}`, language: 'en' }));
+                }
+            }
+        };
+        const weakFailover = new FailoverService({
+            registry: { get: async (id: string) => weakAdapters[id] } as never,
+            store,
+            listSources: async () => [
+                { id: 'current', label: 'Current', tags: ['English'], kind: 'native' },
+                { id: 'lookalike', label: 'Lookalike', tags: ['English'], kind: 'native' }
+            ],
+            getPreferredLanguages: () => ['en'],
+            isDetectionEnabled: () => true
+        });
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'wm', title: 'Into the Light, Once Again', backlog: 'ignore' });
+        // outage flow: the weak title is skipped before any chapter/page probe
+        expect(await weakFailover.maybeMigrate({ id: entry.id, sourceId: 'current', title: entry.title })).toBe('none');
+        expect(probed).toBe(0);
+        // detection flow: the chapter count never makes up for the weak title
+        expect(await weakFailover.suggestIfIncomplete({ id: entry.id, sourceId: 'current', title: entry.title }, 8)).toBe('miss');
+        expect(store.getEntry(entry.id)?.migrationSuggestion).toBeUndefined();
+    });
+});
+
+describe('outage failover (maybeMigrate)', () => {
+    it('stores the probed chapter count on the suggestion — never “0 chapters”', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'om', title: 'Starved Series', backlog: 'ignore' });
+        expect(await failover.maybeMigrate({ id: entry.id, sourceId: 'current', title: entry.title }, false)).toBe('suggested');
+        const suggestion = store.getEntry(entry.id)?.migrationSuggestion;
+        expect(suggestion?.sourceId).toBe('poorer'); // score tie with 'richer': label order wins
+        expect(suggestion?.chapterCount).toBe(3); // counted during the usability probe
     });
 });

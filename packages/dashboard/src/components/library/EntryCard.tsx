@@ -331,7 +331,9 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-medium text-white/60">
                             {statLine(entry, state.prefs, t, formatDate)}
                             {entry.paused && (
-                                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{t('library.paused')}</span>
+                                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                                    {t('library.paused')}
+                                </span>
                             )}
                         </div>
                         {/* primary actions overlaid on the cover: hover-revealed on desktop, always visible on touch */}
@@ -355,7 +357,9 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                         (entry.sourceLabel ? (
                             <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-faint">{entry.sourceLabel}</span>
                         ) : (
-                            <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-red-400">{t('library.noSourceBadge')}</span>
+                            <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-red-400">
+                                {t('library.noSourceBadge')}
+                            </span>
                         ))}
                     <div className="ml-auto flex flex-none items-center">{actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}</div>
                 </div>
