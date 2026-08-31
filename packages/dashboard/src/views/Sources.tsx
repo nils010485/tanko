@@ -285,7 +285,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                                             <td className="whitespace-nowrap px-3 py-2">
                                                 <span className={statusTextClass(source.health)}>{statusLabel(source.health, t)}</span>
                                                 {source.health === 'ok' && source.healthVia === 'browser' && (
-                                                    <span title={t('sources.viaBrowserHint')}>
+                                                    <span className="ml-1.5" title={t('sources.viaBrowserHint')}>
                                                         <Badge tone="orange">{t('sources.viaBrowser')}</Badge>
                                                     </span>
                                                 )}
