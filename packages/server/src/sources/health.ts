@@ -157,19 +157,26 @@ export class SourceHealthService {
         }
     }
 
-    /** Probe many sources with limited concurrency. Returns a summary. */
+    /** Probe many sources with limited concurrency. Returns a summary.
+     *  Publishes sources.updated when any status changed (sweeps, manual
+     *  re-checks and single-source probes all land here). */
     async probeMany(sourceIds: string[], opts?: { quiet?: boolean }): Promise<{ checked: number; ok: number; errors: number }> {
         let ok = 0;
         let errors = 0;
         let checked = 0;
+        let changed = false;
         let index = 0;
         const worker = async () => {
             while (index < sourceIds.length) {
                 const current = sourceIds[index++];
                 try {
+                    const before = this.get(current).status;
                     const result = await this.probeOne(current, opts);
                     if (result.status === 'checking') {
                         continue; // already probed elsewhere — not a real outcome
+                    }
+                    if (before !== 'checking' && result.status !== before) {
+                        changed = true;
                     }
                     checked++;
                     if (result.status === 'ok') {
@@ -185,6 +192,9 @@ export class SourceHealthService {
             }
         };
         await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, sourceIds.length) }, () => worker()));
+        if (changed) {
+            this.opts.events.publish({ type: 'sources.updated' });
+        }
         return { checked, ok, errors };
     }
 
@@ -246,12 +256,9 @@ export class SourceHealthService {
             }
             // quiet: a rolling pass must not flood the Activity feed with one
             // log line per probe — only status changes leave a trace
-            const before = new Map(targets.map(id => [id, this.get(id).status]));
+            // (probeMany publishes sources.updated when a status changed)
             const summary = await this.probeMany(targets, { quiet: true });
             console.log(`[health] sweep: ${summary.ok}/${summary.checked} ok (${summary.errors} errors)`);
-            if (targets.some(id => before.get(id) !== 'checking' && this.get(id).status !== before.get(id))) {
-                this.opts.events.publish({ type: 'sources.updated' });
-            }
         } catch (error) {
             console.warn('[health] sweep failed:', (error as Error).message);
         } finally {

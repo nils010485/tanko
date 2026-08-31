@@ -13,17 +13,10 @@ import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spin
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { useEscapeKey } from '../lib/hooks.js';
+import { sourceRank, statusLabel } from '../lib/sources.js';
 
 /** Injected by vite at build time from package.json (see vite.config.ts). */
 declare const __APP_VERSION__: string;
-
-function sourceRank(source: SourceDto): number {
-    if (source.kind === 'native') return 0;
-    if (source.health === 'ok') return 1;
-    if (source.health === 'untested') return 2;
-    return 3;
-}
-
 export default function Discover({
     onAddedToLibrary,
     onOpenSeries,
@@ -125,7 +118,7 @@ export default function Discover({
     const visibleSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);
         const needle = sourceQuery.trim().toLowerCase();
-        const filtered = needle ? base.filter(source => source.label.toLowerCase().includes(needle) || source.id.includes(needle)) : base;
+        const filtered = needle ? base.filter(source => source.label.toLowerCase().includes(needle) || source.id.toLowerCase().includes(needle)) : base;
         return [...filtered].sort((a, b) => sourceRank(a) - sourceRank(b) || a.label.localeCompare(b.label)).slice(0, 40);
     }, [sources, sourceQuery, showHidden]);
 
@@ -426,10 +419,7 @@ export default function Discover({
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                         {healthDot(currentSource.health, t)}
                         <span>
-                            {currentSource.health === 'ok' && t('discover.statusOk')}
-                            {currentSource.health === 'error' && t('discover.statusError')}
-                            {currentSource.health === 'checking' && t('discover.statusChecking')}
-                            {currentSource.health === 'untested' && t('discover.statusUntested')}
+                            {statusLabel(currentSource.health, t)}
                             {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
                         </span>
                         {(currentSource.tags?.length ?? 0) > 0 && (

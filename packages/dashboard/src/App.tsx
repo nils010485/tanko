@@ -7,7 +7,18 @@ import { type ComponentType, useEffect, useState } from 'react';
 
 declare const __APP_VERSION__: string;
 
-import { IconActivity, IconDownload, IconImport, IconLibrary, IconMenu, type IconProps, IconSearch, IconSettings, IconTasks } from './components/icons.js';
+import {
+    IconActivity,
+    IconDownload,
+    IconGlobe,
+    IconImport,
+    IconLibrary,
+    IconMenu,
+    type IconProps,
+    IconSearch,
+    IconSettings,
+    IconTasks
+} from './components/icons.js';
 import { Badge } from './components/ui.js';
 import { useI18n } from './i18n/index.js';
 import { useLiveState } from './lib/live.js';
@@ -19,15 +30,17 @@ import Import from './views/Import.js';
 import Library from './views/Library.js';
 import Series from './views/Series.js';
 import Settings from './views/Settings.js';
+import Sources from './views/Sources.js';
 import Tasks from './views/Tasks.js';
 
-type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'tasks' | 'settings' | 'activity';
+type Tab = 'discover' | 'library' | 'downloads' | 'import' | 'sources' | 'tasks' | 'settings' | 'activity';
 
 const TABS: Array<{ id: Tab; icon: ComponentType<IconProps> }> = [
     { id: 'discover', icon: IconSearch },
     { id: 'library', icon: IconLibrary },
     { id: 'downloads', icon: IconDownload },
     { id: 'import', icon: IconImport },
+    { id: 'sources', icon: IconGlobe },
     { id: 'tasks', icon: IconTasks },
     { id: 'activity', icon: IconActivity },
     { id: 'settings', icon: IconSettings }
@@ -195,6 +208,7 @@ export default function App() {
                         )}
                         {tab === 'downloads' && <Downloads library={live.library} onOpenSeries={navigateSeries} />}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
+                        {tab === 'sources' && <Sources sourcesVersion={live.sourcesVersion} />}
                         {tab === 'tasks' && <Tasks schedule={live.schedule} library={live.library} />}
                         {tab === 'activity' && <Activity logs={live.logs} library={live.library} onOpenSeries={navigateSeries} />}
                         {tab === 'settings' && <Settings />}
