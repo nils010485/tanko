@@ -2,13 +2,15 @@
  * Global shims required by the legacy Hakuneko engine + connectors when
  * running outside of the Electron renderer (headless Node.js).
  */
-
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { parseHTML } from 'linkedom';
 import type { EngineContext } from '../engine.js';
 import { patchLinkedomDocument } from './dom.js';
 
 const require = createRequire(import.meta.url);
+
+const VENDOR_CRYPTO_JS = path.resolve(import.meta.dirname, '../../vendor/crypto-js.min.cjs');
 
 declare global {
     var __hakunekoShimsInstalled: boolean | undefined;
@@ -153,7 +155,7 @@ export function installGlobals(): void {
 
     // Lazy optional dependencies used by some connectors
     Object.defineProperty(globalThis, 'CryptoJS', {
-        get: () => require('crypto-js')
+        get: () => require(VENDOR_CRYPTO_JS)
     });
     Object.defineProperty(globalThis, 'protobuf', {
         get: () => require('protobufjs')

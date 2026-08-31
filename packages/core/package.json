@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@tanko/shared": "*",
-    "crypto-js": "^4.2.0",
     "jszip": "^3.10.1",
     "linkedom": "^0.18.5",
     "protobufjs": "^7.4.0",
