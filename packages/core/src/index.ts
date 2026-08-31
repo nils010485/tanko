@@ -9,6 +9,7 @@ export { AsuraScansConnector } from './sources/native/asurascans.js';
 export { createNativeConnectors } from './sources/native/index.js';
 export { MadaraConnector } from './sources/native/madara.js';
 export { MangaDexConnector } from './sources/native/mangadex.js';
+export { VComicsConnector } from './sources/native/vcomics.js';
 export { SourceRegistry } from './sources/registry.js';
 export type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from './sources/types.js';
 export { SourceError } from './sources/types.js';
