@@ -17,6 +17,7 @@ import { BulkRemoveDialog, RemoveEntryDialog } from '../components/library/Entry
 import { LibrarySkeleton } from '../components/library/LibrarySkeleton.js';
 import { LibraryToolbar } from '../components/library/LibraryToolbar.js';
 import { useLibraryActions } from '../components/library/useLibraryActions.js';
+import { MigrationBanner } from '../components/MigrationBanner.js';
 import { MigrationModal } from '../components/MigrationModal.js';
 import { Badge, Button, EmptyState, SectionTitle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
@@ -56,6 +57,7 @@ export default function Library({
     const [filter, setFilter] = useState('');
     const [showHidden, setShowHidden] = useState(false);
     const [migrationOpen, setMigrationOpen] = useState(false);
+    const [migrationBannerHidden, setMigrationBannerHidden] = useState(false);
     const [selecting, setSelecting] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [sort, setSort] = useState<SortKey>('recent');
@@ -233,7 +235,7 @@ export default function Library({
                                 <IconSearch size={13} /> {t('library.rematchFailed', { n: failingCount })}
                             </Button>
                         )}
-                        {pendingMigrations.length > 0 && (
+                        {pendingMigrations.length > 0 && migrationBannerHidden && (
                             <Button small variant="ghost" onClick={() => setMigrationOpen(true)} title={t('library.migrationProcessHint')}>
                                 <IconArrowLeftRight size={13} /> {t('library.migrationProcess', { n: pendingMigrations.length })}
                             </Button>
@@ -261,6 +263,10 @@ export default function Library({
                 {t('library.title')}
                 {showHidden && <Badge tone="purple">{t('library.hiddenSeries')}</Badge>}
             </SectionTitle>
+
+            {pendingMigrations.length > 0 && !migrationBannerHidden && (
+                <MigrationBanner count={pendingMigrations.length} onReview={() => setMigrationOpen(true)} onLater={() => setMigrationBannerHidden(true)} />
+            )}
 
             <LibraryToolbar
                 filter={filter}

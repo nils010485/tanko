@@ -11,6 +11,17 @@ const LANGUAGES_KEY = 'preferred-languages';
 const UI_LANGUAGE_KEY = 'ui-language';
 const INCOMPLETE_DETECTION_KEY = 'incomplete-detection';
 const STALLED_DETECTION_KEY = 'stalled-detection';
+const AUTO_MIGRATE_EXACT_KEY = 'auto-migrate-exact';
+
+/** Opt-in boolean flags sharing the same validate/persist/read logic:
+ *  PATCH body field → KV store key. */
+const BOOLEAN_FLAGS = [
+    { field: 'incompleteSourceDetection', key: INCOMPLETE_DETECTION_KEY },
+    { field: 'stalledSourceDetection', key: STALLED_DETECTION_KEY },
+    { field: 'autoMigrateExactMatch', key: AUTO_MIGRATE_EXACT_KEY }
+] as const;
+
+type BooleanFlagField = (typeof BOOLEAN_FLAGS)[number]['field'];
 
 export type UiLanguage = 'en' | 'fr';
 
@@ -22,6 +33,11 @@ function readJsonSetting<T>(db: Database, key: string, fallback: T): T {
     } catch {
         return fallback;
     }
+}
+
+/** Current value of every opt-in boolean flag (served by GET/PATCH /api/settings). */
+function readBooleanFlags(db: Database): Record<BooleanFlagField, boolean> {
+    return Object.fromEntries(BOOLEAN_FLAGS.map(({ field, key }) => [field, readJsonSetting<boolean>(db, key, false)])) as Record<BooleanFlagField, boolean>;
 }
 
 /** Queue settings persisted in the KV store. Legacy installs (single global
@@ -54,6 +70,13 @@ export function createIncompleteDetectionPref(db: Database): () => boolean {
  *  chapters. Persisted in the KV store. */
 export function createStalledDetectionPref(db: Database): () => boolean {
     return () => readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false);
+}
+
+/** Opt-in auto-migration: migration suggestions whose title match is exact
+ *  (score ~1) are applied immediately without user confirmation. Persisted in
+ *  the KV store. */
+export function createAutoMigrateExactPref(db: Database): () => boolean {
+    return () => readJsonSetting<boolean>(db, AUTO_MIGRATE_EXACT_KEY, false);
 }
 
 /** Dashboard interface language; English until the user picks otherwise. */
@@ -99,8 +122,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
-            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false),
-            stalledSourceDetection: readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false)
+            ...readBooleanFlags(db)
         };
     });
 
@@ -111,6 +133,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             useFirstChapterCovers?: boolean;
             incompleteSourceDetection?: boolean;
             stalledSourceDetection?: boolean;
+            autoMigrateExactMatch?: boolean;
         };
     }>('/api/settings', async (request, reply) => {
         const body = request.body;
@@ -132,11 +155,10 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         if (body.useFirstChapterCovers !== undefined && typeof body.useFirstChapterCovers !== 'boolean') {
             return reply.code(400).send({ error: 'useFirstChapterCovers must be a boolean' });
         }
-        if (body.incompleteSourceDetection !== undefined && typeof body.incompleteSourceDetection !== 'boolean') {
-            return reply.code(400).send({ error: 'incompleteSourceDetection must be a boolean' });
-        }
-        if (body.stalledSourceDetection !== undefined && typeof body.stalledSourceDetection !== 'boolean') {
-            return reply.code(400).send({ error: 'stalledSourceDetection must be a boolean' });
+        for (const { field } of BOOLEAN_FLAGS) {
+            if (body[field] !== undefined && typeof body[field] !== 'boolean') {
+                return reply.code(400).send({ error: `${field} must be a boolean` });
+            }
         }
         if (body.dataDirectory !== undefined) {
             if (typeof body.dataDirectory !== 'string' || !body.dataDirectory.trim()) {
@@ -155,11 +177,10 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         if (body.uiLanguage !== undefined) {
             db.kvSet(UI_LANGUAGE_KEY, body.uiLanguage);
         }
-        if (body.incompleteSourceDetection !== undefined) {
-            db.kvSet(INCOMPLETE_DETECTION_KEY, JSON.stringify(body.incompleteSourceDetection));
-        }
-        if (body.stalledSourceDetection !== undefined) {
-            db.kvSet(STALLED_DETECTION_KEY, JSON.stringify(body.stalledSourceDetection));
+        for (const { field, key } of BOOLEAN_FLAGS) {
+            if (body[field] !== undefined) {
+                db.kvSet(key, JSON.stringify(body[field]));
+            }
         }
         if (body.useFirstChapterCovers !== undefined && covers) {
             const previous = covers.isEnabled();
@@ -177,8 +198,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
-            incompleteSourceDetection: readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false),
-            stalledSourceDetection: readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false)
+            ...readBooleanFlags(db)
         };
     });
 }

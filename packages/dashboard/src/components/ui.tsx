@@ -62,9 +62,22 @@ interface ButtonProps extends Pick<ButtonHTMLAttributes<HTMLButtonElement>, 'onC
     small?: boolean;
     /** Shows a spinner instead of the content and blocks clicks. */
     loading?: boolean;
+    /** Extra Tailwind classes (e.g. 'w-full' for a stacked mobile CTA). */
+    className?: string;
 }
 
-export function Button({ children, onClick, variant = 'primary', disabled = false, small = false, loading = false, title, type, autoFocus }: ButtonProps) {
+export function Button({
+    children,
+    onClick,
+    variant = 'primary',
+    disabled = false,
+    small = false,
+    loading = false,
+    title,
+    type,
+    autoFocus,
+    className = ''
+}: ButtonProps) {
     return (
         <button
             type={type}
@@ -73,7 +86,7 @@ export function Button({ children, onClick, variant = 'primary', disabled = fals
             autoFocus={autoFocus}
             disabled={disabled || loading}
             onClick={onClick}
-            className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${small ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm'} ${buttonVariants[variant]}`}
+            className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${small ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm'} ${buttonVariants[variant]} ${className}`}
         >
             {loading ? <Spinner size={small ? 12 : 14} /> : children}
         </button>

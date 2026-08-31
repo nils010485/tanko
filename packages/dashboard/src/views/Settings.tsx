@@ -54,6 +54,7 @@ export default function Settings() {
     const [useCovers, setUseCovers] = useState(false);
     const [detectIncomplete, setDetectIncomplete] = useState(false);
     const [detectStalled, setDetectStalled] = useState(false);
+    const [autoMigrateExact, setAutoMigrateExact] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
     const [updateStatus, setUpdateStatus] = useState<ConnectorsUpdateStatus | null>(null);
@@ -72,6 +73,7 @@ export default function Settings() {
         setUseCovers(data.useFirstChapterCovers ?? false);
         setDetectIncomplete(data.incompleteSourceDetection ?? false);
         setDetectStalled(data.stalledSourceDetection ?? false);
+        setAutoMigrateExact(data.autoMigrateExactMatch ?? false);
         setUpdateStatus(await api.sourcesUpdateStatus());
     }, []);
 
@@ -130,6 +132,17 @@ export default function Settings() {
             await api.updateSettings({ stalledSourceDetection: value });
         } catch (error) {
             setDetectStalled(!value);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Exact-match auto-migration is applied server-side on toggle. */
+    const toggleAutoMigrateExact = async (value: boolean) => {
+        setAutoMigrateExact(value);
+        try {
+            await api.updateSettings({ autoMigrateExactMatch: value });
+        } catch (error) {
+            setAutoMigrateExact(!value);
             toast.error((error as Error).message);
         }
     };
@@ -256,6 +269,9 @@ export default function Settings() {
                             </SettingRow>
                             <SettingRow label={t('settings.stalledSourceDetection')} hint={t('settings.stalledSourceDetectionHint')}>
                                 <Toggle checked={detectStalled} onChange={toggleStalledDetection} />
+                            </SettingRow>
+                            <SettingRow label={t('settings.autoMigrateExactMatch')} hint={t('settings.autoMigrateExactMatchHint')}>
+                                <Toggle checked={autoMigrateExact} onChange={toggleAutoMigrateExact} />
                             </SettingRow>
                         </>
                     )}

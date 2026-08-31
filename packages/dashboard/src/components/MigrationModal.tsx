@@ -12,10 +12,9 @@ import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { useEscapeKey } from '../lib/hooks.js';
 import { Cover } from './Cover.js';
-import { IconAlert, IconArrowLeftRight, IconCheck, IconUndo, IconX } from './icons.js';
+import { IconAlert, IconCheck, IconChevronDown, IconUndo, IconX } from './icons.js';
 import { useToast } from './toast.js';
-import type { BadgeTone } from './ui.js';
-import { Badge, Button, ProgressBar } from './ui.js';
+import { Badge, Button, Spinner } from './ui.js';
 
 /** Above this score the bulk button offers to migrate everything at once. */
 const HIGH_SCORE = 0.9;
@@ -36,17 +35,6 @@ function nextPendingIndex(entries: LibraryEntryDto[], decided: Record<number, Ou
         }
     }
     return from;
-}
-
-/** Badge tone for the title-match score: green when confident, red when weak. */
-function matchTone(score: number): BadgeTone {
-    if (score >= GOOD_SCORE) {
-        return 'green';
-    }
-    if (score >= LOW_SCORE) {
-        return 'blue';
-    }
-    return 'red';
 }
 
 export function MigrationModal({
@@ -235,40 +223,8 @@ export function MigrationModal({
     const titleDiffers = !!suggestion && suggestion.mangaTitle.toLowerCase() !== current.title.toLowerCase();
     const migratedEntries = snapshot.filter(entry => results[entry.id] === 'migrated');
     const dismissedEntries = snapshot.filter(entry => results[entry.id] === 'dismissed');
-
-    const kbd = (key: string, label: string) => (
-        <span className="flex items-center gap-1.5">
-            <kbd className="rounded border border-zinc-700 bg-zinc-900 px-1 text-[10px] text-zinc-400">{key}</kbd>
-            {label}
-        </span>
-    );
-
-    const chip = (entry: LibraryEntryDto, position: number) => {
-        const outcome = results[entry.id];
-        const active = position === index;
-        let className = 'border-zinc-700 text-zinc-400 hover:bg-zinc-800';
-        if (outcome === 'migrated') {
-            className = 'border-green-500/40 bg-green-500/10 text-green-400';
-        } else if (outcome === 'dismissed') {
-            className = 'border-zinc-700 bg-zinc-800/50 text-faint line-through';
-        } else if (active) {
-            className = 'border-accent/60 bg-accent/10 font-medium text-accent-soft';
-        }
-        return (
-            <button
-                key={entry.id}
-                type="button"
-                disabled={!!busy || !!outcome}
-                onClick={() => setIndex(position)}
-                title={entry.title}
-                className={`max-w-45 shrink-0 truncate rounded-md border px-2.5 py-1 text-xs transition-colors ${className}`}
-            >
-                {entry.title}
-                {outcome === 'migrated' && ' ✓'}
-                {outcome === 'dismissed' && ' ✕'}
-            </button>
-        );
-    };
+    const decidedCount = snapshot.length - remaining;
+    const scoreClass = score >= GOOD_SCORE ? 'text-green-400' : score >= LOW_SCORE ? 'text-sky-400' : 'text-red-400';
 
     const summaryRow = (entry: LibraryEntryDto, outcome: Outcome) => (
         <div key={entry.id} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-canvas/60 px-3 py-2 text-sm">
@@ -305,45 +261,34 @@ export function MigrationModal({
                 role="dialog"
                 aria-modal="true"
                 aria-label={t('library.migrationModalTitle')}
-                className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-surface shadow-2xl shadow-black/60"
+                className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl shadow-black/60"
             >
-                <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3 pt-4">
-                    <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 flex-none place-items-center rounded-lg border border-accent/30 bg-accent/15 text-accent-soft">
-                            <IconArrowLeftRight size={16} />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="font-bold leading-tight">{t('library.migrationModalTitle')}</h2>
-                                <span
-                                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${remaining > 0 ? 'bg-accent text-zinc-950' : 'bg-zinc-700 text-zinc-300'}`}
-                                >
-                                    {remaining}
-                                </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-faint">{t('library.migrationModalHint')}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {bulkCount >= 2 && !allDone && (
-                            <button
-                                type="button"
-                                disabled={!!busy}
-                                onClick={bulkMigrate}
-                                title={t('library.migrateAllHint')}
-                                className="rounded-md border border-green-500/40 bg-green-500/10 px-2 py-1 text-[11px] font-semibold text-green-400 transition-colors hover:bg-green-500/20 disabled:opacity-50"
-                            >
-                                {t('library.migrateAll', { n: bulkCount, pct: Math.round(HIGH_SCORE * 100) })}
-                            </button>
+                <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-4">
+                    <div className="min-w-0">
+                        <h2 className="font-bold leading-tight">{t('library.migrationModalTitle')}</h2>
+                        {!allDone && (
+                            <p className="mt-0.5 text-xs text-faint">
+                                {t('library.migrationProgress', { index: Math.min(decidedCount + 1, snapshot.length), total: snapshot.length })}
+                            </p>
                         )}
-                        <button type="button" title={t('common.close')} onClick={onClose} className="p-1 text-zinc-500 transition-colors hover:text-zinc-200">
-                            <IconX size={16} />
-                        </button>
                     </div>
+                    <button
+                        type="button"
+                        title={t('common.close')}
+                        onClick={onClose}
+                        className="flex-none p-1 text-zinc-500 transition-colors hover:text-zinc-200"
+                    >
+                        <IconX size={16} />
+                    </button>
                 </div>
+                {!allDone && (
+                    <div className="mx-5 h-0.5 overflow-hidden rounded-full bg-zinc-800">
+                        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(decidedCount / snapshot.length) * 100}%` }} />
+                    </div>
+                )}
 
                 {allDone ? (
-                    <div className="px-5 py-8 text-center">
+                    <div className="overflow-y-auto px-5 py-8 text-center">
                         <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full border border-green-500/30 bg-green-500/15 text-green-400">
                             <IconCheck size={22} />
                         </div>
@@ -366,99 +311,112 @@ export function MigrationModal({
                     current &&
                     suggestion && (
                         <>
-                            <div className="flex gap-1.5 overflow-x-auto border-b border-line px-5 py-2.5">{snapshot.map(chip)}</div>
-
-                            <div className="flex gap-4 px-5 py-4">
-                                <Cover
-                                    title={current.title}
-                                    thumbnail={current.thumbnail}
-                                    coverUrl={current.coverUrl}
-                                    className="aspect-[2/3] w-20 flex-none rounded-lg border border-line"
-                                />
-                                <div className="min-w-0 flex-1 space-y-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
+                            <div className="overflow-y-auto px-5 py-4">
+                                <div className="flex gap-3">
+                                    <Cover
+                                        title={current.title}
+                                        thumbnail={current.thumbnail}
+                                        coverUrl={current.coverUrl}
+                                        className="aspect-[2/3] w-14 flex-none rounded-lg border border-line sm:w-16"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-baseline justify-between gap-2">
                                             <h3 className="truncate font-bold leading-tight" title={current.title}>
                                                 {current.title}
                                             </h3>
-                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                {current.sourceLabel ? (
-                                                    <Badge>{current.sourceLabel}</Badge>
-                                                ) : (
-                                                    <Badge tone="red">{t('library.noSourceBadge')}</Badge>
-                                                )}
-                                                {(current.checkFailures ?? 0) > 0 && (
-                                                    <Badge tone="red" solid>
-                                                        {t('library.failuresShort', { n: current.checkFailures ?? 0 })}
-                                                    </Badge>
-                                                )}
-                                                <span className="text-[11px] text-faint">
-                                                    {t('library.chaptersRatio', { downloaded: current.downloadedCount, total: current.chapterCount })}
-                                                </span>
-                                            </div>
+                                            <span className={`flex-none text-xs font-semibold ${scoreClass}`} title={t('library.migrationMatchHint')}>
+                                                {Math.round(score * 100)} %
+                                            </span>
                                         </div>
-                                        <span title={t('library.migrationMatchHint')}>
-                                            <Badge tone={matchTone(score)}>{t('library.migrationMatch', { pct: Math.round(score * 100) })}</Badge>
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                                            <span>{current.sourceLabel ?? t('library.noSourceBadge')}</span>
+                                            <span>· {t('library.chaptersRatio', { downloaded: current.downloadedCount, total: current.chapterCount })}</span>
+                                            {(current.checkFailures ?? 0) > 0 && (
+                                                <Badge tone="red" solid>
+                                                    {t('library.failuresShort', { n: current.checkFailures ?? 0 })}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-3 rounded-lg bg-canvas/70 px-3 py-2.5 text-sm">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate text-faint">
+                                            {current.sourceLabel ?? t('library.noSourceBadge')}
+                                            <span className="text-[11px]"> · {t('library.migrationCurrentSuffix')}</span>
+                                        </span>
+                                        <span className="flex-none tabular-nums text-zinc-400">
+                                            {t('library.migrationChapters', { n: current.chapterCount })}
                                         </span>
                                     </div>
-
-                                    <div className="space-y-2.5 rounded-xl border border-line bg-canvas/60 p-3">
-                                        <div>
-                                            <div className="mb-1 flex justify-between text-xs">
-                                                <span className="text-faint">{t('library.migrationCurrentSource')}</span>
-                                                <span className="text-zinc-400">{t('library.migrationChapters', { n: current.chapterCount })}</span>
-                                            </div>
-                                            <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                                                <div
-                                                    className="h-full rounded-full bg-zinc-600"
-                                                    style={{ width: `${Math.min(100, (current.chapterCount / Math.max(suggestedChapters, 1)) * 100)}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="mb-1 flex justify-between text-xs">
-                                                <span className="text-accent-soft">
-                                                    {t('library.migrationSuggestionSource', { source: suggestion.sourceLabel })}
-                                                </span>
-                                                <span className="font-medium text-zinc-200">
-                                                    {t('library.migrationChapters', { n: suggestedChapters })}
-                                                    {gain > 0 && <span className="text-green-400"> +{gain}</span>}
-                                                </span>
-                                            </div>
-                                            <ProgressBar value={100} tone="orange" />
-                                        </div>
-                                        {(titleDiffers || score < LOW_SCORE) && (
-                                            <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-300/90">
-                                                <IconAlert size={13} className="mt-0.5 flex-none" />
-                                                <span>
-                                                    {titleDiffers && `${t('library.migrationWarnTitle', { title: suggestion.mangaTitle })} `}
-                                                    {score < LOW_SCORE && t('library.migrationWarnLow')}
-                                                </span>
-                                            </div>
-                                        )}
+                                    <div className="flex justify-center py-0.5 text-zinc-600">
+                                        <IconChevronDown size={14} />
                                     </div>
-
-                                    <p className="text-[11px] text-faint">{t('library.migrationKeepHint')}</p>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate font-medium text-accent-soft">{suggestion.sourceLabel}</span>
+                                        <span className="flex-none font-medium tabular-nums">
+                                            {t('library.migrationChapters', { n: suggestedChapters })}
+                                            {gain > 0 && <span className="text-xs font-semibold text-green-400"> +{gain}</span>}
+                                        </span>
+                                    </div>
+                                    {(titleDiffers || score < LOW_SCORE) && (
+                                        <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-300/90">
+                                            <IconAlert size={13} className="mt-0.5 flex-none" />
+                                            <span>
+                                                {titleDiffers && `${t('library.migrationWarnTitle', { title: suggestion.mangaTitle })} `}
+                                                {score < LOW_SCORE && t('library.migrationWarnLow')}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
+
+                                <p className="mt-2 text-[11px] text-faint">{t('library.migrationKeepHint')}</p>
                             </div>
 
-                            <div className="flex items-center justify-between gap-3 border-t border-line bg-canvas/40 px-5 py-3.5">
-                                <div className="hidden items-center gap-3 text-[11px] text-faint sm:flex">
-                                    {kbd('↵', t('library.migrate'))}
-                                    {kbd('X', t('library.migrationDismiss'))}
-                                    {kbd('P', t('library.migrationLater'))}
-                                </div>
-                                <div className="ml-auto flex items-center gap-2">
-                                    <Button small variant="ghost" disabled={!!busy || remaining <= 1} onClick={skip}>
+                            <div className="flex flex-col gap-2 border-t border-line px-5 py-3 sm:flex-row sm:items-center">
+                                {bulkCount >= 2 && (
+                                    <button
+                                        type="button"
+                                        disabled={!!busy}
+                                        onClick={bulkMigrate}
+                                        title={t('library.migrationQuickHint', { n: bulkCount, pct: Math.round(HIGH_SCORE * 100) })}
+                                        className="order-last flex items-center justify-center gap-1.5 text-xs text-faint transition-colors hover:text-muted disabled:cursor-wait disabled:opacity-60 sm:order-none sm:justify-start"
+                                    >
+                                        {busy === 'bulk' ? (
+                                            <>
+                                                <Spinner size={12} /> {t('library.migrationQuickBusy')}
+                                            </>
+                                        ) : (
+                                            t('library.migrationQuick', { n: bulkCount })
+                                        )}
+                                    </button>
+                                )}
+                                <div className="order-2 flex gap-2 sm:order-none sm:ml-auto">
+                                    <Button small variant="ghost" disabled={!!busy || remaining <= 1} onClick={skip} className="flex-1 sm:flex-none">
                                         {t('library.migrationLater')}
                                     </Button>
-                                    <Button small variant="danger" disabled={!!busy} loading={busy === 'act'} onClick={() => act(false)}>
+                                    <Button
+                                        small
+                                        variant="danger"
+                                        disabled={!!busy}
+                                        loading={busy === 'act'}
+                                        onClick={() => act(false)}
+                                        className="flex-1 sm:flex-none"
+                                    >
                                         <IconX size={12} /> {t('library.migrationDismiss')}
                                     </Button>
-                                    <Button small disabled={!!busy} loading={busy === 'act'} onClick={() => act(true)} autoFocus>
-                                        {t('library.migrate')} →
-                                    </Button>
                                 </div>
+                                <Button
+                                    small
+                                    autoFocus
+                                    disabled={!!busy}
+                                    loading={busy === 'act'}
+                                    onClick={() => act(true)}
+                                    className="order-1 w-full sm:order-none sm:w-auto"
+                                >
+                                    {t('library.migrate')} →
+                                </Button>
                             </div>
                         </>
                     )

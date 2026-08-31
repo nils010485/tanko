@@ -295,6 +295,9 @@ export interface AppSettingsResponseDto {
      *  their own rhythm) get searched on other sources; a migration
      *  suggestion is stored when one of them carries more chapters. */
     stalledSourceDetection: boolean;
+    /** Opt-in: migration suggestions with an exact title match (score 100 %)
+     *  are applied immediately, without user confirmation. */
+    autoMigrateExactMatch: boolean;
     diskUsedBytes: number;
 }
 

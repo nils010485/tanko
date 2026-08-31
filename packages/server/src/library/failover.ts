@@ -101,6 +101,9 @@ export const OUTAGE_ESCALATION_MS = 3 * 60 * 60 * 1000;
  *  source quietly recovered. Closing resets the retry ladder of its failed
  *  jobs so they retry soon instead of waiting out their deep backoff slot. */
 export const OUTAGE_SILENCE_MS = 2 * 60 * 60 * 1000;
+/** Title-match score treated as an exact match for the opt-in auto-migration
+ *  (float-safe 1.0). Suggestions below it always wait for confirmation. */
+const EXACT_MATCH_SCORE = 0.999;
 
 /** Failure taxonomy for the failover policy. 'infra': the source (or its CDN,
  *  or the network) is unhealthy — waiting/retrying makes sense and a blind
@@ -147,8 +150,12 @@ export class FailoverService {
             isDetectionEnabled?: () => boolean;
             /** Opt-in stalled-source detection (Settings); absent = disabled. */
             isStalledDetectionEnabled?: () => boolean;
+            /** Opt-in: exact-match suggestions are applied without confirmation. */
+            isAutoMigrateExactEnabled?: () => boolean;
             /** Webhook hook: a migration suggestion was stored (banner flow). */
             onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
+            /** Webhook hook: an exact-match migration was applied automatically. */
+            onAutoMigrate?: (entry: { id: number; title: string }, target: { sourceLabel: string }, kept: number, total: number) => void;
         }
     ) {}
 
@@ -392,6 +399,16 @@ export class FailoverService {
             );
             if (!better) {
                 return false;
+            }
+            // exact match + opt-in setting: migrate right away instead of
+            // queuing a suggestion the user would trivially confirm
+            if ((better.score ?? 0) >= EXACT_MATCH_SCORE && this.opts.isAutoMigrateExactEnabled?.()) {
+                const result = await this.opts.store.migrateEntry(entry.id, better);
+                this.opts.onAutoMigrate?.(entry, better, result.kept, result.total);
+                console.log(
+                    `[failover] "${entry.title}" migré automatiquement vers ${better.sourceLabel} (correspondance exacte, ${result.kept}/${result.total} chapitres conservés)`
+                );
+                return true;
             }
             this.opts.store.setMigrationSuggestion(entry.id, better);
             this.opts.onSuggestion?.(entry, better, chapterCount);

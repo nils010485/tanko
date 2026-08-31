@@ -239,6 +239,7 @@ export const api = {
             useFirstChapterCovers?: boolean;
             incompleteSourceDetection?: boolean;
             stalledSourceDetection?: boolean;
+            autoMigrateExactMatch?: boolean;
         }
     ) =>
         request<{
@@ -248,6 +249,7 @@ export const api = {
             useFirstChapterCovers: boolean;
             incompleteSourceDetection: boolean;
             stalledSourceDetection: boolean;
+            autoMigrateExactMatch: boolean;
         }>('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify(patch)

@@ -263,3 +263,48 @@ describe('search aliases (manual / AniList names)', () => {
         expect(alternatives[0].score).toBe(1);
     });
 });
+
+describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () => {
+    let autoExactEnabled = false;
+    let autoFailover: FailoverService;
+    let autoId = 0;
+
+    beforeAll(async () => {
+        autoFailover = new FailoverService({
+            registry: registry as never,
+            store,
+            listSources: async () => sourceInfos,
+            getPreferredLanguages: () => ['en'],
+            isDetectionEnabled: () => true,
+            isAutoMigrateExactEnabled: () => autoExactEnabled
+        });
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'ax', title: 'Starved Series', backlog: 'ignore' });
+        autoId = entry.id;
+    });
+
+    it('stores a suggestion, never migrates, while the setting is off — even on an exact match', async () => {
+        expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
+        const entry = store.getEntry(autoId);
+        expect(entry?.migrationSuggestion?.sourceId).toBe('richer'); // score 1
+        expect(entry?.sourceId).toBe('current');
+    });
+
+    it('migrates immediately on an exact match once enabled', async () => {
+        store.setMigrationSuggestion(autoId, null);
+        autoExactEnabled = true;
+        expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
+        const entry = store.getEntry(autoId);
+        expect(entry?.sourceId).toBe('richer');
+        expect(entry?.migrationSuggestion).toBeUndefined();
+        expect(entry?.canRollbackMigration).toBe(true); // undo stays available
+    });
+
+    it('still only suggests when the best match is not exact (score < 100 %)', async () => {
+        // the entry now lives on 'richer'; the only alternative with ≥ 2×
+        // chapters is 'stranger' ("Starved Series — Official", score < 1)
+        expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'richer', title: 'Starved Series' }, 8)).toBe('suggested');
+        const entry = store.getEntry(autoId);
+        expect(entry?.sourceId).toBe('richer');
+        expect(entry?.migrationSuggestion?.sourceId).toBe('stranger');
+    });
+});

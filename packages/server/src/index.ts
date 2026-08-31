@@ -34,6 +34,7 @@ import { registerImageRoutes } from './routes/images.js';
 import { registerImportRoutes } from './routes/import.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import {
+    createAutoMigrateExactPref,
     createIncompleteDetectionPref,
     createLanguagePreference,
     createStalledDetectionPref,
@@ -114,12 +115,19 @@ const failover = new FailoverService({
     getPreferredLanguages: preferredLanguages,
     isDetectionEnabled: createIncompleteDetectionPref(database),
     isStalledDetectionEnabled: createStalledDetectionPref(database),
+    isAutoMigrateExactEnabled: createAutoMigrateExactPref(database),
     // late-bound: `scheduler` is declared below — suggestions only fire long after init
     onSuggestion: (entry, target, currentChapters) =>
         scheduler.notify(
             'migrations',
             'Migration suggérée',
             `« ${entry.title} » : ${target.sourceLabel} propose ${target.chapterCount ?? '?'} chapitres (contre ${currentChapters}) — à confirmer dans la Librairie`
+        ),
+    onAutoMigrate: (entry, target, kept, total) =>
+        scheduler.notify(
+            'migrations',
+            'Migration automatique',
+            `« ${entry.title} » migré vers ${target.sourceLabel} (correspondance exacte, ${kept}/${total} chapitres conservés) — annulable depuis la fiche de la série`
         )
 });
 
