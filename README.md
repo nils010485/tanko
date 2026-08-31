@@ -59,7 +59,7 @@ Podman works too: the image is OCI-compatible, `podman build -t tanko .` or
 Building from GitHub without cloning:
 
 ```bash
-docker build -t tanko:v0.2.0 github.com/nils010485/tanko#v0.2.0   # pinned release
+docker build -t tanko:v0.3.0 github.com/nils010485/tanko#v0.3.0   # pinned release
 docker build -t tanko:nightly github.com/nils010485/tanko         # latest main
 ```
 
