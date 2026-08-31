@@ -36,9 +36,9 @@ export function FollowDialog({
                         type="button"
                         disabled={addingKey !== null}
                         onClick={() => onFollow(followTarget, 'ignore')}
-                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900 disabled:opacity-50"
+                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-canvas/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-card disabled:opacity-50"
                     >
-                        <span className="mt-0.5 text-zinc-400">
+                        <span className="mt-0.5 text-muted">
                             <IconBookmark size={16} />
                         </span>
                         <span>

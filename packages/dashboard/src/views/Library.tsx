@@ -19,7 +19,7 @@ import { LibraryToolbar } from '../components/library/LibraryToolbar.js';
 import { useLibraryActions } from '../components/library/useLibraryActions.js';
 import { MigrationBanner } from '../components/MigrationBanner.js';
 import { MigrationModal } from '../components/MigrationModal.js';
-import { Badge, Button, EmptyState, SectionTitle } from '../components/ui.js';
+import { Badge, Button, EmptyState } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { useLongPress } from '../lib/hooks.js';
 import {
@@ -223,46 +223,56 @@ export default function Library({
 
     return (
         <div className={`space-y-6 ${prefs.actions ? '' : 'library-actions-hover'}`}>
-            <SectionTitle
-                right={
-                    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                        <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('library.downloadAllNewHint')}>
-                            <IconDownload size={13} /> {t('library.downloadAllNew')}
-                            {totalNew > 0 && <span className="rounded-full bg-zinc-950/15 px-1.5 text-xs font-semibold text-zinc-950">{totalNew}</span>}
-                        </Button>
-                        {failingCount > 0 && (
-                            <Button small variant="ghost" onClick={rematchAllFailed} loading={rematchAllBusy} title={t('library.rematchFailedHint')}>
-                                <IconSearch size={13} /> {t('library.rematchFailed', { n: failingCount })}
-                            </Button>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <h2 className="flex flex-wrap items-center gap-2 font-display text-2xl font-bold tracking-tight">
+                        {t('library.title')}
+                        {showHidden && <Badge tone="purple">{t('library.hiddenSeries')}</Badge>}
+                    </h2>
+                    <p className="mt-1 text-sm text-muted">
+                        {t('library.seriesCount', { n: library.length })}
+                        {totalNew > 0 && (
+                            <>
+                                {' · '}
+                                <span className="font-semibold text-accent-soft">{t('library.newChaptersCount', { n: totalNew })}</span>
+                            </>
                         )}
-                        {pendingMigrations.length > 0 && migrationBannerHidden && (
-                            <Button small variant="ghost" onClick={() => setMigrationOpen(true)} title={t('library.migrationProcessHint')}>
-                                <IconArrowLeftRight size={13} /> {t('library.migrationProcess', { n: pendingMigrations.length })}
-                            </Button>
-                        )}
-                        <Button small variant={showHidden ? 'primary' : 'ghost'} onClick={() => setShowHidden(current => !current)}>
-                            <IconEyeOff size={13} /> {t('library.hidden')}
-                            {hiddenList.length > 0 ? ` (${hiddenList.length})` : ''}
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {failingCount > 0 && (
+                        <Button small variant="ghost" onClick={rematchAllFailed} loading={rematchAllBusy} title={t('library.rematchFailedHint')}>
+                            <IconSearch size={13} /> {t('library.rematchFailed', { n: failingCount })}
                         </Button>
-                        <Button small variant="ghost" onClick={rescan} loading={rescanBusy} title={t('library.rescanHint')}>
-                            <IconRefresh size={13} /> {t('library.rescan')}
+                    )}
+                    {pendingMigrations.length > 0 && migrationBannerHidden && (
+                        <Button small variant="ghost" onClick={() => setMigrationOpen(true)} title={t('library.migrationProcessHint')}>
+                            <IconArrowLeftRight size={13} /> {t('library.migrationProcess', { n: pendingMigrations.length })}
                         </Button>
-                        {view === 'list' && (
-                            <Button
-                                small
-                                variant={selecting ? 'primary' : 'ghost'}
-                                onClick={() => (selecting ? exitSelection() : setSelecting(true))}
-                                title={t('library.selectionHint')}
-                            >
-                                <IconCheck size={13} /> {t('library.selection')}
-                            </Button>
-                        )}
-                    </div>
-                }
-            >
-                {t('library.title')}
-                {showHidden && <Badge tone="purple">{t('library.hiddenSeries')}</Badge>}
-            </SectionTitle>
+                    )}
+                    <Button small variant={showHidden ? 'primary' : 'ghost'} onClick={() => setShowHidden(current => !current)}>
+                        <IconEyeOff size={13} /> {t('library.hidden')}
+                        {hiddenList.length > 0 ? ` (${hiddenList.length})` : ''}
+                    </Button>
+                    {view === 'list' && (
+                        <Button
+                            small
+                            variant={selecting ? 'primary' : 'ghost'}
+                            onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+                            title={t('library.selectionHint')}
+                        >
+                            <IconCheck size={13} /> {t('library.selection')}
+                        </Button>
+                    )}
+                    <Button small variant="ghost" onClick={rescan} loading={rescanBusy} title={t('library.rescanHint')}>
+                        <IconRefresh size={13} /> {t('library.rescan')}
+                    </Button>
+                    <Button small onClick={downloadAllNew} loading={dlAllBusy} disabled={totalNew === 0} title={t('library.downloadAllNewHint')}>
+                        <IconDownload size={13} /> {t('library.downloadAllNew')}
+                        {totalNew > 0 && <span className="rounded-md bg-canvas/20 px-1.5 text-xs font-bold text-canvas">{totalNew}</span>}
+                    </Button>
+                </div>
+            </div>
 
             {pendingMigrations.length > 0 && !migrationBannerHidden && (
                 <MigrationBanner count={pendingMigrations.length} onReview={() => setMigrationOpen(true)} onLater={() => setMigrationBannerHidden(true)} />
@@ -353,7 +363,7 @@ export default function Library({
                     diskPath ? (
                         <>
                             {t('library.deleteBodyPath')}
-                            <code className="mt-1 block break-all rounded bg-zinc-950 px-2 py-1 text-xs text-zinc-300">{diskPath}</code>
+                            <code className="mt-1 block break-all rounded bg-canvas px-2 py-1 text-xs text-fg">{diskPath}</code>
                         </>
                     ) : (
                         t('library.deleteBodyGeneric')
@@ -371,7 +381,7 @@ export default function Library({
                         {(pendingRescan ?? []).map(entry => (
                             <li key={entry.id} className="flex items-baseline justify-between gap-3">
                                 <span className="truncate font-medium">{entry.title}</span>
-                                <code className="truncate text-xs text-zinc-500" title={entry.directory ?? undefined}>
+                                <code className="truncate text-xs text-faint" title={entry.directory ?? undefined}>
                                     {entry.directory}
                                 </code>
                             </li>

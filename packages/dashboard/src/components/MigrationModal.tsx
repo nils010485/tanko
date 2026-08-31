@@ -229,12 +229,8 @@ export function MigrationModal({
     const summaryRow = (entry: LibraryEntryDto, outcome: Outcome) => (
         <div key={entry.id} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-canvas/60 px-3 py-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
-                {outcome === 'migrated' ? (
-                    <IconCheck size={14} className="flex-none text-green-400" />
-                ) : (
-                    <IconX size={14} className="flex-none text-zinc-500" />
-                )}
-                <span className={`truncate text-zinc-300 ${undoneIds.includes(entry.id) ? 'line-through opacity-60' : ''}`}>
+                {outcome === 'migrated' ? <IconCheck size={14} className="flex-none text-green-400" /> : <IconX size={14} className="flex-none text-faint" />}
+                <span className={`truncate text-fg ${undoneIds.includes(entry.id) ? 'line-through opacity-60' : ''}`}>
                     {entry.title}
                     {outcome === 'migrated' && entry.migrationSuggestion ? ` → ${entry.migrationSuggestion.sourceLabel}` : ''}
                 </span>
@@ -272,17 +268,12 @@ export function MigrationModal({
                             </p>
                         )}
                     </div>
-                    <button
-                        type="button"
-                        title={t('common.close')}
-                        onClick={onClose}
-                        className="flex-none p-1 text-zinc-500 transition-colors hover:text-zinc-200"
-                    >
+                    <button type="button" title={t('common.close')} onClick={onClose} className="flex-none p-1 text-faint transition-colors hover:text-fg">
                         <IconX size={16} />
                     </button>
                 </div>
                 {!allDone && (
-                    <div className="mx-5 h-0.5 overflow-hidden rounded-full bg-zinc-800">
+                    <div className="mx-5 h-0.5 overflow-hidden rounded-full bg-line">
                         <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(decidedCount / snapshot.length) * 100}%` }} />
                     </div>
                 )}
@@ -346,11 +337,9 @@ export function MigrationModal({
                                             {current.sourceLabel ?? t('library.noSourceBadge')}
                                             <span className="text-[11px]"> · {t('library.migrationCurrentSuffix')}</span>
                                         </span>
-                                        <span className="flex-none tabular-nums text-zinc-400">
-                                            {t('library.migrationChapters', { n: current.chapterCount })}
-                                        </span>
+                                        <span className="flex-none tabular-nums text-muted">{t('library.migrationChapters', { n: current.chapterCount })}</span>
                                     </div>
-                                    <div className="flex justify-center py-0.5 text-zinc-600">
+                                    <div className="flex justify-center py-0.5 text-faint">
                                         <IconChevronDown size={14} />
                                     </div>
                                     <div className="flex items-center justify-between gap-2">

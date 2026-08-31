@@ -230,7 +230,7 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
                 setConfirm(action);
             }}
             className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-canvas hover:text-fg'
+                danger ? 'text-red-400 hover:bg-red-500/10' : 'text-fg hover:bg-canvas hover:text-fg'
             }`}
         >
             <span className="whitespace-nowrap">{label}</span>
@@ -267,9 +267,9 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
                             ) : (
                                 <span className="truncate text-sm font-medium">{job.mangaTitle}</span>
                             )}
-                            <span className="truncate text-sm text-zinc-500">— {job.chapterTitle}</span>
+                            <span className="truncate text-sm text-faint">— {job.chapterTitle}</span>
                         </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-faint">
                             {statusBadge(job.status, t)}
                             {job.status === 'failed' && (job.autoRetries ?? 0) > 0 && (
                                 <>
@@ -311,7 +311,7 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
                                 <div className="min-w-0 flex-1">
                                     <ProgressBar value={job.progress} />
                                 </div>
-                                <span className="w-10 flex-none text-right text-xs text-zinc-400">{job.progress}%</span>
+                                <span className="w-10 flex-none text-right text-xs text-muted">{job.progress}%</span>
                             </div>
                         )}
                     </div>
@@ -421,7 +421,7 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
                                     setStatus(filter.value);
                                 }}
                                 className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-                                    status === filter.value ? 'bg-accent/10 font-medium text-accent-soft' : 'text-muted hover:bg-canvas hover:text-zinc-200'
+                                    status === filter.value ? 'bg-accent/10 font-medium text-accent-soft' : 'text-muted hover:bg-canvas hover:text-fg'
                                 }`}
                             >
                                 {t(filter.key)}
@@ -463,7 +463,7 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
             </div>
 
             {pageCount > 1 && (
-                <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-zinc-400">
+                <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted">
                     <Button small variant="ghost" disabled={current === 0} onClick={() => setPage(current - 1)}>
                         {t('downloads.previous')}
                     </Button>

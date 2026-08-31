@@ -31,7 +31,7 @@ export function Cover({ title, thumbnail, coverUrl, className = '' }: { title: s
     }
 
     return (
-        <div className={`flex flex-none items-center justify-center bg-zinc-800 text-faint ${className}`} aria-hidden>
+        <div className={`flex flex-none items-center justify-center bg-line text-faint ${className}`} aria-hidden>
             <span className="text-lg font-semibold">{title.charAt(0).toUpperCase()}</span>
         </div>
     );

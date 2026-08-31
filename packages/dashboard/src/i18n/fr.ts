@@ -14,6 +14,8 @@ export const fr: typeof import('./en.js').en = {
     'common.errorDetail': 'Détails techniques',
 
     // navigation + shell
+    'nav.sectionRead': 'Lire',
+    'nav.sectionManage': 'Gérer',
     'nav.discover': 'Découvrir',
     'nav.library': 'Librairie',
     'nav.downloads': 'Téléchargements',
@@ -134,6 +136,8 @@ export const fr: typeof import('./en.js').en = {
 
     // library
     'library.title': 'Librairie',
+    'library.seriesCount': '{n} série(s)',
+    'library.newChaptersCount': '{n} nouveau(x) chapitre(s)',
     'library.newChapters': '{n} nouveau(x) chapitre(s) pour « {title} »',
     'library.upToDate': '« {title} » est à jour',
     'library.hiddenToast': '« {title} » masquée — réactivable depuis « Masquées »',

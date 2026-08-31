@@ -380,7 +380,7 @@ export default function Series({
                 {libraryLoaded ? (
                     <EmptyState title={t('series.notFound')} hint={t('series.notFoundHint')} icon={<IconLibrary size={28} />} />
                 ) : (
-                    <Card className="flex items-center gap-2 p-4 text-sm text-zinc-500">
+                    <Card className="flex items-center gap-2 p-4 text-sm text-faint">
                         <Spinner /> {t('common.loading')}
                     </Card>
                 )}
@@ -446,7 +446,7 @@ export default function Series({
                         )}
                         {entry.paused && <Badge>{t('library.paused')}</Badge>}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                         {entry.chapterCount > 0 && <span>{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>}
                         {missingOnly > 0 && <span className="text-accent-soft">{t('library.missingCount', { n: missingOnly })}</span>}
                         {entry.lastCheckedAt && <span className="text-faint">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>}
@@ -494,8 +494,8 @@ export default function Series({
             </Card>
 
             {entry.migrationSuggestion && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs">
-                    <span className="text-zinc-300">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs">
+                    <span className="text-fg">
                         {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
                         {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
                         {(entry.migrationSuggestion.chapterCount ?? 0) > 0 && (
@@ -531,13 +531,13 @@ export default function Series({
                 </div>
             )}
             {chapters === null ? (
-                <Card className="flex items-center gap-2 p-4 text-sm text-zinc-500">
+                <Card className="flex items-center gap-2 p-4 text-sm text-faint">
                     <Spinner /> {t('common.loading')}
                 </Card>
             ) : chapters.length === 0 ? (
                 <EmptyState title={t('discover.noChapter')} />
             ) : visibleChapters.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-line px-6 py-8 text-center text-sm text-zinc-500">{t('series.filterNoMatch')}</div>
+                <div className="rounded-xl border border-dashed border-line px-6 py-8 text-center text-sm text-faint">{t('series.filterNoMatch')}</div>
             ) : (
                 <ChapterList
                     items={visibleChapters.map(chapter => ({ key: String(chapter.id), title: chapter.title, node: chapterNode(chapter) }))}
@@ -576,21 +576,21 @@ export default function Series({
                                 <IconX size={14} />
                             </IconButton>
                         </div>
-                        <div className="mt-1 text-xs text-zinc-500">
+                        <div className="mt-1 text-xs text-faint">
                             {entry.sourceLabel} · {t('library.chaptersCount', { n: entry.chapterCount })} ({t('series.changeSourceCurrent')})
                         </div>
 
                         {/* alias editor: the other names the failover searches too (AniList or manual) */}
-                        <div className="mt-3 rounded-lg border border-line bg-zinc-950/50 p-3">
+                        <div className="mt-3 rounded-lg border border-line bg-canvas/50 p-3">
                             <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-xs text-zinc-500">{t('series.aliases')}:</span>
+                                <span className="text-xs text-faint">{t('series.aliases')}:</span>
                                 {(entry.aliases ?? []).map(alias => (
                                     <button
                                         key={alias}
                                         type="button"
                                         onClick={() => void saveAliases((entry.aliases ?? []).filter(item => item !== alias))}
                                         title={t('series.aliasRemoveHint')}
-                                        className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-zinc-300 transition-colors hover:border-red-500/50 hover:text-red-400"
+                                        className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-fg transition-colors hover:border-red-500/50 hover:text-red-400"
                                     >
                                         {alias} <IconX size={10} />
                                     </button>
@@ -610,25 +610,25 @@ export default function Series({
                                     value={aliasInput}
                                     onChange={event => setAliasInput(event.target.value)}
                                     placeholder={t('series.aliasPlaceholder')}
-                                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface/60 px-2.5 py-1.5 text-sm text-fg placeholder:text-zinc-600 focus:border-accent/60 focus:outline-none"
+                                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface/60 px-2.5 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent/60 focus:outline-none"
                                 />
                                 <Button small type="submit" disabled={aliasInput.trim() === ''}>
                                     {t('series.aliasAdd')}
                                 </Button>
                             </form>
-                            <div className="mt-1.5 text-xs text-zinc-600">{t('series.aliasesHint')}</div>
+                            <div className="mt-1.5 text-xs text-faint">{t('series.aliasesHint')}</div>
                         </div>
                         {picker.loading ? (
-                            <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+                            <div className="mt-4 flex items-center gap-2 text-sm text-faint">
                                 <Spinner /> {t('series.changeSourceSearching')}
                             </div>
                         ) : picker.error ? (
                             <div className="mt-4 text-sm text-red-400">{picker.error}</div>
                         ) : (picker.data?.alternatives.length ?? 0) === 0 ? (
-                            <div className="mt-4 text-sm text-zinc-500">
+                            <div className="mt-4 text-sm text-faint">
                                 {t('series.changeSourceEmpty')}
                                 {picker.data?.autoAliases && (
-                                    <div className="mt-1 text-xs text-zinc-600">
+                                    <div className="mt-1 text-xs text-faint">
                                         {t('series.changeSourceTriedAliases', { names: picker.data.autoAliases.join(', ') })}
                                     </div>
                                 )}
@@ -638,17 +638,15 @@ export default function Series({
                                 {picker.data?.alternatives.map(alternative => (
                                     <div
                                         key={`${alternative.sourceId}:${alternative.mangaId}`}
-                                        className="flex items-center gap-3 rounded-lg border border-line bg-zinc-950/50 p-3"
+                                        className="flex items-center gap-3 rounded-lg border border-line bg-canvas/50 p-3"
                                     >
                                         <div className="min-w-0 flex-1">
-                                            <div className="truncate text-sm text-zinc-200">
+                                            <div className="truncate text-sm text-fg">
                                                 {alternative.sourceLabel}
-                                                {alternative.mangaTitle !== entry.title && (
-                                                    <span className="ml-1 text-zinc-500">— {alternative.mangaTitle}</span>
-                                                )}
+                                                {alternative.mangaTitle !== entry.title && <span className="ml-1 text-faint">— {alternative.mangaTitle}</span>}
                                             </div>
-                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
-                                                <span className="text-zinc-300">{t('library.chaptersCount', { n: alternative.chapterCount })}</span>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-faint">
+                                                <span className="text-fg">{t('library.chaptersCount', { n: alternative.chapterCount })}</span>
                                                 {alternative.chapterCount > entry.chapterCount && (
                                                     <span className="text-emerald-400">
                                                         {t('series.changeSourceMore', { n: alternative.chapterCount - entry.chapterCount })}

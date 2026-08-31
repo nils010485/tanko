@@ -1,14 +1,22 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/inter-tight';
 @import "tailwindcss";
 
 @theme {
-    --color-accent: #f97316;
-    --color-accent-soft: #fb923c;
-    --color-canvas: #09090b;
-    --color-surface: #18181b;
-    --color-line: #27272a;
-    --color-fg: #f4f4f5;
-    --color-muted: #a1a1aa;
-    --color-faint: #8b8b93;
+    /* warm "ink" palette — neutrals lean warm (stone) instead of cold zinc */
+    --color-accent: #ff6a3d;
+    --color-accent-soft: #ff8a66;
+    --color-accent-deep: #e04e1f;
+    --color-canvas: #141210;
+    --color-faint: #8a8178;
+    --color-card: #221f1c;
+    --color-line: #2e2a26;
+    --color-fg: #f5f1ec;
+    --color-muted: #a8a29e;
+    --color-faint: #78716c;
+
+    --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Inter Tight Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -16,40 +24,39 @@
 }
 
 body {
-    @apply bg-canvas text-fg antialiased;
-    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    @apply bg-canvas font-sans text-fg antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04';
 }
 
 /* subtle, dark scrollbars */
 * {
     scrollbar-width: thin;
-    scrollbar-color: #3f3f46 transparent;
+    scrollbar-color: #3a352f transparent;
 }
 *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-    background: #3f3f46;
+    background: #3a352f;
     border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+    background: #4c453e;
 }
 *::-webkit-scrollbar-track {
     background: transparent;
 }
 
 ::selection {
-    background: rgba(249, 115, 22, 0.35);
+    background: rgba(255, 106, 61, 0.35);
 }
 
 /* consistent focus rings */
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-    outline: 2px solid rgba(249, 115, 22, 0.6);
+    outline: 2px solid rgba(255, 106, 61, 0.6);
     outline-offset: 1px;
 }
 

@@ -7,13 +7,13 @@ import { useI18n } from '../i18n/index.js';
 import { IconChevronDown } from './icons.js';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-    return <div className={`rounded-xl border border-line bg-surface/60 ${className}`}>{children}</div>;
+    return <div className={`rounded-2xl border border-line bg-surface ${className}`}>{children}</div>;
 }
 
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
     return (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">{children}</h2>
+            <h2 className="flex flex-wrap items-center gap-2 font-display text-xl font-bold tracking-tight">{children}</h2>
             {right}
         </div>
     );
@@ -23,24 +23,24 @@ export type BadgeTone = 'zinc' | 'green' | 'orange' | 'red' | 'blue' | 'purple';
 
 export function Badge({ children, tone = 'zinc', solid = false }: { children: ReactNode; tone?: BadgeTone; solid?: boolean }) {
     const tones: Record<BadgeTone, string> = {
-        zinc: 'bg-zinc-800 text-zinc-300 border-zinc-700',
-        green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-        orange: 'bg-accent/10 text-accent-soft border-accent/30',
-        red: 'bg-red-500/10 text-red-400 border-red-500/30',
-        blue: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
-        purple: 'bg-violet-500/10 text-violet-400 border-violet-500/30'
+        zinc: 'bg-white/5 text-muted border-line',
+        green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
+        orange: 'bg-accent/10 text-accent-soft border-accent/25',
+        red: 'bg-red-500/10 text-red-400 border-red-500/25',
+        blue: 'bg-sky-500/10 text-sky-400 border-sky-500/25',
+        purple: 'bg-violet-500/10 text-violet-400 border-violet-500/25'
     };
     const solidTones: Record<BadgeTone, string> = {
-        zinc: 'bg-zinc-400 text-zinc-950 border-zinc-400',
+        zinc: 'bg-muted text-canvas border-faint',
         green: 'bg-emerald-500 text-white border-emerald-500',
-        orange: 'bg-accent text-zinc-950 border-accent',
+        orange: 'bg-accent text-canvas border-accent',
         red: 'bg-red-500 text-white border-red-500',
         blue: 'bg-sky-500 text-white border-sky-500',
         purple: 'bg-violet-500 text-white border-violet-500'
     };
     return (
         <span
-            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${solid ? solidTones[tone] : tones[tone]}`}
+            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${solid ? solidTones[tone] : tones[tone]}`}
         >
             {children}
         </span>
@@ -50,8 +50,8 @@ export function Badge({ children, tone = 'zinc', solid = false }: { children: Re
 export type ButtonVariant = 'primary' | 'ghost' | 'danger';
 
 const buttonVariants: Record<ButtonVariant, string> = {
-    primary: 'bg-accent text-zinc-950 hover:bg-accent-soft disabled:bg-zinc-700 disabled:text-zinc-500',
-    ghost: 'border border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-40',
+    primary: 'bg-accent text-canvas shadow-lg shadow-accent/20 hover:bg-accent-deep hover:text-white disabled:bg-line disabled:text-faint disabled:shadow-none',
+    ghost: 'border border-line bg-surface text-fg hover:bg-card hover:border-faint disabled:opacity-40',
     danger: 'border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40'
 };
 
@@ -118,7 +118,7 @@ export function ProgressBar({ value, tone = 'orange' }: { value: number; tone?: 
         red: 'bg-red-500'
     };
     return (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
             <div className={`h-full rounded-full transition-all duration-300 ${tones[tone]}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
         </div>
     );
@@ -132,16 +132,17 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
                 role="switch"
                 aria-checked={checked}
                 onClick={() => onChange(!checked)}
-                className={`relative h-5 w-9 flex-none rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-zinc-700'}`}
+                className={`relative h-5 w-9 flex-none rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-line'}`}
             >
                 <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all" style={{ left: checked ? '1.15rem' : '0.125rem' }} />
             </button>
-            {label && <span className="whitespace-nowrap text-sm text-zinc-300">{label}</span>}
+            {label && <span className="whitespace-nowrap text-sm text-fg">{label}</span>}
         </label>
     );
 }
 
-const fieldClasses = 'max-w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg outline-none placeholder:text-zinc-600 focus:border-accent';
+const fieldClasses =
+    'max-w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-fg outline-none transition-colors placeholder:text-faint focus:border-accent/60';
 
 export function Input({
     value,
@@ -206,7 +207,7 @@ export function SettingRow({ label, hint, children }: { label: string; hint?: st
         <div className="flex items-center justify-between gap-3 py-4">
             <div className="min-w-0">
                 <div className="text-sm">{label}</div>
-                {hint && <div className="text-xs text-zinc-500">{hint}</div>}
+                {hint && <div className="text-xs text-faint">{hint}</div>}
             </div>
             <div className="flex-none">{children}</div>
         </div>
@@ -215,10 +216,10 @@ export function SettingRow({ label, hint, children }: { label: string; hint?: st
 
 export function EmptyState({ title, hint, icon, children }: { title: string; hint?: string; icon?: ReactNode; children?: ReactNode }) {
     return (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-line px-6 py-12 text-center">
-            {icon && <div className="mb-3 text-zinc-600">{icon}</div>}
-            <div className="text-sm font-medium text-zinc-400">{title}</div>
-            {hint && <div className="mt-1 text-xs text-zinc-600">{hint}</div>}
+        <div className="flex flex-col items-center rounded-2xl border border-dashed border-line px-6 py-12 text-center">
+            {icon && <div className="mb-3 text-faint">{icon}</div>}
+            <div className="text-sm font-medium text-muted">{title}</div>
+            {hint && <div className="mt-1 text-xs text-faint">{hint}</div>}
             {children && <div className="mt-4">{children}</div>}
         </div>
     );
@@ -227,7 +228,7 @@ export function EmptyState({ title, hint, icon, children }: { title: string; hin
 export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
     const { t } = useI18n();
     return (
-        <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+        <div className="flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">
             <span className="min-w-0 flex-1">{message}</span>
             {onRetry && (
                 <Button small variant="ghost" onClick={onRetry}>
@@ -269,9 +270,9 @@ export function ErrorDetail({ error, className = '' }: { error: string; classNam
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-    return <div className={`animate-pulse rounded-lg bg-zinc-800/70 ${className}`} />;
+    return <div className={`animate-pulse rounded-xl bg-line/70 ${className}`} />;
 }
 
 export function Spinner({ size = 16 }: { size?: number }) {
-    return <span className="inline-block flex-none animate-spin rounded-full border-2 border-zinc-600 border-t-accent" style={{ width: size, height: size }} />;
+    return <span className="inline-block flex-none animate-spin rounded-full border-2 border-line border-t-accent" style={{ width: size, height: size }} />;
 }

@@ -14,6 +14,8 @@ export const en = {
     'common.errorDetail': 'Technical details',
 
     // navigation + shell
+    'nav.sectionRead': 'Read',
+    'nav.sectionManage': 'Manage',
     'nav.discover': 'Discover',
     'nav.library': 'Library',
     'nav.downloads': 'Downloads',
@@ -133,6 +135,8 @@ export const en = {
 
     // library
     'library.title': 'Library',
+    'library.seriesCount': '{n} series',
+    'library.newChaptersCount': '{n} new chapter(s)',
     'library.newChapters': '{n} new chapter(s) for “{title}”',
     'library.upToDate': '“{title}” is up to date',
     'library.hiddenToast': '“{title}” hidden — restore it from “Hidden”',

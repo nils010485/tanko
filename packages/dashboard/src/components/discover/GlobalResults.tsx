@@ -56,7 +56,7 @@ export function GlobalResults({
     const missFailedCount = missGroups.length - missEmptyCount;
     return (
         <div className="space-y-3">
-            <Card className="flex flex-wrap items-center gap-3 p-3 text-sm text-zinc-400">
+            <Card className="flex flex-wrap items-center gap-3 p-3 text-sm text-muted">
                 {globalSearching ? (
                     <>
                         <Spinner />
@@ -79,7 +79,7 @@ export function GlobalResults({
                             {healthDot(source?.health, t)}
                             <span className="text-sm font-medium">{group.sourceLabel}</span>
                             {group.kind === 'native' && <Badge tone="purple">{t('discover.native')}</Badge>}
-                            <span className="text-xs text-zinc-500">
+                            <span className="text-xs text-faint">
                                 {t('discover.globalResultsCount', { n: group.mangas.length })}
                                 {group.tookMs !== undefined ? ` · ${group.tookMs} ms` : ''}
                             </span>
@@ -114,7 +114,7 @@ export function GlobalResults({
                     <button
                         type="button"
                         onClick={onToggleMisses}
-                        className="flex w-full items-center gap-2 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+                        className="flex w-full items-center gap-2 text-left text-xs text-faint transition-colors hover:text-fg"
                     >
                         <IconChevronDown size={14} className={`flex-none transition-transform ${showMisses ? 'rotate-180' : ''}`} />
                         <span>{t('discover.globalMissSummary', { empty: missEmptyCount, failed: missFailedCount })}</span>
@@ -122,12 +122,12 @@ export function GlobalResults({
                     {showMisses && (
                         <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
                             {missGroups.map(group => (
-                                <div key={group.sourceId} className="flex min-w-0 items-center gap-2 text-xs text-zinc-500">
+                                <div key={group.sourceId} className="flex min-w-0 items-center gap-2 text-xs text-faint">
                                     <span className="min-w-0 flex-1 truncate" title={group.error ? `${group.sourceLabel} — ${group.error}` : group.sourceLabel}>
                                         {group.sourceLabel}
                                     </span>
                                     {group.status === 'ok' ? (
-                                        <span className="flex-none text-zinc-600">{t('discover.noResults')}</span>
+                                        <span className="flex-none text-faint">{t('discover.noResults')}</span>
                                     ) : (
                                         <Badge tone={group.status === 'skipped' ? undefined : 'red'}>{t(GLOBAL_STATUS_KEYS[group.status])}</Badge>
                                     )}

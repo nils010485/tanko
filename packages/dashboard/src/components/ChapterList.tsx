@@ -96,7 +96,7 @@ export function ChapterList({ items, selection, resetKey }: { items: ChapterList
     return (
         <div className="space-y-1">
             {items.slice(0, visible).map(item => (
-                <div key={item.key} className="flex items-center justify-between gap-2 rounded-md bg-zinc-900/60 px-3 py-1.5">
+                <div key={item.key} className="flex items-center justify-between gap-2 rounded-md bg-card/60 px-3 py-1.5">
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                         {selection && (
                             // readOnly: the state is driven by onClick (which also carries the shift key)
@@ -105,11 +105,11 @@ export function ChapterList({ items, selection, resetKey }: { items: ChapterList
                                 checked={selection.selected.has(item.key)}
                                 onClick={event => toggle(item.key, event.shiftKey)}
                                 aria-label={item.title}
-                                className="flex-none accent-orange-500"
+                                className="flex-none accent-accent"
                                 readOnly
                             />
                         )}
-                        <span className="min-w-0 flex-1 truncate text-zinc-300" title={item.title}>
+                        <span className="min-w-0 flex-1 truncate text-fg" title={item.title}>
                             {item.title}
                         </span>
                         {item.badge && <span className="flex-none">{item.badge}</span>}
@@ -121,7 +121,7 @@ export function ChapterList({ items, selection, resetKey }: { items: ChapterList
                 <button
                     type="button"
                     onClick={() => setVisible(current => current + BATCH)}
-                    className="w-full rounded-md border border-line px-3 py-2 text-xs text-muted transition-colors hover:border-zinc-600 hover:text-fg"
+                    className="w-full rounded-md border border-line px-3 py-2 text-xs text-muted transition-colors hover:border-faint hover:text-fg"
                 >
                     {t('common.showMore', { n: Math.min(BATCH, items.length - visible) })}
                 </button>

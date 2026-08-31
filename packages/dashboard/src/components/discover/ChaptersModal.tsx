@@ -45,15 +45,15 @@ export function ChaptersModal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            <div className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/60">
-                <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+            <div className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-line bg-canvas shadow-2xl shadow-black/60">
+                <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
                     <div className="min-w-0 truncate text-sm font-semibold" title={selected.title}>
                         {selected.title}
-                        {chapters && <span className="ml-1 font-normal text-zinc-500">— {t('discover.chaptersCount', { n: chapters.length })}</span>}
+                        {chapters && <span className="ml-1 font-normal text-faint">— {t('discover.chaptersCount', { n: chapters.length })}</span>}
                     </div>
                     <button
                         type="button"
-                        className="flex-none rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                        className="flex-none rounded-md p-1 text-faint transition-colors hover:bg-line hover:text-fg"
                         onClick={onClose}
                         title={t('common.close')}
                     >
@@ -63,11 +63,11 @@ export function ChaptersModal({
 
                 <div className="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
                     {!chapters ? (
-                        <div className="flex items-center justify-center gap-2 py-8 text-zinc-500">
+                        <div className="flex items-center justify-center gap-2 py-8 text-faint">
                             <Spinner /> {t('common.loading')}
                         </div>
                     ) : chapters.length === 0 ? (
-                        <div className="py-8 text-center text-sm text-zinc-500">
+                        <div className="py-8 text-center text-sm text-faint">
                             {chaptersError ? <ErrorDetail error={chaptersError} /> : t('discover.noChapter')}
                         </div>
                     ) : (
@@ -94,7 +94,7 @@ export function ChaptersModal({
                     )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 p-3">
+                <div className="flex flex-wrap items-center gap-2 border-t border-line p-3">
                     <Button
                         small
                         onClick={() => onFollow(selected)}

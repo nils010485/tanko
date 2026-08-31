@@ -72,7 +72,7 @@ export function LibraryToolbar({
             title={label}
             aria-label={label}
             onClick={() => onViewChange(mode)}
-            className={`px-2.5 py-1.5 transition-colors first:rounded-l-lg last:rounded-r-lg ${view === mode ? 'bg-zinc-800 text-fg' : 'text-muted hover:bg-zinc-800/60'}`}
+            className={`rounded-lg px-2.5 py-1.5 transition-colors ${view === mode ? 'bg-card text-fg shadow' : 'text-muted hover:text-fg'}`}
         >
             {icon}
         </button>
@@ -81,7 +81,7 @@ export function LibraryToolbar({
     const prefRow = (key: keyof DisplayPrefs, label: string) => (
         <label className="flex cursor-pointer items-center justify-between py-1.5 text-sm">
             <span>{label}</span>
-            <input type="checkbox" checked={prefs[key]} onChange={event => onPrefChange(key, event.target.checked)} className="accent-orange-500" />
+            <input type="checkbox" checked={prefs[key]} onChange={event => onPrefChange(key, event.target.checked)} className="accent-accent" />
         </label>
     );
 
@@ -105,7 +105,7 @@ export function LibraryToolbar({
     };
 
     return (
-        <div className="rounded-xl border border-line bg-surface/60 p-3">
+        <div className="rounded-2xl border border-line bg-surface p-3">
             <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-40 flex-1">
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint">
@@ -115,13 +115,13 @@ export function LibraryToolbar({
                         value={filter}
                         onChange={event => onFilterChange(event.target.value)}
                         placeholder={t('library.filter')}
-                        className="w-full rounded-lg border border-line bg-canvas py-1.5 pl-8 pr-3 text-sm outline-none focus:border-accent"
+                        className="w-full rounded-xl border border-line bg-canvas py-2 pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-faint focus:border-accent/60"
                     />
                 </div>
                 <select
                     value={sort}
                     onChange={event => onSortChange(event.target.value as SortKey)}
-                    className="rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm outline-none focus:border-accent"
+                    className="rounded-xl border border-line bg-canvas px-2.5 py-2 text-sm outline-none transition-colors focus:border-accent/60"
                 >
                     <option value="recent">{t('library.sortRecent')}</option>
                     <option value="title">{t('library.sortTitle')}</option>
@@ -129,7 +129,7 @@ export function LibraryToolbar({
                     <option value="new">{t('library.sortNew')}</option>
                     <option value="gap">{t('library.sortGap')}</option>
                 </select>
-                <div className="flex rounded-lg border border-line">
+                <div className="flex items-center gap-0.5 rounded-xl border border-line bg-canvas p-1">
                     {viewButton('grid', <IconGrid size={14} />, t('library.viewGrid'))}
                     {viewButton('grid-compact', <IconGridSmall size={14} />, t('library.viewGridCompact'))}
                     {viewButton('list', <IconList size={14} />, t('library.viewList'))}
@@ -139,13 +139,13 @@ export function LibraryToolbar({
                         <IconSliders size={13} /> {t('library.display')}
                     </Button>
                     {prefsOpen && (
-                        <div className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-line bg-surface p-3 shadow-xl shadow-black/60">
-                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-faint">{t('library.displayVisible')}</div>
+                        <div className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-line bg-card p-3 shadow-xl shadow-black/60">
+                            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-faint">{t('library.displayVisible')}</div>
                             {prefRow('progress', t('library.showProgress'))}
                             {prefRow('date', t('library.showDate'))}
                             {prefRow('source', t('library.showSource'))}
                             {prefRow('missing', t('library.showMissing'))}
-                            <div className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-faint">{t('library.actionsGroup')}</div>
+                            <div className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-widest text-faint">{t('library.actionsGroup')}</div>
                             {prefRow('actions', t('library.showActions'))}
                         </div>
                     )}
@@ -157,11 +157,13 @@ export function LibraryToolbar({
                     type="button"
                     onClick={() => setFiltersOpen(current => !current)}
                     aria-expanded={filtersOpen}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-xs text-muted transition-colors hover:border-zinc-600 lg:hidden"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-canvas px-2.5 py-1 text-xs text-muted transition-colors hover:border-faint lg:hidden"
                 >
                     <IconChevronDown size={12} className={`flex-none transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
                     {t('library.filtersToggle')}
-                    {activeFilters.size > 0 && <span className="rounded-full bg-accent/10 px-1 text-[10px] text-accent-soft">{activeFilters.size}</span>}
+                    {activeFilters.size > 0 && (
+                        <span className="rounded-md bg-accent/10 px-1 text-[10px] font-semibold text-accent-soft">{activeFilters.size}</span>
+                    )}
                 </button>
                 {FILTER_IDS.map(id => {
                     const on = activeFilters.has(id);
@@ -171,14 +173,14 @@ export function LibraryToolbar({
                             key={id}
                             type="button"
                             onClick={() => onToggleFilter(id)}
-                            className={`items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                            className={`items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                                 on
                                     ? 'inline-flex border-accent/50 bg-accent/10 text-accent-soft'
-                                    : `border-line bg-canvas text-muted hover:border-zinc-600 ${filtersOpen ? 'inline-flex' : 'hidden lg:inline-flex'}`
+                                    : `border-line bg-canvas text-muted hover:border-faint hover:text-fg ${filtersOpen ? 'inline-flex' : 'hidden lg:inline-flex'}`
                             }`}
                         >
                             {filterLabel(id)}
-                            <span className={`rounded-full px-1 text-[10px] ${on ? 'text-accent-soft' : 'text-faint'}`}>{count}</span>
+                            <span className={`rounded-md px-1 text-[10px] font-semibold ${on ? 'text-accent-soft' : 'text-faint'}`}>{count}</span>
                         </button>
                     );
                 })}

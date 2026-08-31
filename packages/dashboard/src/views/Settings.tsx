@@ -234,9 +234,7 @@ export default function Settings() {
                             type="button"
                             onClick={() => setSection(item.id)}
                             className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                                section === item.id
-                                    ? 'border-accent text-accent-soft'
-                                    : 'border-transparent text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                                section === item.id ? 'border-accent text-accent-soft' : 'border-transparent text-muted hover:border-faint hover:text-fg'
                             }`}
                         >
                             {t(item.labelKey)}
@@ -248,7 +246,7 @@ export default function Settings() {
             <Card className="max-w-3xl">
                 <div className="border-b border-line px-5 py-4">
                     <h2 className="text-sm font-semibold">{t(active.labelKey)}</h2>
-                    <p className="mt-0.5 text-xs text-zinc-500">{t(active.descKey)}</p>
+                    <p className="mt-0.5 text-xs text-faint">{t(active.descKey)}</p>
                 </div>
 
                 <div className="divide-y divide-line px-5">
@@ -331,7 +329,7 @@ export default function Settings() {
 
                     {section === 'languages' && (
                         <div className="py-4">
-                            <p className="mb-3 text-xs text-zinc-500">{t('settings.languagesHint')}</p>
+                            <p className="mb-3 text-xs text-faint">{t('settings.languagesHint')}</p>
                             <div className="flex flex-wrap gap-2">
                                 {CONTENT_LANGUAGES.map(item => {
                                     const selected = languages.includes(item.code);
@@ -341,9 +339,7 @@ export default function Settings() {
                                             type="button"
                                             onClick={() => setLanguages(selected ? languages.filter(code => code !== item.code) : [...languages, item.code])}
                                             className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                                                selected
-                                                    ? 'border-accent bg-accent/10 text-accent-soft'
-                                                    : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500'
+                                                selected ? 'border-accent bg-accent/10 text-accent-soft' : 'border-line bg-line text-muted hover:border-faint'
                                             }`}
                                         >
                                             {t(item.key)}
@@ -373,10 +369,10 @@ export default function Settings() {
                                 <div>
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-2xl font-bold text-accent-soft">{disk !== null ? formatBytes(disk) : '…'}</span>
-                                        <span className="text-sm text-zinc-500">{t('settings.storageUsed')}</span>
+                                        <span className="text-sm text-faint">{t('settings.storageUsed')}</span>
                                     </div>
-                                    <div className="mt-1 text-xs text-zinc-500">
-                                        {t('settings.currentFolder')} <code className="break-all text-zinc-400">{settings.dataDirectory}</code>
+                                    <div className="mt-1 text-xs text-faint">
+                                        {t('settings.currentFolder')} <code className="break-all text-muted">{settings.dataDirectory}</code>
                                     </div>
                                 </div>
                                 <Button small variant="ghost" onClick={load}>
@@ -391,9 +387,9 @@ export default function Settings() {
                             <div>
                                 <div className="flex items-baseline gap-2">
                                     <span className="text-2xl font-bold text-accent-soft">{updateStatus ? updateStatus.activeCount : '…'}</span>
-                                    <span className="text-sm text-zinc-500">{t('settings.sourcesAvailable')}</span>
+                                    <span className="text-sm text-faint">{t('settings.sourcesAvailable')}</span>
                                 </div>
-                                <div className="mt-1 text-xs text-zinc-500">
+                                <div className="mt-1 text-xs text-faint">
                                     {t('settings.lastUpdate')}{' '}
                                     {updateStatus?.last
                                         ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}`
@@ -411,7 +407,7 @@ export default function Settings() {
 
             {dirty && (
                 <div className="sticky bottom-4 z-10 flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-line bg-surface/95 px-5 py-3 shadow-lg shadow-black/40 backdrop-blur">
-                    <span className="flex items-center gap-2 text-sm text-zinc-400">
+                    <span className="flex items-center gap-2 text-sm text-muted">
                         <span className="h-2 w-2 rounded-full bg-accent" />
                         {t('settings.unsavedChanges')}
                     </span>

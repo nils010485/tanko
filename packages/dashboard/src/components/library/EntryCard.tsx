@@ -73,11 +73,11 @@ interface EntryCardProps {
 function statusBadges(entry: LibraryEntryDto, t: ReturnType<typeof useI18n>['t']) {
     return (
         <>
-            {entry.newCount > 0 && <Badge tone="orange">+{entry.newCount}</Badge>}
+            {entry.newCount > 0 && <span className="rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-bold text-canvas shadow-lg">+{entry.newCount}</span>}
             {(entry.checkFailures ?? 0) > 0 && (
-                <Badge tone="red" solid>
+                <span className="rounded-md bg-red-500 px-1.5 py-0.5 text-[11px] font-bold text-white shadow-lg">
                     {t('library.failuresShort', { n: entry.checkFailures ?? 0 })}
-                </Badge>
+                </span>
             )}
         </>
     );
@@ -87,20 +87,20 @@ function statLine(entry: LibraryEntryDto, prefs: DisplayPrefs, t: ReturnType<typ
     return (
         <>
             {entry.chapterCount > 0 ? (
-                <span className="text-zinc-300">{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>
+                <span>{t('library.chaptersRatio', { downloaded: entry.downloadedCount, total: entry.chapterCount })}</span>
             ) : (
                 <span className="text-red-400">{t('library.noSourceBadge')}</span>
             )}
             {prefs.missing && (entry.missingCount ?? 0) > 0 && (
                 <>
-                    <span className="text-zinc-700">·</span>
+                    <span className="opacity-40">·</span>
                     <span className="text-accent-soft">{t('library.missingCount', { n: entry.missingCount ?? 0 })}</span>
                 </>
             )}
             {prefs.date && entry.lastCheckedAt && (
                 <>
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-faint">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>
+                    <span className="opacity-40">·</span>
+                    <span className="opacity-70">{t('library.seen', { date: formatDate(entry.lastCheckedAt) })}</span>
                 </>
             )}
         </>
@@ -149,7 +149,7 @@ function actionMenu(
                 onClick();
             }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors disabled:opacity-50 ${
-                danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-zinc-800'
+                danger ? 'text-red-400 hover:bg-red-500/10' : 'text-fg hover:bg-card'
             }`}
         >
             <span className="flex-none">{loading ? <Spinner size={13} /> : icon}</span>
@@ -162,7 +162,7 @@ function actionMenu(
                 <IconDots size={14} />
             </IconButton>
             {state.menuFor === entry.id && (
-                <div className="absolute bottom-8 right-0 z-30 w-48 rounded-xl border border-line bg-surface p-1.5 shadow-xl shadow-black/60">
+                <div className="absolute bottom-8 right-0 z-30 w-48 rounded-xl border border-line bg-card p-1.5 shadow-xl shadow-black/60">
                     {withChapters &&
                         item(<IconList size={14} />, state.expandedId === entry.id ? t('library.hide') : t('discover.chapters'), () =>
                             handlers.onToggleChapters(entry)
@@ -215,8 +215,8 @@ function secondaryActions(entry: LibraryEntryDto, state: EntryCardState, handler
 function migrationBanner(entry: LibraryEntryDto, handlers: EntryCardHandlers, t: ReturnType<typeof useI18n>['t'], className = '') {
     return (
         entry.migrationSuggestion && (
-            <div className={`flex flex-wrap items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs ${className}`}>
-                <span className="text-zinc-300">
+            <div className={`flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs ${className}`}>
+                <span className="text-fg">
                     {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
                     {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
                 </span>
@@ -234,15 +234,15 @@ function migrationBanner(entry: LibraryEntryDto, handlers: EntryCardHandlers, t:
 function chaptersPanel(entry: LibraryEntryDto, state: EntryCardState, handlers: EntryCardHandlers, t: ReturnType<typeof useI18n>['t'], className = '') {
     return (
         state.expandedId === entry.id && (
-            <div className={`max-h-56 space-y-1 overflow-y-auto rounded-lg bg-zinc-950/60 p-2 ${className}`}>
+            <div className={`max-h-56 space-y-1 overflow-y-auto rounded-xl bg-canvas/60 p-2 ${className}`}>
                 {state.chapters === null && (
-                    <div className="p-2 text-sm text-zinc-500">
+                    <div className="p-2 text-sm text-faint">
                         <Spinner />
                     </div>
                 )}
                 {state.chapters?.map(chapter => (
                     <div key={chapter.id} className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
-                        <span className="truncate text-zinc-300" title={chapter.path || ''}>
+                        <span className="truncate text-fg" title={chapter.path || ''}>
                             {chapter.title}
                         </span>
                         <span className="flex items-center gap-1.5">
@@ -251,7 +251,7 @@ function chaptersPanel(entry: LibraryEntryDto, state: EntryCardState, handlers: 
                                     type="button"
                                     title={chapter.status === 'failed' ? t('library.retryChapterHint') : t('library.downloadChapterHint')}
                                     onClick={() => handlers.onDownloadChapter(entry, chapter)}
-                                    className="text-zinc-500 transition-colors hover:text-accent-soft"
+                                    className="text-faint transition-colors hover:text-accent-soft"
                                 >
                                     <IconDownload size={13} />
                                 </button>
@@ -261,9 +261,9 @@ function chaptersPanel(entry: LibraryEntryDto, state: EntryCardState, handlers: 
                                     type="button"
                                     title={t('library.restoreFileHint')}
                                     onClick={() => handlers.onRollbackChapter(entry, chapter)}
-                                    className="text-zinc-500 transition-colors hover:text-orange-400"
+                                    className="text-faint transition-colors hover:text-accent-soft"
                                 >
-                                    ⟲
+                                    <IconUndo size={13} />
                                 </button>
                             )}
                             <ChapterStatusBadge chapter={chapter} />
@@ -275,68 +275,88 @@ function chaptersPanel(entry: LibraryEntryDto, state: EntryCardState, handlers: 
     );
 }
 
+/** Top-right cover button: selection toggle while selecting, follow toggle otherwise. */
+function coverCornerButton(entry: LibraryEntryDto, state: EntryCardState, handlers: EntryCardHandlers, t: ReturnType<typeof useI18n>['t']) {
+    const active = state.selecting ? state.selectedIds.has(entry.id) : entry.autoDownload;
+    const onClick = state.selecting ? () => handlers.onToggleSelect(entry.id) : () => handlers.onToggleFollow(entry, !entry.autoDownload);
+    const title = state.selecting ? entry.title : t(entry.autoDownload ? 'library.following' : 'library.manualDl');
+    let icon: React.ReactNode;
+    if (state.selecting) {
+        icon = state.selectedIds.has(entry.id) ? <IconCheck size={13} /> : <IconBookmark size={13} />;
+    } else {
+        icon = entry.autoDownload ? <IconBookmarkFilled size={13} /> : <IconBookmark size={13} />;
+    }
+    return (
+        <button
+            type="button"
+            title={title}
+            aria-label={title}
+            onClick={onClick}
+            className={`absolute right-2.5 top-2.5 rounded-lg border border-line bg-canvas/80 p-1.5 backdrop-blur transition-colors ${
+                active ? 'text-accent-soft' : 'text-muted hover:text-fg'
+            }`}
+        >
+            {icon}
+        </button>
+    );
+}
+
 export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: EntryCardProps) {
     const { t, formatDate } = useI18n();
+    const progress = progressOf(entry);
+    const tone = progressTone(entry);
     return (
         <article
             {...longPress(entry.id)}
-            className={`relative rounded-xl border bg-surface/60 transition-colors hover:border-zinc-600 ${state.selecting && state.selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
+            className={`group relative rounded-2xl border bg-surface transition-all duration-200 hover:-translate-y-1 hover:border-faint hover:shadow-xl hover:shadow-black/50 ${
+                state.selecting && state.selectedIds.has(entry.id) ? 'border-accent/60 ring-1 ring-accent/40' : 'border-line'
+            }`}
         >
-            <div className="relative aspect-[2/3] overflow-hidden rounded-t-xl">
+            <div className="relative aspect-[2/3] overflow-hidden rounded-t-2xl">
                 <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
-                {/* full-cover click target (pointer only): opens the series (or toggles selection); the title button stays the keyboard path */}
+                {/* full-cover click target (pointer + keyboard): opens the series (or toggles selection) */}
                 <button
                     type="button"
                     title={entry.title}
                     aria-label={entry.title}
                     onClick={() => (state.selecting ? handlers.onToggleSelect(entry.id) : handlers.onOpenSeries(entry.id))}
                     className="absolute inset-0"
-                    tabIndex={-1}
                 />
-                <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1">{statusBadges(entry, t)}</div>
-                {state.selecting ? (
-                    <button
-                        type="button"
-                        title={entry.title}
-                        aria-label={entry.title}
-                        onClick={() => handlers.onToggleSelect(entry.id)}
-                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${state.selectedIds.has(entry.id) ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    >
-                        {state.selectedIds.has(entry.id) ? <IconCheck size={13} /> : <IconBookmark size={13} />}
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        title={entry.autoDownload ? t('library.following') : t('library.manualDl')}
-                        onClick={() => handlers.onToggleFollow(entry, !entry.autoDownload)}
-                        className={`absolute right-2 top-2 rounded-md border border-line bg-zinc-900/80 p-1.5 transition-colors ${entry.autoDownload ? 'text-accent-soft' : 'text-zinc-500 hover:text-zinc-300'}`}
-                    >
-                        {entry.autoDownload ? <IconBookmarkFilled size={13} /> : <IconBookmark size={13} />}
-                    </button>
-                )}
+                <div className="pointer-events-none absolute left-2.5 top-2.5 flex flex-col items-start gap-1">{statusBadges(entry, t)}</div>
+                {coverCornerButton(entry, state, handlers, t)}
+                {/* scrim: title + stats overlaid on the cover */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent px-3.5 pb-3 pt-12">
+                    <div className="line-clamp-2 font-display text-[15px] font-bold leading-snug text-white">{entry.title}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-medium text-white/60">
+                        {statLine(entry, state.prefs, t, formatDate)}
+                        {entry.paused && (
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{t('library.paused')}</span>
+                        )}
+                    </div>
+                    {state.prefs.progress && (
+                        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/15">
+                            <div
+                                className={`h-full rounded-full transition-all duration-300 ${tone === 'green' ? 'bg-emerald-400' : 'bg-accent'}`}
+                                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
             <div className="space-y-1.5 p-3">
-                <button
-                    type="button"
-                    className="line-clamp-2 min-h-[2.5em] w-full text-left text-sm font-semibold leading-tight transition-colors hover:text-accent-soft"
-                    title={entry.title}
-                    onClick={() => (state.selecting ? handlers.onToggleSelect(entry.id) : handlers.onOpenSeries(entry.id))}
-                >
-                    {entry.title}
-                </button>
-                <div className="flex flex-wrap items-center gap-1">
-                    {state.prefs.source && (entry.sourceLabel ? <Badge>{entry.sourceLabel}</Badge> : <Badge tone="red">{t('library.noSourceBadge')}</Badge>)}
-                    {entry.paused && <Badge>{t('library.paused')}</Badge>}
+                <div className="flex items-center justify-between">
+                    {state.prefs.source &&
+                        (entry.sourceLabel ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-faint">{entry.sourceLabel}</span>
+                        ) : (
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-red-400">{t('library.noSourceBadge')}</span>
+                        ))}
+                    <div className="card-actions ml-auto flex items-center gap-1">
+                        {primaryActions(entry, state, handlers, t, state.view !== 'grid-compact')}
+                        {actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}
+                    </div>
                 </div>
-                <div className="flex min-h-[2.125rem] flex-wrap content-start items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4">
-                    {statLine(entry, state.prefs, t, formatDate)}
-                </div>
-                {state.prefs.progress && <ProgressBar value={progressOf(entry)} tone={progressTone(entry)} />}
                 {migrationBanner(entry, handlers, t)}
-                <div className="card-actions flex items-center justify-between pt-0.5">
-                    <div className="flex items-center gap-1">{primaryActions(entry, state, handlers, t, state.view !== 'grid-compact')}</div>
-                    {actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}
-                </div>
                 {chaptersPanel(entry, state, handlers, t)}
             </div>
         </article>
@@ -348,7 +368,9 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
     return (
         <article
             {...longPress(entry.id)}
-            className={`rounded-xl border bg-surface/60 p-2.5 transition-colors hover:border-zinc-600 ${state.selecting && state.selectedIds.has(entry.id) ? 'border-accent/60' : 'border-line'}`}
+            className={`rounded-2xl border bg-surface p-2.5 transition-colors hover:border-faint ${
+                state.selecting && state.selectedIds.has(entry.id) ? 'border-accent/60 ring-1 ring-accent/40' : 'border-line'
+            }`}
         >
             <div className="flex items-center gap-3">
                 {state.selecting && (
@@ -357,7 +379,7 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
                         checked={state.selectedIds.has(entry.id)}
                         onChange={() => handlers.onToggleSelect(entry.id)}
                         aria-label={entry.title}
-                        className="flex-none accent-orange-500"
+                        className="flex-none accent-accent"
                     />
                 )}
                 <button
@@ -368,13 +390,13 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
                     tabIndex={-1}
                     className="flex-none"
                 >
-                    <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 rounded-md" />
+                    <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 rounded-lg" />
                 </button>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <button
                             type="button"
-                            className="truncate text-sm font-semibold transition-colors hover:text-accent-soft"
+                            className="truncate font-display text-sm font-semibold tracking-tight transition-colors hover:text-accent-soft"
                             title={entry.title}
                             onClick={() => (state.selecting ? handlers.onToggleSelect(entry.id) : handlers.onOpenSeries(entry.id))}
                         >
@@ -383,15 +405,15 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
                         {statusBadges(entry, t)}
                         {entry.paused && <Badge>{t('library.paused')}</Badge>}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted">
                         {state.prefs.source && (
                             <>
                                 {entry.sourceLabel ? (
-                                    <span className="text-muted">{entry.sourceLabel}</span>
+                                    <span className="font-medium uppercase tracking-wide text-faint">{entry.sourceLabel}</span>
                                 ) : (
                                     <span className="text-red-400">{t('library.noSourceBadge')}</span>
                                 )}
-                                <span className="text-zinc-700">·</span>
+                                <span className="text-faint">·</span>
                             </>
                         )}
                         {statLine(entry, state.prefs, t, formatDate)}

@@ -22,7 +22,7 @@ const CRON_PRESETS: Array<{ value: string; key: Parameters<TFunction>[0] }> = [
 /** Accent section heading (checks / tools / notifications). */
 function SectionHeading({ icon, children }: { icon: ReactNode; children: ReactNode }) {
     return (
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-fg">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent-soft">{icon}</span>
             {children}
         </h2>
@@ -35,7 +35,7 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint?: s
         <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
                 <div className="text-sm font-medium">{label}</div>
-                {hint && <div className="text-xs text-zinc-500">{hint}</div>}
+                {hint && <div className="text-xs text-faint">{hint}</div>}
             </div>
             <Toggle checked={checked} onChange={onChange} />
         </div>
@@ -226,7 +226,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                     [t('schedule.result'), schedule?.lastRunResult || '—']
                 ].map(([label, value]) => (
                     <span key={label}>
-                        {label} <span className="font-medium text-zinc-200">{value}</span>
+                        {label} <span className="font-medium text-fg">{value}</span>
                     </span>
                 ))}
             </div>
@@ -253,7 +253,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                                             setCron(preset.value);
                                             save({ cron: preset.value });
                                         }}
-                                        className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${cron === preset.value ? 'border-orange-500 bg-orange-500/10 text-orange-400' : 'border-zinc-700 text-zinc-400 hover:bg-zinc-800'}`}
+                                        className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${cron === preset.value ? 'border-accent bg-accent/10 text-accent-soft' : 'border-line text-muted hover:bg-line'}`}
                                     >
                                         {t(preset.key)}
                                     </button>
@@ -291,15 +291,15 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                 <SectionHeading icon={<IconRefresh size={13} />}>{t('tasks.toolsSection')}</SectionHeading>
 
                 {/* featured: better-source scan */}
-                <Card className="space-y-4 border-accent/25 bg-gradient-to-b from-accent/[0.06] to-surface/60 p-4">
+                <Card className="space-y-4 border-accent/25 bg-gradient-to-b from-accent/5 to-transparent p-4">
                     <div>
                         <div className="text-sm font-medium">{t('tasks.betterSourcesTitle')}</div>
-                        <div className="mt-0.5 max-w-2xl text-xs text-zinc-500">{t('tasks.betterSourcesHint')}</div>
+                        <div className="mt-0.5 max-w-2xl text-xs text-faint">{t('tasks.betterSourcesHint')}</div>
                     </div>
 
                     <div className="flex flex-wrap items-end gap-3">
                         <label htmlFor="better-sources-threshold" className="block">
-                            <span className="mb-1 block text-xs font-medium text-zinc-400">{t('tasks.betterSourcesThreshold')}</span>
+                            <span className="mb-1 block text-xs font-medium text-muted">{t('tasks.betterSourcesThreshold')}</span>
                             <Input
                                 id="better-sources-threshold"
                                 type="number"
@@ -320,7 +320,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                     </div>
 
                     {showEligible && (
-                        <div className="overflow-hidden rounded-lg border border-line bg-zinc-950/60">
+                        <div className="overflow-hidden rounded-lg border border-line bg-canvas/60">
                             <table className="w-full text-left text-xs">
                                 <thead className="text-faint">
                                     <tr className="border-b border-line">
@@ -329,10 +329,10 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                                         <th className="px-3 py-2 text-right font-medium">{t('series.chaptersTitle')}</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-line/60 text-zinc-300">
+                                <tbody className="divide-y divide-line/60 text-fg">
                                     {eligible.map(entry => (
-                                        <tr key={entry.id} className="hover:bg-zinc-900/60">
-                                            <td className="px-3 py-1.5 font-medium text-zinc-200">{entry.title}</td>
+                                        <tr key={entry.id} className="hover:bg-card/60">
+                                            <td className="px-3 py-1.5 font-medium text-fg">{entry.title}</td>
                                             <td className="px-3 py-1.5 text-faint">{entry.sourceLabel}</td>
                                             <td className="px-3 py-1.5 text-right">
                                                 <Badge tone="zinc">{t('import.chapterShort', { n: entry.chapterCount })}</Badge>
@@ -349,7 +349,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                     <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
                             <div className="text-sm font-medium">{t('tasks.rematchFailedTitle')}</div>
-                            <div className="mt-0.5 text-xs text-zinc-500">{t('library.rematchFailedHint')}</div>
+                            <div className="mt-0.5 text-xs text-faint">{t('library.rematchFailedHint')}</div>
                         </div>
                         <div className="mt-auto flex justify-end">
                             <Button small variant="ghost" onClick={runRematchFailed} loading={rematchBusy} disabled={failingCount === 0}>
@@ -361,7 +361,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                     <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
                             <div className="text-sm font-medium">{t('tasks.downloadMissingTitle')}</div>
-                            <div className="mt-0.5 text-xs text-zinc-500">{t('tasks.downloadMissingHint')}</div>
+                            <div className="mt-0.5 text-xs text-faint">{t('tasks.downloadMissingHint')}</div>
                         </div>
                         <div className="mt-auto flex justify-end">
                             <Button small variant="ghost" onClick={() => setConfirmMissing(true)} loading={dlMissingBusy} disabled={pendingCount === 0}>
@@ -373,10 +373,10 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                     <Card className="flex h-full flex-col gap-3 p-4">
                         <div>
                             <div className="text-sm font-medium">{t('schedule.coversTitle')}</div>
-                            <div className="mt-0.5 text-xs text-zinc-500">{t('schedule.coversHint')}</div>
+                            <div className="mt-0.5 text-xs text-faint">{t('schedule.coversHint')}</div>
                         </div>
                         {covers && (
-                            <div className="flex items-center gap-2 text-xs text-zinc-400">
+                            <div className="flex items-center gap-2 text-xs text-muted">
                                 {covers.running ? (
                                     <>
                                         <Spinner size={12} /> {t('schedule.coversProgress', { done: covers.done, total: covers.total })}

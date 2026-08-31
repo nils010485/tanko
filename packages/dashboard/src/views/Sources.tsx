@@ -155,7 +155,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
             key={label}
             type="button"
             onClick={onClick}
-            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${active ? 'border-accent/40 bg-accent/10 font-medium text-accent-soft' : 'border-line text-muted hover:bg-zinc-800 hover:text-zinc-200'}`}
+            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${active ? 'border-accent/40 bg-accent/10 font-medium text-accent-soft' : 'border-line text-muted hover:bg-line hover:text-fg'}`}
         >
             {label}
         </button>
@@ -248,7 +248,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                                     return (
                                         <tr
                                             key={source.id}
-                                            className={`border-b border-line/60 last:border-0 hover:bg-zinc-800/40 ${source.hidden ? 'opacity-50' : ''}`}
+                                            className={`border-b border-line/60 last:border-0 hover:bg-line/40 ${source.hidden ? 'opacity-50' : ''}`}
                                         >
                                             <td className="max-w-64 px-3 py-2">
                                                 <div className="flex items-center gap-2">
@@ -262,7 +262,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                                                             target="_blank"
                                                             rel="noreferrer"
                                                             title={t('sources.openSite')}
-                                                            className="text-faint transition-colors hover:text-zinc-200"
+                                                            className="text-faint transition-colors hover:text-fg"
                                                         >
                                                             <IconGlobe size={13} />
                                                         </a>

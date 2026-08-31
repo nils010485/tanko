@@ -32,7 +32,7 @@ export function MangaResultCard({
                 <div className="truncate text-sm font-medium" title={manga.title}>
                     {manga.title}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-zinc-500">{sourceLabel}</div>
+                <div className="mt-0.5 truncate text-xs text-faint">{sourceLabel}</div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                     <Button small variant="ghost" onClick={() => onChapters(manga)}>
                         {t('discover.chapters')}

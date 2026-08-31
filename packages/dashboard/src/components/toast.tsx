@@ -60,7 +60,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     <div
                         key={toast.id}
                         role="status"
-                        className={`pointer-events-auto rounded-lg border bg-zinc-900/95 shadow-lg shadow-black/40 backdrop-blur ${TONES[toast.tone]}`}
+                        className={`pointer-events-auto rounded-lg border bg-card/95 shadow-lg shadow-black/40 backdrop-blur ${TONES[toast.tone]}`}
                     >
                         <button
                             type="button"

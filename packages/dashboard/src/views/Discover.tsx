@@ -329,7 +329,7 @@ export default function Discover({
                             target="_blank"
                             rel="noreferrer"
                             title={t('discover.githubHint')}
-                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-faint transition-colors hover:bg-surface hover:text-zinc-200"
+                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-faint transition-colors hover:bg-surface hover:text-fg"
                         >
                             <IconGitHub size={14} /> v{__APP_VERSION__}
                         </a>
@@ -373,7 +373,7 @@ export default function Discover({
                     />
 
                     <div className="relative min-w-56 flex-1">
-                        <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                        <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
                         <Input
                             className="w-full pl-9"
                             value={query}
@@ -384,12 +384,12 @@ export default function Discover({
                     </div>
 
                     {/* scope: this source vs everywhere — compact segmented control */}
-                    <div className="flex h-10 items-center rounded-lg border border-line bg-zinc-950/60 p-0.5 text-xs">
+                    <div className="flex h-10 items-center rounded-lg border border-line bg-canvas/60 p-0.5 text-xs">
                         <button
                             type="button"
                             onClick={() => setScope('source')}
                             title={t('discover.scopeSource')}
-                            className={`h-full rounded-md px-2.5 transition-colors ${scope === 'source' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`h-full rounded-md px-2.5 transition-colors ${scope === 'source' ? 'bg-line font-medium text-fg' : 'text-muted hover:text-fg'}`}
                         >
                             {t('discover.scopeSource')}
                         </button>
@@ -397,7 +397,7 @@ export default function Discover({
                             type="button"
                             onClick={() => setScope('global')}
                             title={t('discover.scopeGlobal')}
-                            className={`flex h-full items-center gap-1.5 rounded-md px-2.5 transition-colors ${scope === 'global' ? 'bg-zinc-800 font-medium text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`flex h-full items-center gap-1.5 rounded-md px-2.5 transition-colors ${scope === 'global' ? 'bg-line font-medium text-fg' : 'text-muted hover:text-fg'}`}
                         >
                             <IconGlobe size={13} /> {t('discover.scopeGlobalShort')}
                         </button>
@@ -409,21 +409,21 @@ export default function Discover({
                         onClick={runScopedSearch}
                         disabled={!query.trim() || (scope === 'source' && !sourceId) || searching || globalSearching}
                         title={t('discover.searchButton')}
-                        className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent text-zinc-950 transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent text-canvas transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         {searching || globalSearching ? <Spinner size={15} /> : <IconSearch size={16} />}
                     </button>
                 </div>
 
                 {currentSource && scope === 'source' && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-faint">
                         {healthDot(currentSource.health, t)}
                         <span>
                             {statusLabel(currentSource.health, t)}
                             {currentSource.health === 'ok' && currentSource.healthLatencyMs ? ` · ${currentSource.healthLatencyMs} ms` : ''}
                         </span>
                         {(currentSource.tags?.length ?? 0) > 0 && (
-                            <span className="ml-2 flex flex-wrap items-center gap-1.5 border-l border-zinc-600 pl-4">
+                            <span className="ml-2 flex flex-wrap items-center gap-1.5 border-l border-faint pl-4">
                                 {currentSource.tags.slice(0, 4).map((tag: string) => (
                                     <Badge key={tag}>{tag}</Badge>
                                 ))}

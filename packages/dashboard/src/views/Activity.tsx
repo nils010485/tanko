@@ -34,7 +34,7 @@ const SUGGESTION_CODES = new Set([
 
 /** Pulse counter card. */
 function Stat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'emerald' | 'orange' }) {
-    const colors = { default: 'text-zinc-100', emerald: 'text-emerald-400', orange: 'text-orange-400' };
+    const colors = { default: 'text-fg', emerald: 'text-emerald-400', orange: 'text-accent-soft' };
     return (
         <div className="rounded-xl border border-line bg-surface/60 px-4 py-3">
             <div className={`text-lg font-semibold ${colors[tone]}`}>{value}</div>
@@ -46,7 +46,7 @@ function Stat({ label, value, tone = 'default' }: { label: string; value: string
 /** Icon + label heading shared by the running/history job sections. */
 function JobsHeading({ children }: { children: string }) {
     return (
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-fg">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent-soft">
                 <IconRefresh size={13} />
             </span>
@@ -214,10 +214,10 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                 <section className="space-y-3">
                     <JobsHeading>{t('activity.jobs.title')}</JobsHeading>
                     {jobs.running.map(job => (
-                        <Card key={job.id} className="space-y-3 border-accent/25 bg-gradient-to-b from-accent/[0.06] to-surface/60 p-4">
+                        <Card key={job.id} className="space-y-3 border-accent/25 bg-gradient-to-b from-accent/5 to-transparent p-4">
                             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                                 <div className="font-medium">{jobLabel(job)}</div>
-                                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                                <div className="flex items-center gap-2 text-xs text-muted">
                                     <span>{t('activity.jobs.progress', { done: job.done, total: job.total, hits: job.hits })}</span>
                                     <Button small variant="ghost" onClick={() => cancelJob(job.id)}>
                                         {t('activity.jobs.cancel')}
@@ -237,7 +237,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                     <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface/60 text-xs">
                         {jobs.history.map(job => (
                             <li key={job.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                                <span className="min-w-0 truncate font-medium text-zinc-300">{jobLabel(job)}</span>
+                                <span className="min-w-0 truncate font-medium text-fg">{jobLabel(job)}</span>
                                 <span className="flex shrink-0 items-center gap-2 text-muted">
                                     {job.cancelled && <Badge tone="orange">{t('activity.jobs.cancelled')}</Badge>}
                                     <span>{t('activity.jobs.historyCounts', { done: job.done, total: job.total, hits: job.hits })}</span>
@@ -251,13 +251,13 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
 
             {/* filters */}
             <div className="flex flex-wrap items-center gap-2">
-                <div className="flex overflow-hidden rounded-lg border border-line bg-zinc-900 text-xs">
+                <div className="flex overflow-hidden rounded-lg border border-line bg-card text-xs">
                     {LEVELS.map(value => (
                         <button
                             key={value}
                             type="button"
                             onClick={() => setLevel(value)}
-                            className={`px-2.5 py-1.5 transition-colors ${level === value ? 'bg-accent/10 font-medium text-accent-soft' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`px-2.5 py-1.5 transition-colors ${level === value ? 'bg-accent/10 font-medium text-accent-soft' : 'text-muted hover:text-fg'}`}
                         >
                             {tt(`activity.level.${value}`)}
                         </button>
@@ -281,7 +281,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                                     return next;
                                 })
                             }
-                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${active ? 'border-accent-500 bg-accent/10 text-accent-soft' : 'border-zinc-700 text-zinc-400 hover:bg-zinc-800'}`}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${active ? 'border-accent/50 bg-accent/10 text-accent-soft' : 'border-line text-muted hover:bg-line'}`}
                         >
                             <Icon size={12} /> {tt(`activity.category.${category}`)}
                         </button>
@@ -297,7 +297,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                 <div className="overflow-hidden rounded-xl border border-line bg-surface/60">
                     {groups.map(([day, dayLogs]) => (
                         <div key={day}>
-                            <div className="border-b border-line bg-zinc-950/40 px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-faint">
+                            <div className="border-b border-line bg-canvas/40 px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-faint">
                                 {dayLabel(day)}
                             </div>
                             {dayLogs.map(log => {
@@ -307,18 +307,18 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                                 return (
                                     <div
                                         key={log.id}
-                                        className="flex items-start gap-3 border-b border-line/60 px-4 py-2.5 text-sm last:border-b-0 hover:bg-zinc-900/40"
+                                        className="flex items-start gap-3 border-b border-line/60 px-4 py-2.5 text-sm last:border-b-0 hover:bg-card/40"
                                     >
-                                        <span className="mt-0.5 flex-none text-zinc-500" title={tt(`activity.category.${log.category ?? 'system'}`)}>
+                                        <span className="mt-0.5 flex-none text-faint" title={tt(`activity.category.${log.category ?? 'system'}`)}>
                                             <Icon size={15} />
                                         </span>
-                                        <div className="min-w-0 flex-1 break-words text-zinc-300">
+                                        <div className="min-w-0 flex-1 break-words text-fg">
                                             {log.code ? tt(`activity.${log.code}`, log.params) : log.message}
                                             {entry && (
                                                 <button
                                                     type="button"
                                                     onClick={() => onOpenSeries(entry.id)}
-                                                    className="ml-1.5 rounded border border-line px-1.5 py-px text-[11px] text-zinc-400 transition-colors hover:border-accent/40 hover:text-accent-soft"
+                                                    className="ml-1.5 rounded border border-line px-1.5 py-px text-[11px] text-muted transition-colors hover:border-accent/40 hover:text-accent-soft"
                                                 >
                                                     {t('activity.openSeries')}
                                                 </button>
@@ -337,7 +337,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                                                         type="button"
                                                         disabled={busy === suggestion.id}
                                                         onClick={() => answerSuggestion(suggestion.id, false)}
-                                                        className="ml-1 rounded border border-line px-1.5 py-px text-[11px] text-zinc-400 disabled:opacity-40"
+                                                        className="ml-1 rounded border border-line px-1.5 py-px text-[11px] text-muted disabled:opacity-40"
                                                     >
                                                         {t('activity.suggestionDismiss')}
                                                     </button>
@@ -349,7 +349,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                                                 {tt(`activity.level.${log.level}`)}
                                             </Badge>
                                         </span>
-                                        <span className="flex-none text-xs text-zinc-600">{timeOf(log.at)}</span>
+                                        <span className="flex-none text-xs text-faint">{timeOf(log.at)}</span>
                                     </div>
                                 );
                             })}

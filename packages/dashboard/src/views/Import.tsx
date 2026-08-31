@@ -106,12 +106,12 @@ export default function Import({ onImported }: { onImported: () => void }) {
     return (
         <div className="space-y-4">
             <SectionTitle>{t('import.title')}</SectionTitle>
-            <p className="-mt-3 mb-4 text-sm text-zinc-500">{t('import.intro')}</p>
+            <p className="-mt-3 mb-4 text-sm text-faint">{t('import.intro')}</p>
 
             <Card className="space-y-4 p-4">
                 <div>
-                    <label htmlFor="import-folder" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-zinc-300">
-                        <IconFolder size={14} className="text-zinc-500" />
+                    <label htmlFor="import-folder" className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-fg">
+                        <IconFolder size={14} className="text-faint" />
                         {t('import.folderLabel')}
                     </label>
                     <Input id="import-folder" value={folderPath} onChange={setFolderPath} placeholder="/biblio" />
@@ -149,7 +149,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="min-w-0 text-sm">
                             <span className="font-medium">{t(phaseLabel[job.status])}</span>
-                            <span className="ml-2 break-all text-xs text-zinc-500">
+                            <span className="ml-2 break-all text-xs text-faint">
                                 {job.root} · job #{job.id}
                             </span>
                         </div>
@@ -219,7 +219,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0">
                                     <div className="truncate text-sm font-medium">{item.name}</div>
-                                    <div className="truncate text-xs text-zinc-500">{item.path}</div>
+                                    <div className="truncate text-xs text-faint">{item.path}</div>
                                 </div>
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <Badge>{t('import.chapterShort', { n: item.chapterCount })}</Badge>
@@ -242,8 +242,8 @@ export default function Import({ onImported }: { onImported: () => void }) {
                             {item.error && <div className="mt-2 text-xs text-red-400">{item.error}</div>}
 
                             {!item.mangaTitle && item.candidates.length > 0 && job && job.status !== 'syncing' && (
-                                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-sm">
-                                    <span className="text-xs text-zinc-500">{t('import.chooseManually')}</span>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-line/40 px-3 py-2 text-sm">
+                                    <span className="text-xs text-faint">{t('import.chooseManually')}</span>
                                     <select
                                         className="min-w-0 max-w-full rounded-md border border-line bg-surface px-2 py-1 text-xs outline-none"
                                         value=""
@@ -263,7 +263,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                             {item.mangaTitle && (
                                 <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-emerald-500/5 px-3 py-2 text-sm">
                                     <IconCheck size={14} className="text-emerald-400" />
-                                    <span className="min-w-0 break-words text-zinc-300">{item.mangaTitle}</span>
+                                    <span className="min-w-0 break-words text-fg">{item.mangaTitle}</span>
                                     <Badge tone="zinc">{item.sourceLabel}</Badge>
                                     {item.score !== undefined && <Badge tone="zinc">{Math.round(item.score * 100)}%</Badge>}
                                     {item.candidates.length > 1 && job && job.status !== 'syncing' && item.status !== 'synced' && (

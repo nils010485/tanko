@@ -41,9 +41,9 @@ export function RemoveEntryDialog({
                     <button
                         type="button"
                         onClick={onHide}
-                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900"
+                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-canvas/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-card"
                     >
-                        <span className="mt-0.5 text-zinc-400">
+                        <span className="mt-0.5 text-muted">
                             <IconEyeOff size={16} />
                         </span>
                         <span>
@@ -99,9 +99,9 @@ export function BulkRemoveDialog({ count, onDelete, onClose }: { count: number; 
                     <button
                         type="button"
                         onClick={() => onDelete(false)}
-                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-zinc-950/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-zinc-900"
+                        className="flex w-full items-start gap-3 rounded-lg border border-line bg-canvas/60 p-3 text-left transition-colors hover:border-accent/40 hover:bg-card"
                     >
-                        <span className="mt-0.5 text-zinc-400">
+                        <span className="mt-0.5 text-muted">
                             <IconLibrary size={16} />
                         </span>
                         <span>
