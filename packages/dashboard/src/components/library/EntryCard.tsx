@@ -9,7 +9,7 @@ import type React from 'react';
 import { useI18n } from '../../i18n/index.js';
 import { chapterDownloadable } from '../../lib/chapters.js';
 import type { DisplayPrefs, ViewMode } from '../../lib/library-filters.js';
-import { missingCount, progressOf, progressTone } from '../../lib/library-filters.js';
+import { progressOf, progressTone } from '../../lib/library-filters.js';
 import { ChapterStatusBadge } from '../ChapterList.js';
 import { Cover } from '../Cover.js';
 import {
@@ -91,10 +91,10 @@ function statLine(entry: LibraryEntryDto, prefs: DisplayPrefs, t: ReturnType<typ
             ) : (
                 <span className="text-red-400">{t('library.noSourceBadge')}</span>
             )}
-            {prefs.missing && missingCount(entry) > 0 && (
+            {prefs.missing && (entry.missingCount ?? 0) > 0 && (
                 <>
                     <span className="text-zinc-700">·</span>
-                    <span className="text-accent-soft">{t('library.missingCount', { n: missingCount(entry) })}</span>
+                    <span className="text-accent-soft">{t('library.missingCount', { n: entry.missingCount ?? 0 })}</span>
                 </>
             )}
             {prefs.date && entry.lastCheckedAt && (

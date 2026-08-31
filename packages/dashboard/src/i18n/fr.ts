@@ -235,7 +235,7 @@ export const fr: typeof import('./en.js').en = {
     'library.showActions': 'Toujours visibles',
     'library.actionsGroup': 'Actions',
     'library.filterNew': 'Nouveaux chapitres',
-    'library.filterMissing': 'Chapitres manquants',
+    'library.filterMissing': 'Incomplètes',
     'library.filterGap': 'Écart ≥ {n}',
     'library.filterFailing': 'Sources en échec',
     'library.filterStale': 'Non vérifié > {n} j',

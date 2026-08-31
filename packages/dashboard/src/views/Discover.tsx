@@ -40,6 +40,7 @@ export default function Discover({
     const [sourceId, setSourceId] = useState('');
     const [scope, setScope] = useState<'source' | 'global'>('source');
     const [rechecking, setRechecking] = useState(false);
+    const [hidingBroken, setHidingBroken] = useState(false);
 
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<MangaDto[] | null>(null);
@@ -133,8 +134,15 @@ export default function Discover({
     const brokenCount = sources.filter(source => source.health === 'error' && !source.hidden).length;
 
     const hideBroken = async () => {
-        await api.hideBroken();
-        await refreshSources();
+        setHidingBroken(true);
+        try {
+            await api.hideBroken();
+            await refreshSources();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setHidingBroken(false);
+        }
     };
 
     const recheckAll = async () => {
@@ -332,7 +340,7 @@ export default function Discover({
                         >
                             <IconGitHub size={14} /> v{__APP_VERSION__}
                         </a>
-                        <Button variant="ghost" small onClick={hideBroken} title={t('discover.hideBrokenHint')}>
+                        <Button variant="ghost" small onClick={hideBroken} loading={hidingBroken} title={t('discover.hideBrokenHint')}>
                             <IconEyeOff size={14} /> {t('discover.hideBroken')} {brokenCount > 0 && `(${brokenCount})`}
                         </Button>
                         <Button variant="ghost" small onClick={recheckAll} loading={rechecking} title={t('discover.recheckAllHint')}>

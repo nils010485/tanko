@@ -75,6 +75,10 @@ export function useLibraryActions({
                 result.newChapters > 0 ? t('library.newChapters', { n: result.newChapters, title: entry.title }) : t('library.upToDate', { title: entry.title })
             );
             await refreshLibrary();
+            // keep an open chapters panel in step with the new statuses
+            if (expanded === entry.id) {
+                setChapters(await api.entryChapters(entry.id));
+            }
         } catch (error) {
             toast.error((error as Error).message);
         } finally {
@@ -87,6 +91,10 @@ export function useLibraryActions({
         try {
             await api.downloadNew(entry.id);
             await refreshLibrary();
+            // keep an open chapters panel in step with the new statuses
+            if (expanded === entry.id) {
+                setChapters(await api.entryChapters(entry.id));
+            }
         } catch (error) {
             toast.error((error as Error).message);
         } finally {

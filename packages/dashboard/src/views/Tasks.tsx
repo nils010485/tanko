@@ -124,7 +124,11 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
         setRunning(true);
         try {
             const result = await api.runSchedule();
-            toast.success(t('schedule.runDone', { checked: result.checked, new: result.newChapters }));
+            if (result.alreadyRunning) {
+                toast.info(t('tasks.bulkAlreadyRunning'));
+            } else {
+                toast.success(t('schedule.runDone', { checked: result.checked, new: result.newChapters }));
+            }
         } catch (error) {
             toast.error((error as Error).message);
         } finally {

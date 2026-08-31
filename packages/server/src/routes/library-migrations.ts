@@ -150,6 +150,11 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         if (target.sourceId === entry.sourceId && target.mangaId === entry.mangaId) {
             return reply.code(400).send({ error: 'Entry already on this source' });
         }
+        // same guard as /rematch/confirm: migrating under running downloads would
+        // orphan their files and double-queue the requeued chapters
+        if (queue.hasPendingJobs(entry.id)) {
+            return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+        }
         try {
             const result = await store.migrateEntry(entry.id, {
                 sourceId: target.sourceId,

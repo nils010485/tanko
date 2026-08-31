@@ -91,6 +91,14 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
         return () => clearInterval(timer);
     }, [load]);
 
+    // total shrinking (dismiss, cleanup, retention) can leave the page beyond the last one — resync
+    useEffect(() => {
+        const last = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+        if (page > last) {
+            setPage(last);
+        }
+    }, [total, page]);
+
     useEffect(() => {
         const loadStatus = () =>
             api

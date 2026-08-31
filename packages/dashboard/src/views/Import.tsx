@@ -18,7 +18,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
     const [autoDownload, setAutoDownload] = useState(false);
     const [state, setState] = useState<ImportJobStatus | null>(null);
     const [error, setError] = useState('');
-    const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState<string | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const refresh = useCallback(async () => {
@@ -43,25 +43,29 @@ export default function Import({ onImported }: { onImported: () => void }) {
     const active = job ? ACTIVE_STATUSES.has(job.status) : false;
     const confirmedCount = counters?.confirmed || 0;
 
-    const run = (action: () => Promise<unknown>) => async () => {
-        setBusy(true);
-        setError('');
-        try {
-            await action();
-            await refresh();
-        } catch (cause) {
-            setError((cause as Error).message);
-        } finally {
-            setBusy(false);
-        }
-    };
+    const run =
+        (action: () => Promise<unknown>, tag = 'action') =>
+        async () => {
+            setBusy(tag);
+            setError('');
+            try {
+                await action();
+                await refresh();
+            } catch (cause) {
+                setError((cause as Error).message);
+            } finally {
+                setBusy(null);
+            }
+        };
 
-    const start = run(() =>
-        api.importJobStart({
-            path: folderPath.trim(),
-            autoConfirm,
-            autoDownload
-        })
+    const start = run(
+        () =>
+            api.importJobStart({
+                path: folderPath.trim(),
+                autoConfirm,
+                autoDownload
+            }),
+        'start'
     );
     // every job action is a no-op when there is no job (buttons are hidden then)
     const runJobAction = (action: (jobId: number) => Promise<unknown>) =>
@@ -132,7 +136,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3.5">
                     <p className="min-w-0 flex-1 text-xs text-faint sm:flex-none sm:max-w-md">{t('import.startHint')}</p>
-                    <Button onClick={start} disabled={!folderPath.trim() || active} loading={busy && active}>
+                    <Button onClick={start} disabled={!folderPath.trim() || active || busy !== null} loading={busy === 'start'}>
                         <IconPlay size={13} /> {t('import.start')}
                     </Button>
                 </div>
@@ -154,7 +158,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                                 <IconX size={13} /> {t('import.interrupt')}
                             </Button>
                         )}
-                        {(job.status === 'ready' || job.status === 'error') && !busy && (
+                        {(job.status === 'ready' || job.status === 'error') && busy === null && (
                             <Button small variant="ghost" onClick={resume}>
                                 <IconRefresh size={13} /> {t('import.resume')}
                             </Button>
@@ -191,16 +195,16 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     {job.status === 'ready' && (
                         <div className="mt-3 flex flex-wrap gap-2">
                             {counters && counters.auto > counters.confirmed && (
-                                <Button small variant="ghost" onClick={confirmAuto} loading={busy}>
+                                <Button small variant="ghost" onClick={confirmAuto} loading={busy !== null}>
                                     <IconCheck size={13} /> {t('import.confirmConfident')}
                                 </Button>
                             )}
                             {counters && counters.review > 0 && (
-                                <Button small variant="ghost" onClick={confirmAll} loading={busy}>
+                                <Button small variant="ghost" onClick={confirmAll} loading={busy !== null}>
                                     <IconCheck size={13} /> {t('import.confirmAll')}
                                 </Button>
                             )}
-                            <Button small onClick={sync} disabled={confirmedCount === 0} loading={busy}>
+                            <Button small onClick={sync} disabled={confirmedCount === 0} loading={busy !== null}>
                                 <IconImport size={13} /> {t('import.sync', { n: confirmedCount })}
                             </Button>
                         </div>

@@ -234,7 +234,7 @@ export const en = {
     'library.showActions': 'Always visible',
     'library.actionsGroup': 'Actions',
     'library.filterNew': 'New chapters',
-    'library.filterMissing': 'Missing chapters',
+    'library.filterMissing': 'Incomplete',
     'library.filterGap': 'Gap ≥ {n}',
     'library.filterFailing': 'Failing sources',
     'library.filterStale': 'Not checked in {n}d',

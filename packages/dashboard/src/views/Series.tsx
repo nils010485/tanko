@@ -15,11 +15,14 @@ import {
     IconEye,
     IconGlobe,
     IconLibrary,
+    IconPause,
+    IconPlay,
     IconRefresh,
     IconSearch,
     IconUndo,
     IconX
 } from '../components/icons.js';
+
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
@@ -309,6 +312,16 @@ export default function Series({
         }
     };
 
+    const togglePaused = async () => {
+        try {
+            await api.setPaused(entryId, !entry?.paused);
+            toast.success(t(entry?.paused ? 'library.resumedToast' : 'library.pausedToast', { title: entry?.title ?? '' }));
+            await refreshLibrary();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
     const downloadChapter = async (chapter: LibraryChapterDto) => {
         if (!entry) return;
         try {
@@ -458,6 +471,10 @@ export default function Series({
                         >
                             <IconDownload size={13} /> {t('series.downloadMissing')}
                             {pendingCount > 0 ? ` (${pendingCount})` : ''}
+                        </Button>
+                        <Button small variant="ghost" onClick={togglePaused} title={entry.paused ? t('library.resumeFollow') : t('library.pauseFollow')}>
+                            {entry.paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+                            {entry.paused ? t('library.resumeFollow') : t('library.pauseFollow')}
                         </Button>
                         {/* gestion de la source */}
                         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
