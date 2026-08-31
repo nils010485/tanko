@@ -35,8 +35,9 @@ COPY packages/dashboard/package.json packages/dashboard/
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # headless Chromium for the optional anti-bot browser backend (fetchUI fallback),
-# and git for the connectors updater (POST /api/sources/update).
-RUN apt-get update && apt-get install -y chromium git \
+# and git for the connectors updater (POST /api/sources/update). Xvfb lets
+# puppeteer-real-browser run headful (needed by its Turnstile solver).
+RUN apt-get update && apt-get install -y chromium git xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # compiled packages

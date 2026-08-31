@@ -40,21 +40,35 @@ async function launch(): Promise<Browser> {
     if (!executablePath) {
         throw new Error('No Chromium binary found');
     }
+    const args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-blink-features=AutomationControlled'
+    ];
+    // Preferred backend: puppeteer-real-browser (patchright-like stealth) which
+    // auto-solves Cloudflare Turnstile challenges; it spawns its own Xvfb on
+    // Linux when available (apt install xvfb / see Dockerfile). Optional
+    // dependency -> fall back to plain puppeteer-core headless when absent.
+    try {
+        const { connect } = await import('puppeteer-real-browser');
+        const { browser } = await connect({
+            // 'auto' = headful under Xvfb when available (needed by the
+            // Turnstile solver); typings only allow boolean
+            headless: 'auto',
+            customConfig: { chromePath: executablePath, chromeFlags: args },
+            turnstile: true
+        } as unknown as Parameters<typeof connect>[0]);
+        return browser as unknown as Browser;
+    } catch {
+        // not installed (npm i --omit=optional) or launch failed
+    }
     // dynamic import so the dependency is only loaded when actually used
     const { default: puppeteer } = await import('puppeteer-core');
-    return puppeteer.launch({
-        executablePath,
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-blink-features=AutomationControlled'
-        ]
-    });
+    return puppeteer.launch({ executablePath, headless: true, args });
 }
 
 function getBrowser(): Promise<Browser> {
