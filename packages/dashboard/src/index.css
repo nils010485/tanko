@@ -8,13 +8,12 @@
     --color-accent-soft: #ff8a66;
     --color-accent-deep: #e04e1f;
     --color-canvas: #141210;
-    --color-faint: #8a8178;
+    --color-surface: #1c1917;
     --color-card: #221f1c;
     --color-line: #2e2a26;
     --color-fg: #f5f1ec;
     --color-muted: #a8a29e;
-    --color-faint: #78716c;
-
+    --color-faint: #8a8178;
     --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-display: 'Inter Tight Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 }
