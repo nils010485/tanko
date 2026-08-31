@@ -371,6 +371,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         healthService.stop();
         await app.close();
         database.close();
+        // solved-session pages + Chromium: teardown is ours, not puppeteer's
+        const { closeBrowser } = await import('@tanko/core');
+        await closeBrowser().catch(() => undefined);
         process.exit(0);
     });
 }

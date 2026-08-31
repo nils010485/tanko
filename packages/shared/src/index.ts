@@ -16,6 +16,8 @@ export interface SourceDto {
     health?: 'ok' | 'error' | 'checking' | 'untested';
     healthLatencyMs?: number;
     healthCheckedAt?: string;
+    /** How the last health check reached the site (anti-bot sources: browser). */
+    healthVia?: 'http' | 'browser';
     /** Manually hidden (broken) until the next full health re-check. */
     hidden?: boolean;
 }
@@ -25,6 +27,7 @@ export interface SourceHealthDto {
     latencyMs?: number;
     error?: string;
     checkedAt?: string;
+    via?: 'http' | 'browser';
 }
 
 /** Last completed connectors sync from upstream Hakuneko. */

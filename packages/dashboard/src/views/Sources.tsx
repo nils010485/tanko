@@ -199,11 +199,13 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                         <Input value={query} onChange={setQuery} placeholder={t('sources.search')} className="pl-8" />
                     </div>
                     <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium uppercase tracking-wide text-faint">{t('sources.filterKindLabel')}</span>
                         {chip(kind === 'all', t('sources.filterAll'), () => setKind('all'))}
                         {chip(kind === 'native', t('sources.filterNative'), () => setKind('native'))}
                         {chip(kind === 'legacy', t('sources.filterLegacy'), () => setKind('legacy'))}
                     </div>
                     <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium uppercase tracking-wide text-faint">{t('sources.filterHealthLabel')}</span>
                         {chip(health === 'all', t('sources.filterAll'), () => setHealth('all'))}
                         {chip(health === 'ok', t('sources.filterOk'), () => setHealth('ok'))}
                         {chip(health === 'error', t('sources.filterError'), () => setHealth('error'))}
@@ -282,6 +284,11 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-2">
                                                 <span className={statusTextClass(source.health)}>{statusLabel(source.health, t)}</span>
+                                                {source.health === 'ok' && source.healthVia === 'browser' && (
+                                                    <span title={t('sources.viaBrowserHint')}>
+                                                        <Badge tone="orange">{t('sources.viaBrowser')}</Badge>
+                                                    </span>
+                                                )}
                                                 {source.healthLatencyMs !== undefined && source.health === 'ok' && (
                                                     <span className="ml-1.5 text-xs text-faint">{t('sources.latencyMs', { n: source.healthLatencyMs })}</span>
                                                 )}

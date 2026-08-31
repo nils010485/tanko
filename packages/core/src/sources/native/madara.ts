@@ -9,13 +9,45 @@
  *  - pages  : `img.wp-manga-chapter-img` on the chapter page
  */
 
-import { isAntiBotShell } from '../../shims/browser.js';
+import { browserEnabled, isAntiBotShell } from '../../shims/browser.js';
+import { BROWSER_SESSION_MS, type BrowserResponse, browserFetch, browserFetchBinary } from '../../shims/browser-session.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
 const UA = randomUserAgent();
+
+/** What _request callers actually consume of a Response (fetch or browser). */
+interface MinimalResponse {
+    status: number;
+    ok: boolean;
+    headers: Headers;
+    text(): Promise<string>;
+}
+
+/** Strip browser-forbidden headers (User-Agent, Referer): in-page fetch sends
+ *  the browser's real UA and the page URL as Referer — exactly what the
+ *  anti-bot expects — and overriding them would throw. */
+function toPlainInit(init: RequestInit): { method?: string; headers?: Record<string, string>; body?: string } {
+    const headers: Record<string, string> = {};
+    const skip = new Set(['user-agent', 'referer']);
+    new Headers(init.headers as HeadersInit | undefined).forEach((value, name) => {
+        if (!skip.has(name.toLowerCase())) {
+            headers[name] = value;
+        }
+    });
+    return { method: init.method, headers, body: typeof init.body === 'string' ? init.body : undefined };
+}
+
+function wrapBrowserResponse(response: BrowserResponse): MinimalResponse {
+    return {
+        status: response.status,
+        ok: response.ok,
+        headers: new Headers(response.headers),
+        text: () => Promise.resolve(response.body)
+    };
+}
 
 /** Madara ajax search/ajax-chapter item (wp-manga-search-manga, manga_get_chapters). */
 interface MadaraAjaxItem {
@@ -69,6 +101,9 @@ export class MadaraConnector implements SourceAdapter {
     private readonly _chapterAnchorSelector: string | null;
     private readonly _pageSelectors: string[];
     private readonly _chapterApiPath?: string;
+    /** Sticky browser-mode deadline: 0 = raw HTTP; set when a challenge was
+     *  proven, so later requests skip the doomed raw attempt. */
+    private _browserUntil = 0;
 
     constructor(options: MadaraOptions) {
         this.id = options.id;
@@ -102,7 +137,10 @@ export class MadaraConnector implements SourceAdapter {
         try {
             const body = new URLSearchParams({ action: 'wp-manga-search-manga', title: query });
             const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
-            const json = (await response.json().catch(() => null)) as { success?: boolean; data?: MadaraAjaxItem[] | Array<{ message?: string }> } | null;
+            const json = (await response
+                .text()
+                .then(JSON.parse)
+                .catch(() => null)) as { success?: boolean; data?: MadaraAjaxItem[] | Array<{ message?: string }> } | null;
             if (json !== null && typeof json === 'object') {
                 // the endpoint answered: success:false with a message row, or an
                 // empty data array, both mean "no hit" -> not an error
@@ -296,7 +334,11 @@ export class MadaraConnector implements SourceAdapter {
             .replace(/&amp;/g, '&');
     }
 
-    private async _request(url: string, init: RequestInit, attempt = 0): Promise<Response> {
+    private async _request(url: string, init: RequestInit, attempt = 0): Promise<MinimalResponse> {
+        // sticky browser mode: a previously proven challenge skips the doomed raw attempt
+        if (Date.now() < this._browserUntil) {
+            return this._browserRequest(url, init);
+        }
         let response: Response;
         try {
             response = await fetch(url, {
@@ -312,6 +354,13 @@ export class MadaraConnector implements SourceAdapter {
             }
             throw new SourceError(`${init.method || 'GET'} ${url} failed after retries`, this.id, error);
         }
+        if ((response.status === 403 || response.status === 503) && isAntiBotShell(await response.text().catch(() => ''), response.status)) {
+            // proven anti-bot challenge -> escalate to the solved browser session
+            if (!browserEnabled()) {
+                throw new SourceError(`anti-bot: ${this.base} requires a browser (Cloudflare); no Chromium available`, this.id);
+            }
+            return this._browserRequest(url, init);
+        }
         // protection/rate-limit responses -> transient, honor Retry-After
         if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempt < 2) {
             await new Promise(resolve => setTimeout(resolve, retryAfterMs(response) ?? 2500 * (attempt + 1)));
@@ -322,6 +371,26 @@ export class MadaraConnector implements SourceAdapter {
             throw new SourceError(`${init.method || 'GET'} ${url} returned ${response.status}`, this.id);
         }
         return response;
+    }
+
+    /** Same request through the solved browser session (in-page fetch:
+     *  cf_clearance cookies + Chrome's real TLS fingerprint, POST included). */
+    private async _browserRequest(url: string, init: RequestInit): Promise<MinimalResponse> {
+        const response = await browserFetch(this.base, url, toPlainInit(init)).catch((error: unknown) => {
+            const message = errorMessage(error);
+            // keep the classifiable 'anti-bot:' wording from the session layer
+            throw new SourceError(
+                message.startsWith('anti-bot') ? message : `${init.method || 'GET'} ${url} failed in browser session: ${message}`,
+                this.id,
+                error
+            );
+        });
+        if (!response.ok) {
+            throw new SourceError(`${init.method || 'GET'} ${url} returned ${response.status} (via browser)`, this.id);
+        }
+        // sticky browser mode only once the browser path proved itself
+        this._browserUntil = Date.now() + BROWSER_SESSION_MS;
+        return wrapBrowserResponse(response);
     }
 
     private async _getText(url: string): Promise<string> {
@@ -340,10 +409,13 @@ export class MadaraConnector implements SourceAdapter {
         const response = await this._request(url, {
             headers: { 'User-Agent': UA, Accept: 'application/json', Referer: `${this.base}/` }
         });
-        return response.json().catch(() => null);
+        return response
+            .text()
+            .then(JSON.parse)
+            .catch(() => null);
     }
 
-    private _post(url: string, body: URLSearchParams): Promise<Response> {
+    private _post(url: string, body: URLSearchParams): Promise<MinimalResponse> {
         return this._request(url, {
             method: 'POST',
             headers: this._ajaxHeaders,
@@ -351,25 +423,74 @@ export class MadaraConnector implements SourceAdapter {
         });
     }
 
+    /** Page image through the source's own transport: hosts protected like the
+     *  site itself block plain HTTP image GETs too (undici TLS fingerprint). */
+    async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
+        const origin = new URL(url).origin;
+        // only the site's own host shares the solved session: a foreign image
+        // CDN would trigger a pointless 30s solve of a challenge it hasn't got
+        if (Date.now() >= this._browserUntil || origin !== this.base) {
+            throw new Error('not in browser mode'); // caller falls back to raw fetch
+        }
+        const response = await browserFetchBinary(origin, url);
+        if (response.status !== 200) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return { mime: response.mime, data: response.data };
+    }
+
     async checkHealth(): Promise<HealthResult> {
         const startedAt = Date.now();
-        // probe the real search ajax (raw fetch, no retry: health must fail fast)
-        const body = new URLSearchParams({ action: 'wp-manga-search-manga', title: 'a' });
-        const response = await fetch(`${this.base}/wp-admin/admin-ajax.php`, {
+        // 1) fail-fast raw probes: the search ajax, then the search page
+        const { result: raw, antibot } = await this._probeRaw(startedAt);
+        if (raw.ok) {
+            this._browserUntil = 0; // the site answers plain HTTP again
+            return { ...raw, via: 'http' };
+        }
+        if (!antibot) {
+            return raw; // dead/5xx/timeout: report as-is
+        }
+        // 2) proven anti-bot challenge -> escalate through the browser
+        if (!browserEnabled()) {
+            return { ...raw, error: 'anti-bot: Cloudflare challenge; no browser backend (needs Chromium + Xvfb — the Docker image has both)' };
+        }
+        try {
+            const response = await browserFetch(this.base, `${this.base}/?s=a&post_type=wp-manga`);
+            const ok = response.ok && !isAntiBotShell(response.body, response.status);
+            if (ok) {
+                // warm the sticky browser mode for real traffic
+                this._browserUntil = Date.now() + BROWSER_SESSION_MS;
+            }
+            return {
+                ok,
+                latencyMs: Date.now() - startedAt,
+                via: ok ? 'browser' : undefined,
+                error: ok ? undefined : 'anti-bot: Cloudflare challenge not solved (browser present but blocked)'
+            };
+        } catch (error) {
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
+        }
+    }
+
+    /** Raw fail-fast probes (no browser): the search ajax, then the server-rendered
+     *  search page (NoAjax Madara sites disable admin-ajax). */
+    private async _probeRaw(startedAt: number): Promise<{ result: HealthResult; antibot: boolean }> {
+        const ajax = await fetch(`${this.base}/wp-admin/admin-ajax.php`, {
             method: 'POST',
             headers: this._ajaxHeaders,
-            body: body.toString(),
+            body: new URLSearchParams({ action: 'wp-manga-search-manga', title: 'a' }).toString(),
             redirect: 'follow',
             signal: AbortSignal.timeout(20000)
         }).catch(() => undefined);
-        if (response?.ok) {
-            const json: unknown = await response.json().catch(() => null);
+        if (ajax?.ok) {
+            const json: unknown = await ajax.json().catch(() => null);
             if (json !== null && typeof json === 'object') {
-                return { ok: true, latencyMs: Date.now() - startedAt };
+                return { result: { ok: true, latencyMs: Date.now() - startedAt }, antibot: false };
             }
             // 200 with a non-JSON body (old-WP "0"): fall through to the page probe
+        } else if (ajax && (ajax.status === 403 || ajax.status === 503) && isAntiBotShell(await ajax.text().catch(() => ''), ajax.status)) {
+            return { result: { ok: false, latencyMs: Date.now() - startedAt, error: `HTTP ${ajax.status}` }, antibot: true };
         }
-        // NoAjax Madara sites disable admin-ajax -> the search page is the probe
         try {
             const page = await fetch(`${this.base}/?s=a&post_type=wp-manga`, {
                 headers: { 'User-Agent': UA, Referer: `${this.base}/` },
@@ -378,10 +499,11 @@ export class MadaraConnector implements SourceAdapter {
             });
             const html = await page.text().catch(() => '');
             // a WAF challenge served with HTTP 200 must not count as healthy
-            const ok = page.ok && !isAntiBotShell(html);
-            return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : `HTTP ${page.status}` };
+            const antibot = isAntiBotShell(html, page.status);
+            const ok = page.ok && !antibot;
+            return { result: { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : `HTTP ${page.status}` }, antibot };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
+            return { result: { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) }, antibot: false };
         }
     }
 }

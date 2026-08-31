@@ -123,6 +123,7 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
                 health: record?.status || 'untested',
                 healthLatencyMs: record?.latencyMs,
                 healthCheckedAt: record?.checkedAt,
+                healthVia: record?.via,
                 hidden: hidden.has(source.id)
             };
         });

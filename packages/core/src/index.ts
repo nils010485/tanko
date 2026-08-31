@@ -1,5 +1,7 @@
 export type { EngineContext, LoadResult } from './engine.js';
 export { CONNECTOR_OVERRIDES, createEngine, getConnector, getVendorDirectory, loadConnectors, VENDOR_PATH } from './engine.js';
+export { browserEnabled, closeBrowser, getPageHTML, isAntiBotShell } from './shims/browser.js';
+export { BROWSER_SESSION_MS, type BrowserResponse, browserFetch, browserFetchBinary } from './shims/browser-session.js';
 export { installGlobals } from './shims/globals.js';
 export { HeadlessRequest, prepareHeaders, randomUserAgent, retryAfterMs } from './shims/request.js';
 export { HeadlessSettings } from './shims/settings.js';

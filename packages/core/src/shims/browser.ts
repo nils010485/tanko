@@ -20,12 +20,31 @@ export function browserEnabled(): boolean {
     return detectChromium() !== undefined;
 }
 
-/** Heuristic shared with the request shim: true when the page is a JS/anti-bot shell. */
-export function isAntiBotShell(html: string): boolean {
+/** Heuristic shared with the request shim: true when the page is a JS/anti-bot shell.
+ *  `status` (when the caller has it) is the strongest signal — a 403/503 body
+ *  is never usable payload. Challenge pages localize their <title> ("Un
+ *  instant…", "Vérification de sécurité"), and the cdn-cgi challenge scripts
+ *  PERSIST after a successful solve, so the script marker only counts on a
+ *  page too thin to be real content. */
+const CHALLENGE_TITLE =
+    /<title[^>]*>\s*(?:loading|just a moment|checking|attention|verify|one more step|ddos|cf-|un instant|v[eé]rification|veuillez patienter|un momento|momento de espera|einen moment|attendere)/i;
+const CHALLENGE_MARKER = /cdn-cgi\/challenge-platform|cf-chl-|challenges\.cloudflare\.com/i;
+/** Below this size a page carrying challenge scripts cannot be real content. */
+const THIN_PAGE_BYTES = 20_000;
+
+export function isAntiBotShell(html: string, status?: number): boolean {
     if (!html) {
         return true;
     }
-    return /<title[^>]*>\s*(loading|just a moment|checking|attention|verify|one more step|ddos|cf-)/i.test(html) || html.length < 1000;
+    if (status === 403 || status === 503) {
+        return html.length < THIN_PAGE_BYTES || CHALLENGE_MARKER.test(html) || CHALLENGE_TITLE.test(html);
+    }
+    if (CHALLENGE_TITLE.test(html)) {
+        return true;
+    }
+    // challenge scripts persist AFTER a successful solve -> they only count
+    // when the page is too thin to be real content
+    return (CHALLENGE_MARKER.test(html) && html.length < THIN_PAGE_BYTES) || html.length < 1000;
 }
 
 interface PageResult {
@@ -71,7 +90,7 @@ async function launch(): Promise<Browser> {
     return puppeteer.launch({ executablePath, headless: true, args });
 }
 
-async function getBrowser(): Promise<Browser> {
+export async function getBrowser(): Promise<Browser> {
     // relaunch when the previous browser process died (connected === false)
     const cached = browserPromise ? await browserPromise.catch(() => undefined) : undefined;
     if (cached?.connected) {
@@ -118,6 +137,9 @@ export async function getPageHTML(url: string, options: { userAgent?: string; re
 }
 
 export async function closeBrowser(): Promise<void> {
+    // solved-session pages hold cookies for their origin: drop them first
+    const { disposeSessions } = await import('./browser-session.js');
+    await disposeSessions();
     if (browserPromise) {
         const browser = await browserPromise.catch(() => undefined);
         browserPromise = undefined;

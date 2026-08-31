@@ -33,6 +33,9 @@ export interface HealthResult {
     ok: boolean;
     latencyMs: number;
     error?: string;
+    /** How the probe (or the source's transport) reached the site: plain HTTP
+     *  or through the solved anti-bot browser session. */
+    via?: 'http' | 'browser';
 }
 
 export interface SourceAdapter {
@@ -56,6 +59,10 @@ export interface SourceAdapter {
 
     /** Lightweight reachability probe (used by the health-check system). */
     checkHealth(): Promise<HealthResult>;
+    /** Optional: fetch a page image through the source's own transport.
+     *  Present on connectors that may run inside a solved browser session
+     *  (their image hosts can block plain HTTP too). */
+    fetchPageImage?(url: string): Promise<{ mime: string; data: Uint8Array }>;
 }
 
 export class SourceError extends Error {

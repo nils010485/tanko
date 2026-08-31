@@ -73,6 +73,8 @@ interface HealthRow {
     checked_at: string;
     failure_count: number;
     next_probe_at: string | null;
+    /** 'http' | 'browser' — how the last probe reached the site. */
+    via: string | null;
 }
 
 export class SourceHealthService {
@@ -150,7 +152,8 @@ export class SourceHealthService {
                 status: result.ok ? 'ok' : 'error',
                 latencyMs: result.latencyMs,
                 error: result.error,
-                checkedAt
+                checkedAt,
+                via: result.via
             };
         } finally {
             this.checking.delete(sourceId);
@@ -346,6 +349,7 @@ export class SourceHealthService {
         const columns = this.opts.db.db.prepare('PRAGMA table_info(source_health)').all() as Array<{ name: string }>;
         this._addColumn('source_health', columns, 'failure_count', 'failure_count INTEGER NOT NULL DEFAULT 0');
         this._addColumn('source_health', columns, 'next_probe_at', 'next_probe_at TEXT');
+        this._addColumn('source_health', columns, 'via', 'via TEXT');
     }
 
     /** Single write path for probe outcomes: last result + backoff bookkeeping
@@ -361,13 +365,22 @@ export class SourceHealthService {
         const now = new Date(nowMs).toISOString();
         this.opts.db.db
             .prepare(
-                `INSERT INTO source_health (source_id, ok, latency_ms, error, checked_at, failure_count, next_probe_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                `INSERT INTO source_health (source_id, ok, latency_ms, error, checked_at, failure_count, next_probe_at, via)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(source_id) DO UPDATE SET ok = excluded.ok, latency_ms = excluded.latency_ms,
                      error = excluded.error, checked_at = excluded.checked_at,
-                     failure_count = excluded.failure_count, next_probe_at = excluded.next_probe_at`
+                     failure_count = excluded.failure_count, next_probe_at = excluded.next_probe_at, via = excluded.via`
             )
-            .run(sourceId, result.ok ? 1 : 0, result.latencyMs, result.error || null, now, failures, new Date(nowMs + nextInMs).toISOString());
+            .run(
+                sourceId,
+                result.ok ? 1 : 0,
+                result.latencyMs,
+                result.error || null,
+                now,
+                failures,
+                new Date(nowMs + nextInMs).toISOString(),
+                result.via || null
+            );
         if (result.ok) {
             // a hidden (broken) source that answers again re-surfaces on its own
             this.opts.db.db.prepare('DELETE FROM source_flags WHERE source_id = ?').run(sourceId);
@@ -394,7 +407,8 @@ export class SourceHealthService {
             status: row.ok === 1 ? 'ok' : 'error',
             latencyMs: row.latency_ms ?? undefined,
             error: row.error || undefined,
-            checkedAt: row.checked_at
+            checkedAt: row.checked_at,
+            via: row.via === 'http' || row.via === 'browser' ? row.via : undefined
         };
     }
 }

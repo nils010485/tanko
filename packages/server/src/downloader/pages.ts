@@ -123,6 +123,15 @@ async function fetchPage(url: string, source: SourceAdapter): Promise<{ mime: st
         const request = new Request(url, source.connector.requestOptions);
         response = await engine.Request.fetch(request);
     } else {
+        if (source.fetchPageImage) {
+            try {
+                // source in a solved browser session: its image host may
+                // block plain HTTP just like the site itself (undici TLS fingerprint)
+                return await source.fetchPageImage(url);
+            } catch {
+                /* not in browser mode / session expired -> raw fetch below */
+            }
+        }
         let referer: string;
         if (url.startsWith('http') && source.url) {
             referer = `${source.url}/`;
