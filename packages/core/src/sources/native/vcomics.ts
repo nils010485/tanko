@@ -163,7 +163,8 @@ export class VComicsConnector implements SourceAdapter {
             .replace(/&quot;/g, '"')
             .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>');
+            .replace(/&gt;/g, '>')
+            .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
         try {
             const decoded = this._decodeValue(JSON.parse(unescaped));
             return decoded && typeof decoded === 'object' ? (decoded as Record<string, unknown>) : null;

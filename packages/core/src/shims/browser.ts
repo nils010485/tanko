@@ -71,13 +71,16 @@ async function launch(): Promise<Browser> {
     return puppeteer.launch({ executablePath, headless: true, args });
 }
 
-function getBrowser(): Promise<Browser> {
-    if (!browserPromise) {
-        browserPromise = launch().catch(error => {
-            browserPromise = undefined; // allow retry on next call
-            throw error;
-        });
+async function getBrowser(): Promise<Browser> {
+    // relaunch when the previous browser process died (connected === false)
+    const cached = browserPromise ? await browserPromise.catch(() => undefined) : undefined;
+    if (cached?.connected) {
+        return cached;
     }
+    browserPromise = launch().catch(error => {
+        browserPromise = undefined; // allow retry on next call
+        throw error;
+    });
     return browserPromise;
 }
 

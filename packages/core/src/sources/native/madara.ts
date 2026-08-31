@@ -9,6 +9,7 @@
  *  - pages  : `img.wp-manga-chapter-img` on the chapter page
  */
 
+import { isAntiBotShell } from '../../shims/browser.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
@@ -24,6 +25,16 @@ interface MadaraAjaxItem {
     name?: string;
     value?: string;
     thumbnail?: string;
+}
+
+/** Row of a JSON chapter API response (kunmanga-style themes). */
+interface ApiChapter {
+    chapter_slug: string;
+    chapter_name?: string;
+}
+
+function isApiChapter(item: unknown): item is ApiChapter {
+    return !!item && typeof item === 'object' && typeof (item as { chapter_slug?: unknown }).chapter_slug === 'string';
 }
 
 export interface MadaraOptions {
@@ -66,7 +77,9 @@ export class MadaraConnector implements SourceAdapter {
         this.base = options.base.replace(/\/$/, '');
         this.url = this.base;
         this._chapterSelector = options.selectors?.chapters || 'li.wp-manga-chapter';
-        this._chapterAnchorSelector = options.selectors?.chapterAnchor === undefined ? 'a' : options.selectors.chapterAnchor || null;
+        // '' in chapterAnchor means the chapter row itself is the link -> null
+        const anchorSelector = options.selectors?.chapterAnchor;
+        this._chapterAnchorSelector = anchorSelector === undefined ? 'a' : anchorSelector || null;
         this._pageSelectors = [options.selectors?.pages || 'img.wp-manga-chapter-img', 'div.page-break img'];
         this._chapterApiPath = options.chapterApiPath;
         this._ajaxHeaders = {
@@ -84,14 +97,19 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
-        // preferred: the ajax endpoint; "NoAjax" Madara sites disable it (404
-        // or success=false) and fall back to the server-rendered search page
+        // preferred: the ajax endpoint; "NoAjax" Madara sites disable it (404)
+        // and fall back to the server-rendered search page
         try {
             const body = new URLSearchParams({ action: 'wp-manga-search-manga', title: query });
             const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
-            const json = await response.json().catch(() => null);
-            if (json?.success === true && Array.isArray(json.data)) {
-                const results = (json.data as MadaraAjaxItem[])
+            const json = (await response.json().catch(() => null)) as { success?: boolean; data?: MadaraAjaxItem[] | Array<{ message?: string }> } | null;
+            if (json !== null && typeof json === 'object') {
+                // the endpoint answered: success:false with a message row, or an
+                // empty data array, both mean "no hit" -> not an error
+                if (json.success !== true || !Array.isArray(json.data) || json.data.length === 0) {
+                    return [];
+                }
+                return (json.data as MadaraAjaxItem[])
                     .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
                     .map(item => ({
                         id: this._mangaIdFromUrl(item.url),
@@ -99,9 +117,6 @@ export class MadaraConnector implements SourceAdapter {
                         url: item.url,
                         thumbnail: item.thumbnail
                     }));
-                if (results.length > 0) {
-                    return results;
-                }
             }
         } catch {
             /* fall through to the HTML search page */
@@ -109,28 +124,27 @@ export class MadaraConnector implements SourceAdapter {
         return this._searchHtml(query);
     }
 
-    /** Server-rendered search: /?s={q}&post_type=wp-manga lists .c-tabs-item__content rows. */
+    /** Server-rendered search: /?s={q}&post_type=wp-manga rows (NoAjax sites). */
     private async _searchHtml(query: string): Promise<MangaInfo[]> {
         const html = await this._getText(`${this.base}/?s=${encodeURIComponent(query)}&post_type=wp-manga`);
         const document = parseDocument(html);
         const results: MangaInfo[] = [];
-        for (const row of [...document.querySelectorAll('.c-tabs-item__content')]) {
+        // themes disagree on the row markup (.c-tabs-item__content vs .page-item-detail)
+        for (const row of [...document.querySelectorAll('.c-tabs-item__content, .page-item-detail')]) {
+            // .post-title is manga-specific; the first link covers themes without it
             const anchor = row.querySelector('.post-title a') || row.querySelector('a[href]');
             const href = anchor?.getAttribute('href');
-            if (!href || !/\/manga\//.test(href)) {
+            if (!anchor || !href) {
                 continue;
             }
             const img = row.querySelector('img');
             const thumbnail = img?.getAttribute('data-src') || img?.getAttribute('data-backup') || img?.getAttribute('src') || undefined;
             results.push({
                 id: this._mangaIdFromUrl(href),
-                title: this._decode((anchor?.textContent || '').replace(/\s+/g, ' ').trim()),
+                title: this._decode((anchor.textContent || '').replace(/\s+/g, ' ').trim()),
                 url: new URL(href, this.base).href,
                 thumbnail: thumbnail && !thumbnail.startsWith('data:') ? thumbnail : undefined
             });
-        }
-        if (results.length === 0) {
-            throw new SourceError(`No results for "${query}" on ${this.label}`, this.id);
         }
         return results;
     }
@@ -147,7 +161,7 @@ export class MadaraConnector implements SourceAdapter {
             const document = parseDocument(html);
             chapters = this._parseChapterNodes([...document.querySelectorAll(this._chapterSelector)]);
             if (chapters.length === 0) {
-                chapters = await this._getChaptersAjax(manga);
+                chapters = await this._getChaptersAjax(mangaUrl, document);
             }
         }
         if (chapters.length === 0) {
@@ -156,36 +170,63 @@ export class MadaraConnector implements SourceAdapter {
         return chapters;
     }
 
+    /** Lazy-loaded chapter lists: modern Madara answers POST {mangaUrl}ajax/chapters/,
+     *  older themes want admin-ajax action=manga_get_chapters with the numeric
+     *  post id found in the #manga-chapters-holder[data-id] placeholder. */
+    private async _getChaptersAjax(mangaUrl: string, document: Document): Promise<ChapterInfo[]> {
+        try {
+            const response = await this._post(`${mangaUrl.replace(/\/?$/, '/')}ajax/chapters/`, new URLSearchParams());
+            const chapters = this._parseChapterNodes([...parseDocument(await response.text()).querySelectorAll(this._chapterSelector)]);
+            if (chapters.length > 0) {
+                return chapters;
+            }
+        } catch {
+            /* try the legacy action below */
+        }
+        const postId = document.querySelector('[id^="manga-chapters-holder"]')?.getAttribute('data-id');
+        if (!postId) {
+            return [];
+        }
+        try {
+            const body = new URLSearchParams({ action: 'manga_get_chapters', manga: postId });
+            const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
+            return this._parseChapterNodes([...parseDocument(await response.text()).querySelectorAll(this._chapterSelector)]);
+        } catch {
+            return [];
+        }
+    }
+
     /** JSON chapter list: GET {base}{apiPath}/{slug}/chapters (paginated, newest first). */
+    private static readonly MAX_CHAPTER_API_PAGES = 50; // 50 x 100 = hard cap of 5000 chapters
+
     private async _getChaptersApi(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const slug = manga.id.replace(/\/$/, '').split('/').pop() || manga.id;
+        const segments = manga.id.replace(/^\/+|\/+$/g, '').split('/');
+        const slug = segments.pop() || manga.id;
+        // chapter urls reuse the manga path prefix (/manga/, /series/, ...)
+        const pathPrefix = `/${segments[0] || 'manga'}`;
         const urlFor = (page: number) => `${this.base}${this._chapterApiPath}/${slug}/chapters?per_page=100&page=${page}`;
-        const first = await this._chapterApiPage(urlFor(1), slug);
+        const first = await this._chapterApiPage(urlFor(1), slug, pathPrefix);
         if (first.items.length === 0) {
             return [];
         }
         const chapters = first.items;
-        for (let page = 2; page <= Math.min(first.lastPage, 50); page++) {
-            chapters.push(...(await this._chapterApiPage(urlFor(page), slug)).items);
+        for (let page = 2; page <= Math.min(first.lastPage, MadaraConnector.MAX_CHAPTER_API_PAGES); page++) {
+            chapters.push(...(await this._chapterApiPage(urlFor(page), slug, pathPrefix)).items);
         }
         return chapters.reverse();
     }
 
-    private async _chapterApiPage(url: string, slug: string): Promise<{ items: ChapterInfo[]; lastPage: number }> {
+    /** One page of the JSON chapter API: chapter rows + pagination metadata. */
+    private async _chapterApiPage(url: string, slug: string, pathPrefix: string): Promise<{ items: ChapterInfo[]; lastPage: number }> {
         const json = (await this._getJson(url)) as { data?: { chapters?: unknown[]; last_page?: number } } | null;
         const payload = json?.data;
         if (!Array.isArray(payload?.chapters)) {
             return { items: [], lastPage: 1 };
         }
-        const items = (payload.chapters as unknown[])
-            .filter(
-                (item): item is { chapter_slug: string; chapter_name?: string } =>
-                    !!item && typeof item === 'object' && typeof (item as { chapter_slug?: unknown }).chapter_slug === 'string'
-            )
-            .map(item => {
-                const url = new URL(`/manga/${slug}/${item.chapter_slug}`, this.base).href;
-                return { id: url, title: item.chapter_name || item.chapter_slug, url };
-            });
+        const items = (payload.chapters as unknown[]).filter(isApiChapter).map(item => {
+            const chapterUrl = new URL(`${pathPrefix}/${slug}/${item.chapter_slug}`, this.base).href;
+            return { id: chapterUrl, title: item.chapter_name || item.chapter_slug, url: chapterUrl };
+        });
         return { items, lastPage: typeof payload.last_page === 'number' ? payload.last_page : 1 };
     }
 
@@ -233,26 +274,6 @@ export class MadaraConnector implements SourceAdapter {
         return chapters.reverse();
     }
 
-    private async _getChaptersAjax(manga: MangaInfo): Promise<ChapterInfo[]> {
-        try {
-            const body = new URLSearchParams({ action: 'manga_get_chapters', manga: manga.id });
-            const response = await this._post(`${this.base}/wp-admin/admin-ajax.php`, body);
-            const json = await response.json().catch(() => null);
-            if (json && Array.isArray(json.data)) {
-                return (json.data as MadaraAjaxItem[])
-                    .map(item => ({
-                        id: item.url ?? '',
-                        title: item.title || item.name || '',
-                        url: item.url
-                    }))
-                    .reverse();
-            }
-        } catch {
-            /* fall through */
-        }
-        return [];
-    }
-
     private _mangaIdFromUrl(url: string): string {
         try {
             const parsed = new URL(url);
@@ -276,30 +297,31 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     private async _request(url: string, init: RequestInit, attempt = 0): Promise<Response> {
-        let retryAfter: number | undefined;
+        let response: Response;
         try {
-            const response = await fetch(url, {
+            response = await fetch(url, {
                 ...init,
                 redirect: 'follow',
                 signal: AbortSignal.timeout(60000)
             });
-            // transient protection/rate-limit responses -> retry with backoff
-            if (response.status === 403 || response.status === 429 || response.status >= 500) {
-                // honor the server's Retry-After hint when it sent one
-                retryAfter = retryAfterMs(response);
-                throw new SourceError(`HTTP ${response.status}`, this.id);
-            }
-            if (!response.ok) {
-                throw new SourceError(`${init.method || 'GET'} ${url} returned ${response.status}`, this.id);
-            }
-            return response;
         } catch (error) {
+            // network/timeout failure -> transient, retry with backoff
             if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, retryAfter ?? 2500 * (attempt + 1)));
+                await new Promise(resolve => setTimeout(resolve, 2500 * (attempt + 1)));
                 return this._request(url, init, attempt + 1);
             }
             throw new SourceError(`${init.method || 'GET'} ${url} failed after retries`, this.id, error);
         }
+        // protection/rate-limit responses -> transient, honor Retry-After
+        if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, retryAfterMs(response) ?? 2500 * (attempt + 1)));
+            return this._request(url, init, attempt + 1);
+        }
+        if (!response.ok) {
+            // permanent client errors (404, ...) -> fail fast, no retry
+            throw new SourceError(`${init.method || 'GET'} ${url} returned ${response.status}`, this.id);
+        }
+        return response;
     }
 
     private async _getText(url: string): Promise<string> {
@@ -342,8 +364,10 @@ export class MadaraConnector implements SourceAdapter {
         }).catch(() => undefined);
         if (response?.ok) {
             const json: unknown = await response.json().catch(() => null);
-            const ok = json !== null && typeof json === 'object';
-            return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : 'Réponse ajax invalide' };
+            if (json !== null && typeof json === 'object') {
+                return { ok: true, latencyMs: Date.now() - startedAt };
+            }
+            // 200 with a non-JSON body (old-WP "0"): fall through to the page probe
         }
         // NoAjax Madara sites disable admin-ajax -> the search page is the probe
         try {
@@ -353,7 +377,8 @@ export class MadaraConnector implements SourceAdapter {
                 signal: AbortSignal.timeout(20000)
             });
             const html = await page.text().catch(() => '');
-            const ok = page.ok && html.length > 1000;
+            // a WAF challenge served with HTTP 200 must not count as healthy
+            const ok = page.ok && !isAntiBotShell(html);
             return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : `HTTP ${page.status}` };
         } catch (error) {
             return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
