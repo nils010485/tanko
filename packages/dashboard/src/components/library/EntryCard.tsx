@@ -325,13 +325,19 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                 <div className="pointer-events-none absolute left-2.5 top-2.5 flex flex-col items-start gap-1">{statusBadges(entry, t)}</div>
                 {coverCornerButton(entry, state, handlers, t)}
                 {/* scrim: title + stats overlaid on the cover */}
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent px-3.5 pb-3 pt-12">
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent px-3.5 pb-2.5 pt-12">
                     <div className="line-clamp-2 font-display text-[15px] font-bold leading-snug text-white">{entry.title}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-medium text-white/60">
-                        {statLine(entry, state.prefs, t, formatDate)}
-                        {entry.paused && (
-                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{t('library.paused')}</span>
-                        )}
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-medium text-white/60">
+                            {statLine(entry, state.prefs, t, formatDate)}
+                            {entry.paused && (
+                                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{t('library.paused')}</span>
+                            )}
+                        </div>
+                        {/* primary actions overlaid on the cover: hover-revealed on desktop, always visible on touch */}
+                        <div className="card-actions pointer-events-auto -mr-1 flex flex-none items-center gap-0.5">
+                            {primaryActions(entry, state, handlers, t, state.view !== 'grid-compact')}
+                        </div>
                     </div>
                     {state.prefs.progress && (
                         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/15">
@@ -344,17 +350,14 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                 </div>
             </div>
             <div className="space-y-1.5 p-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                     {state.prefs.source &&
                         (entry.sourceLabel ? (
-                            <span className="text-[10px] font-semibold uppercase tracking-widest text-faint">{entry.sourceLabel}</span>
+                            <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-faint">{entry.sourceLabel}</span>
                         ) : (
-                            <span className="text-[10px] font-semibold uppercase tracking-widest text-red-400">{t('library.noSourceBadge')}</span>
+                            <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-red-400">{t('library.noSourceBadge')}</span>
                         ))}
-                    <div className="card-actions ml-auto flex items-center gap-1">
-                        {primaryActions(entry, state, handlers, t, state.view !== 'grid-compact')}
-                        {actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}
-                    </div>
+                    <div className="ml-auto flex flex-none items-center">{actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}</div>
                 </div>
                 {migrationBanner(entry, handlers, t)}
                 {chaptersPanel(entry, state, handlers, t)}
