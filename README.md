@@ -21,7 +21,7 @@ you ever managing source outages.
 
 ## Features
 
-- Automatic source list synced from HakuNeko, with health checks
+- Source catalog synced from HakuNeko and extended with our own connectors, with health checks
 - Sonarr-like library: follow series, auto-download new chapters
 - Persistent download queue with retries and rate limiting
 - CBZ or image folder output, HakuNeko-compatible layout, fully
