@@ -19,8 +19,6 @@ export type NotificationEvent = keyof NotificationEventToggles;
 /** Opt-in defaults: only new chapters notify. */
 export const DEFAULT_EVENT_TOGGLES: NotificationEventToggles = { newChapters: true, outages: false, migrations: false, scans: false };
 
-/** Whether `event` should fire a webhook under `settings`. */
-
 /** Merge notification settings over the defaults: nested `events` merge and
  *  boolean coercion — HTTP clients may send untyped values. */
 export function mergeNotificationSettings(base: NotificationSettings, patch?: Partial<NotificationSettings>): NotificationSettings {

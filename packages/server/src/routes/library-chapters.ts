@@ -11,7 +11,6 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
     const { store, queue, failover } = deps;
     const publishEntry = deps.publishEntry;
 
-    // Chapters of one entry
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/chapters', async (request, reply) => {
         const { entryId } = request.params;
         if (!requireEntry(reply, store, Number(entryId))) {
@@ -93,13 +92,11 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
         return { queued, entries: affected };
     });
 
-    // Change history of an entry's chapters
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/history', async request => {
         const { entryId } = request.params;
         return store.chapterHistory(Number(entryId));
     });
 
-    // Restore a chapter's previous downloaded file
     app.post<{ Params: { entryId: string; chapterId: string } }>('/api/library/:entryId/chapters/:chapterId/rollback', async (request, reply) => {
         const { entryId, chapterId } = request.params;
         const ok = store.rollbackChapter(Number(entryId), chapterId);

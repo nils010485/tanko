@@ -146,9 +146,7 @@ describe('JobRunner', () => {
         const runner = new JobRunner();
         const crawl = runner.begin('import.run', 'Import', 10, { crawl: true });
         expect(crawl).not.toBeNull();
-        // local jobs (covers, rescan) start while the crawl job runs
         expect(runner.begin('covers.regenerate', 'Covers', 3)).not.toBeNull();
-        // another crawl job is refused
         expect(runner.begin('failover.rematch', 'Re-match', 2, { crawl: true })).toBeNull();
         expect(runner.status().running).toHaveLength(2);
     });

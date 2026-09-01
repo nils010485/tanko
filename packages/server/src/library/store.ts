@@ -46,10 +46,6 @@ export class LibraryStore {
         migrateLibrarySchema(opts.db);
     }
 
-    // ------------------------------------------------------------------
-    // entries
-    // ------------------------------------------------------------------
-
     /**
      * Add a series to the library. The current chapter list is snapshotted so
      * that only chapters published *after* this point are treated as new.
@@ -92,7 +88,6 @@ export class LibraryStore {
             throw new Error(`Failed to create the library entry for "${entry.title}"`);
         }
 
-        // snapshot current chapters
         let snapshot = 0;
         try {
             const chaptersFound = await source.getChapters({ id: entry.mangaId, title: entry.title });
@@ -312,10 +307,6 @@ export class LibraryStore {
         return this.ctx.q.all<EntryRow>('SELECT * FROM library').find(row => normalizeTitle(row.title) === needle) ?? null;
     }
 
-    // ------------------------------------------------------------------
-    // source health / failover (outages.ts)
-    // ------------------------------------------------------------------
-
     /** Download failures since the last failover probe (the probe resets the counter). */
     recordDownloadFailure(entryId: number): number {
         return outages.recordDownloadFailure(this.ctx, entryId);
@@ -388,10 +379,6 @@ export class LibraryStore {
         outages.resetCheckFailures(this.ctx, entryId);
     }
 
-    // ------------------------------------------------------------------
-    // chapters (chapters.ts)
-    // ------------------------------------------------------------------
-
     /** Fetch the current chapter list from the source and store any chapter
      *  that is not known yet (status 'new'). Returns the new chapters. */
     checkForNewChapters(entryId: number): Promise<{ fresh: ChapterRow[]; usableSeen: number }> {
@@ -453,10 +440,6 @@ export class LibraryStore {
         return chapters.listChapters(this.ctx, entryId);
     }
 
-    // ------------------------------------------------------------------
-    // migrations (migration.ts)
-    // ------------------------------------------------------------------
-
     setMigrationSuggestion(entryId: number, suggestion: MigrationTarget | null): void {
         migration.setMigrationSuggestion(this.ctx, entryId, suggestion);
     }
@@ -480,10 +463,6 @@ export class LibraryStore {
     rollbackMigration(entryId: number): boolean {
         return migration.rollbackMigration(this.ctx, entryId);
     }
-
-    // ------------------------------------------------------------------
-    // internals
-    // ------------------------------------------------------------------
 
     private _entryToDto(row: EntryRow): LibraryEntryDto {
         const counts = this.ctx.q.get<{ total: number | null; downloaded: number | null; fresh: number | null; failed: number | null; missing: number | null }>(

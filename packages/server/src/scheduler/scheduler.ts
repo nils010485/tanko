@@ -77,10 +77,6 @@ export class Scheduler {
         this._startJob();
     }
 
-    // ------------------------------------------------------------------
-    // settings
-    // ------------------------------------------------------------------
-
     getSettings(): ScheduleSettings {
         return { ...this.settings, notifications: { ...this.settings.notifications, events: { ...this.settings.notifications.events } } };
     }
@@ -111,10 +107,6 @@ export class Scheduler {
         this._publishStatus();
         return this.getSettings();
     }
-
-    // ------------------------------------------------------------------
-    // runs
-    // ------------------------------------------------------------------
 
     async runNow(): Promise<{ checked: number; newChapters: number; alreadyRunning?: boolean }> {
         if (this.running) {
@@ -393,10 +385,6 @@ export class Scheduler {
             this.retryTimer = undefined;
         }
     }
-
-    // ------------------------------------------------------------------
-    // internals
-    // ------------------------------------------------------------------
 
     /** Check one entry for new chapters; logs, auto-enqueues and returns the fresh chapters. */
     private async _checkEntry(entry: LibraryEntryDto, failoverProbed: Set<number>, failedIds?: Set<number>): Promise<ChapterRow[]> {

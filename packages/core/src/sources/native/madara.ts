@@ -304,8 +304,6 @@ export class MadaraConnector implements SourceAdapter {
         return images;
     }
 
-    // ------------------------------------------------------------------
-
     private _parseChapterNodes(nodes: Element[]): ChapterInfo[] {
         const chapters: ChapterInfo[] = [];
         for (const node of nodes) {

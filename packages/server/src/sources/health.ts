@@ -94,10 +94,6 @@ export class SourceHealthService {
         this._migrate();
     }
 
-    // ------------------------------------------------------------------
-    // reads
-    // ------------------------------------------------------------------
-
     getAll(): Record<string, SourceHealthDto> {
         const rows = this.opts.db.db.prepare('SELECT * FROM source_health').all() as unknown as HealthRow[];
         const result: Record<string, SourceHealthDto> = {};
@@ -117,10 +113,6 @@ export class SourceHealthService {
         const row = this.opts.db.db.prepare('SELECT * FROM source_health WHERE source_id = ?').get(sourceId) as HealthRow | undefined;
         return row ? this._toDto(row) : { sourceId, status: 'untested' };
     }
-
-    // ------------------------------------------------------------------
-    // probes
-    // ------------------------------------------------------------------
 
     /** `quiet` skips the per-probe Activity log — used by the rolling sweep. */
     async probeOne(sourceId: string, opts?: { quiet?: boolean }): Promise<SourceHealthDto> {
@@ -221,10 +213,6 @@ export class SourceHealthService {
         await this.probeMany(nativeIds);
     }
 
-    // ------------------------------------------------------------------
-    // rolling re-check
-    // ------------------------------------------------------------------
-
     /** Start the background rolling re-check (stop() on shutdown). */
     start(): void {
         if (this.sweepTimer) {
@@ -298,10 +286,6 @@ export class SourceHealthService {
         return [...due, ...untested.slice(0, quota - due.length)];
     }
 
-    // ------------------------------------------------------------------
-    // hide / show broken sources
-    // ------------------------------------------------------------------
-
     /** Hide every source whose last health check failed. Returns the count. */
     hideBroken(): number {
         const result = this.opts.db.db
@@ -324,10 +308,6 @@ export class SourceHealthService {
         const rows = this.opts.db.db.prepare('SELECT source_id FROM source_flags WHERE hidden = 1').all() as Array<{ source_id: string }>;
         return new Set(rows.map(row => row.source_id));
     }
-
-    // ------------------------------------------------------------------
-    // internals
-    // ------------------------------------------------------------------
 
     private _migrate(): void {
         this.opts.db.db.exec(`

@@ -128,10 +128,6 @@ export class DownloadQueue {
         this.retryTimer = setInterval(() => this.sweepFailedJobs(), AUTO_RETRY_SWEEP_MS);
     }
 
-    // ------------------------------------------------------------------
-    // public API
-    // ------------------------------------------------------------------
-
     enqueue(
         chapters: Array<{
             sourceId: string;
@@ -492,10 +488,6 @@ export class DownloadQueue {
             this.retryTimer = undefined;
         }
     }
-
-    // ------------------------------------------------------------------
-    // internals
-    // ------------------------------------------------------------------
 
     private _migrate(): void {
         this.libraryPresent = this.opts.db.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'library'").get() !== undefined;

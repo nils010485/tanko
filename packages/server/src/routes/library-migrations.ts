@@ -104,7 +104,6 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         }
     });
 
-    // Confirm or dismiss the stored migration suggestion
     app.post<{ Params: { entryId: string }; Body: { apply: boolean } }>('/api/library/:entryId/rematch/confirm', async (request, reply) => {
         const { entryId } = request.params;
         const entry = store.getEntry(Number(entryId));
@@ -127,7 +126,6 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         return { applied: false };
     });
 
-    // Migrate an entry to a source picked manually in the picker
     app.post<{ Params: { entryId: string }; Body: Partial<SourceAlternativeDto> }>('/api/library/:entryId/migrate', async (request, reply) => {
         const entry = requireEntry(reply, store, Number(request.params.entryId));
         if (!entry) {
@@ -171,7 +169,6 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
             return reply.code(502).send({ error: (error as Error).message });
         }
     });
-    // Undo the latest source migration
     app.post<{ Params: { entryId: string } }>('/api/library/:entryId/migration/rollback', async (request, reply) => {
         const { entryId } = request.params;
         const ok = store.rollbackMigration(Number(entryId));

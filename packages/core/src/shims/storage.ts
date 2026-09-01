@@ -51,10 +51,6 @@ export class HeadlessStorage {
         fs.mkdirSync(this._configDir, { recursive: true });
     }
 
-    // ------------------------------------------------------------------
-    // config (manga lists, etc.)
-    // ------------------------------------------------------------------
-
     private _configFile(key: string): string {
         return path.join(this._configDir, `hakuneko.${key}`);
     }
@@ -78,10 +74,6 @@ export class HeadlessStorage {
         return this.loadConfig(`mangas-${connectorID}`);
     }
 
-    // ------------------------------------------------------------------
-    // existing content on disk
-    // ------------------------------------------------------------------
-
     /** List names on disk (optionally directories only); missing directory -> empty. */
     private _existingNames(directory: string, directoriesOnly: boolean): Record<string, boolean> {
         const names: Record<string, boolean> = {};
@@ -104,10 +96,6 @@ export class HeadlessStorage {
     async getExistingChapterTitles(manga: LegacyManga): Promise<Record<string, boolean>> {
         return this._existingNames(this._mangaOutputPath(manga), false);
     }
-
-    // ------------------------------------------------------------------
-    // chapter download
-    // ------------------------------------------------------------------
 
     async saveChapterPages(chapter: LegacyChapter, content: Blob[]): Promise<void> {
         const leadingZeroes = String(content.length).length;
@@ -174,10 +162,6 @@ export class HeadlessStorage {
             .sort()
             .map(file => encodeURI(`file://${path.join(directory, file).replace(/\\/g, '/')}`));
     }
-
-    // ------------------------------------------------------------------
-    // output paths (same layout as legacy Storage)
-    // ------------------------------------------------------------------
 
     _connectorOutputPath(connector: LegacyConnector): string {
         let output = String(this.settings.baseDirectory.value);

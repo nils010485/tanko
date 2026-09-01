@@ -2,10 +2,6 @@
  * Shared DTO types between the server (REST/WS) and the dashboard.
  */
 
-// ---------------------------------------------------------------------------
-// Sources & discovery
-// ---------------------------------------------------------------------------
-
 export interface SourceDto {
     id: string;
     label: string;
@@ -60,10 +56,6 @@ export interface ChapterDto {
     language?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Global search (Discover)
-// ---------------------------------------------------------------------------
-
 /** One source's outcome in a global (all-sources) search. */
 export interface GlobalSearchSourceResultDto {
     sourceId: string;
@@ -87,10 +79,6 @@ export interface GlobalSearchStatusDto {
     done: boolean;
     results: GlobalSearchSourceResultDto[];
 }
-
-// ---------------------------------------------------------------------------
-// Library
-// ---------------------------------------------------------------------------
 
 /** Suggested source migration (awaiting user confirmation). */
 export interface MigrationSuggestion {
@@ -234,10 +222,6 @@ export interface DownloadsPageDto {
     counts: Record<string, number>;
 }
 
-// ---------------------------------------------------------------------------
-// Scheduler
-// ---------------------------------------------------------------------------
-
 export interface ScheduleSettingsDto {
     enabled: boolean;
     cron: string;
@@ -256,10 +240,6 @@ export interface ScheduleStatusDto {
     seriesChecked: number;
     newChaptersFound: number;
 }
-
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
 
 /** Queue settings actually served by GET /api/settings (queue.getSettings()). */
 export interface QueueSettingsDto {
@@ -388,10 +368,6 @@ export interface QueueStatusDto {
     queued: number;
 }
 
-// ---------------------------------------------------------------------------
-// Import (existing Hakuneko library migration)
-// ---------------------------------------------------------------------------
-
 /** Phases of the persistent import pipeline (scan → match → confirm → sync). */
 export type ImportJobPhase = 'scanning' | 'matching' | 'ready' | 'syncing' | 'done' | 'error';
 
@@ -460,10 +436,6 @@ export interface ImportJobStatusDto {
     series: ImportJobSeriesDto[];
 }
 
-// ---------------------------------------------------------------------------
-// WebSocket events (server -> dashboard)
-// ---------------------------------------------------------------------------
-
 export type WsEvent =
     | { type: 'job.updated'; job: DownloadJobDto }
     | { type: 'job.removed'; jobId: number }
@@ -472,10 +444,6 @@ export type WsEvent =
     | { type: 'queue.status'; status: QueueStatusDto }
     | { type: 'sources.updated' }
     | ({ type: 'log'; id?: number; level: LogLevel; message: string; at: string } & LogEventMeta);
-
-// ---------------------------------------------------------------------------
-// Generic API envelope
-// ---------------------------------------------------------------------------
 
 export interface ApiError {
     error: string;

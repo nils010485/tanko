@@ -58,10 +58,6 @@ export function registerLibraryRoutes(
     registerLibraryChaptersRoutes(app, deps);
     registerLibraryMigrationsRoutes(app, deps);
 
-    // ------------------------------------------------------------------
-    // Scheduler
-    // ------------------------------------------------------------------
-
     app.get('/api/schedule', async () => ({ settings: scheduler.getSettings(), status: scheduler.status() }));
 
     app.patch<{ Body: SchedulePatch }>('/api/schedule', async (request, reply) => {
@@ -76,7 +72,6 @@ export function registerLibraryRoutes(
         }
     });
 
-    // Trigger a full check of all entries right now
     app.post('/api/schedule/run', async () => {
         const result = await scheduler.runNow();
         return result;

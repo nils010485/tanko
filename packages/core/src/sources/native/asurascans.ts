@@ -137,7 +137,6 @@ export class AsuraScansConnector implements SourceAdapter {
         }
     }
 
-    // ------------------------------------------------------------------
     /** Absolute image urls matching the selector (data: placeholders dropped). */
     private _imageSources(document: Document, selector: string): string[] {
         return [...document.querySelectorAll(selector)].map(img => img.getAttribute('src')).filter((src): src is string => !!src && !src.startsWith('data:'));

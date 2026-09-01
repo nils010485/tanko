@@ -65,10 +65,6 @@ export class CoverService {
         `);
     }
 
-    // ------------------------------------------------------------------
-    // setting
-    // ------------------------------------------------------------------
-
     isEnabled(): boolean {
         return this.opts.db.kvGet(COVERS_KEY) === 'true';
     }
@@ -76,10 +72,6 @@ export class CoverService {
     setEnabled(value: boolean): void {
         this.opts.db.kvSet(COVERS_KEY, value ? 'true' : 'false');
     }
-
-    // ------------------------------------------------------------------
-    // cache reads
-    // ------------------------------------------------------------------
 
     getCover(entryId: number): Buffer | undefined {
         const row = this.opts.db.db.prepare('SELECT data FROM library_covers WHERE entry_id = ?').get(entryId) as { data: Uint8Array } | undefined;
@@ -105,10 +97,6 @@ export class CoverService {
     private abort(): void {
         this.generation++;
     }
-
-    // ------------------------------------------------------------------
-    // generation
-    // ------------------------------------------------------------------
 
     status(): CoverStatus {
         return { enabled: this.isEnabled(), running: this.running, ...this.counters };

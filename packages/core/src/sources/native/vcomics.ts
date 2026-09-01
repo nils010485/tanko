@@ -221,8 +221,6 @@ export class VComicsConnector implements SourceAdapter {
         }
     }
 
-    // ------------------------------------------------------------------
-
     private _headers(): Record<string, string> {
         return {
             'User-Agent': UA,

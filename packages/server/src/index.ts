@@ -52,12 +52,10 @@ import { EventBus } from './ws.js';
 
 const config = loadConfig();
 
-// --- engine ----------------------------------------------------------------
 const engine = await createEngine({ dataDirectory: config.dataDirectory });
 const { connectors, failures } = await loadConnectors();
 console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed)`);
 
-// --- persistence + events ----------------------------------------------------
 const database = new Database(config.dataDirectory);
 const events = new EventBus();
 const activity = new ActivityService({ db: database });
@@ -300,7 +298,6 @@ const globalSearch = new GlobalSearchService({
     }
 });
 
-// --- http server -------------------------------------------------------------
 const app = Fastify({ logger: false });
 await app.register(fastifyWebsocket);
 
@@ -377,7 +374,6 @@ healthService.start();
 await app.listen({ host: config.host, port: config.port });
 console.log(`[server] listening on http://${config.host}:${config.port} (data: ${config.dataDirectory})`);
 
-// --- graceful shutdown -------------------------------------------------------
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, async () => {
         console.log(`[server] received ${signal}, shutting down...`);

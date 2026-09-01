@@ -124,10 +124,6 @@ export class ImportService {
         this.sql.exec(`UPDATE import_series SET status = 'pending' WHERE status = 'matching'`);
     }
 
-    // ------------------------------------------------------------------
-    // job lifecycle
-    // ------------------------------------------------------------------
-
     /** Create a job and run the pipeline in the background. */
     async start(root: string, options: ImportOptions = {}): Promise<{ jobId: number }> {
         const resolved = assertValidDirectory(root);
@@ -278,10 +274,6 @@ export class ImportService {
         };
     }
 
-    // ------------------------------------------------------------------
-    // pipeline
-    // ------------------------------------------------------------------
-
     private async _run(jobId: number, resume = false, handle?: JobHandle): Promise<void> {
         const job = this._job(jobId);
         if (!job) {
@@ -328,10 +320,6 @@ export class ImportService {
         });
     }
 
-    // ------------------------------------------------------------------
-    // internals
-    // ------------------------------------------------------------------
-
     /** Reserve the Activity job slot for an import run (progress + cancel in
      *  the dashboard). Throws when another crawl job already holds it. */
     private startActivityJob(jobId: number): JobHandle {
@@ -358,8 +346,6 @@ export class ImportService {
         this.releaseActivityJob(jobId, false);
     }
 
-    /** Drive one background run: recap log on success, failure log through
-     *  _failJob, cancel flag and Activity job release on every exit path. */
     /** Drive one background run: recap log on success, failure log through
      *  _failJob, cancel flag and Activity job release on every exit path. */
     private async runPhases(jobId: number, handle: JobHandle | undefined, phases: () => Promise<void>): Promise<void> {

@@ -140,7 +140,6 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
         return { hidden: count };
     });
 
-    // Search mangas on a given source
     app.get<{ Params: { sourceId: string }; Querystring: { q?: string } }>('/api/sources/:sourceId/search', async (request, reply) => {
         const { sourceId } = request.params;
         const query = (request.query.q || '').trim();
@@ -195,7 +194,6 @@ export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: Sourc
         return status;
     });
 
-    // List chapters of a manga on a given source
     app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; title?: string } }>('/api/sources/:sourceId/chapters', async (request, reply) => {
         const { sourceId } = request.params;
         const mangaId = request.query.mangaId;

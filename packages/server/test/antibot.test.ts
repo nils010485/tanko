@@ -44,10 +44,6 @@ describe('isAntiBotShell', () => {
     });
 });
 
-// ---------------------------------------------------------------------------
-// health service: `via` round-trip (no browser involved)
-// ---------------------------------------------------------------------------
-
 let tmpDir: string;
 let database: Database;
 let events: EventBus;

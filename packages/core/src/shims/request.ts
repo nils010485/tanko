@@ -55,7 +55,6 @@ export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string)
         ['Sec-Fetch-Site', headers.get('x-sec-fetch-site')]
     ];
 
-    // drop all custom x-* headers
     for (const name of [...headers.keys()]) {
         if (name.toLowerCase().startsWith('x-')) {
             headers.delete(name);

@@ -162,7 +162,6 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         return { path: store.seriesDirectory(Number(entryId)) };
     });
 
-    // Toggle auto-download for an entry
     app.patch<{ Params: { entryId: string }; Body: { autoDownload?: boolean; hidden?: boolean; paused?: boolean } }>(
         '/api/library/:entryId',
         async (request, reply) => {

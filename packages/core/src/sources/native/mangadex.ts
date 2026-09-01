@@ -152,8 +152,6 @@ export class MangaDexConnector implements SourceAdapter {
         }
     }
 
-    // ------------------------------------------------------------------
-
     /** API endpoint with the shared content-rating filter. */
     private _apiUrl(path: string): URL {
         const url = new URL(path, API);

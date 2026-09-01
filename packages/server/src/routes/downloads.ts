@@ -30,10 +30,8 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         })
     );
 
-    // Queue status (paused / counters)
     app.get('/api/downloads/status', async () => queue.status());
 
-    // Enqueue chapters for download
     // Enqueue chapters for download; when the manga is tracked in the library the
     // queue items carry its entryId so completions update the chapter status
     app.post<{
@@ -72,13 +70,11 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         return result;
     });
 
-    // Wipe the finished-job history (completed/failed/cancelled), optionally scoped to one status
     app.delete<{ Querystring: { status?: string } }>('/api/downloads/history', async request => {
         const { status } = request.query;
         const scoped = status === 'completed' || status === 'failed' || status === 'cancelled' ? status : undefined;
         return { removed: queue.clearHistory(scoped) };
     });
-    // Cancel a job (queued or downloading) or dismiss a finished one from history
     app.delete<{ Params: { jobId: string } }>('/api/downloads/:jobId', async (request, reply) => {
         const { jobId } = request.params as { jobId: string };
         const id = Number(jobId);
@@ -91,14 +87,12 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         return reply.code(404).send({ error: 'Job not found' });
     });
 
-    // Requeue every failed job
     app.post('/api/downloads/retry', async () => {
         const result = queue.retryFailed();
         syncChapterStatuses(result.chapters);
         return result;
     });
 
-    // Requeue one finished job (failed or cancelled)
     app.post<{ Params: { jobId: string } }>('/api/downloads/:jobId/retry', async (request, reply) => {
         const { jobId } = request.params as { jobId: string };
         const result = queue.retryJob(Number(jobId));
@@ -109,7 +103,6 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         return result;
     });
 
-    // Pause / resume the whole queue
     app.post('/api/downloads/pause', async () => {
         queue.pause();
         return queue.status();

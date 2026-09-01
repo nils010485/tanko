@@ -213,7 +213,6 @@ export function detectMime(data: Uint8Array, fallback: string): string {
     return fallback || 'application/octet-stream';
 }
 
-/** True when a chapter output already exists on disk under any accepted name. */
 /** True when a chapter output already exists on disk under any accepted name.
  *  In 'img' mode, a partially downloaded chapter (interrupted mid-chapter) must
  *  NOT count as existing: pass the expected page count so a short directory is

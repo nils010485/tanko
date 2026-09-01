@@ -6,7 +6,6 @@ import type { FastifyInstance } from 'fastify';
 import type { CoverService } from '../library/covers.js';
 
 export function registerCoverRoutes(app: FastifyInstance, covers: CoverService): void {
-    // cached WebP cover of a library entry (404 when nothing is cached)
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/cover', async (request, reply) => {
         const entryId = Number(request.params.entryId);
         const data = covers.getCover(entryId);
