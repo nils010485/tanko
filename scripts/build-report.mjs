@@ -24,7 +24,7 @@ const MANUAL = {
     wbnovel: { verdict: 'NOVEL', note: 'Madara Novel: text chapters, no page images' },
     sleepytranslations: { verdict: 'NOVEL', note: 'Madara Novel: text chapters, no page images' },
     wordrain: { verdict: 'NOVEL', note: 'Madara Novel: text chapters, no page images' },
-    apollcomics: { verdict: 'NATIVE-DONE', note: 'wired as native MadaraConnector' },
+    apollcomics: { verdict: 'NATIVE-DONE', note: 'domain moved .xyz -> .es (post-deploy fix)' },
     arthurscan: { verdict: 'NATIVE-DONE', note: 'wired as native MadaraConnector' },
     mangapark: { verdict: 'DEAD', note: 'moved .net->.org->.me->.io; .io now bounces to an ad gate (nexusmart)' },
     'mangapark-en': { verdict: 'DEAD', note: 'same chain as mangapark, ends on the ad gate' },

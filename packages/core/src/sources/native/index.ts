@@ -93,7 +93,7 @@ export function createNativeConnectors(): SourceAdapter[] {
         new MadaraConnector({
             id: 'apollcomics',
             label: 'Apoll Comics',
-            base: 'https://apollcomics.xyz',
+            base: 'https://apollcomics.es',
             tags: ['manga', 'spanish']
         }),
         new MadaraConnector({

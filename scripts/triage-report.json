@@ -1945,7 +1945,7 @@
     "verdict": "NATIVE-DONE",
     "newUrl": null,
     "family": "templates/WordPressMadara",
-    "note": "wired as native MadaraConnector"
+    "note": "domain moved .xyz -> .es (post-deploy fix)"
   },
   {
     "id": "arthurscan",
