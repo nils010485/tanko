@@ -147,19 +147,25 @@ export class MadaraConnector implements SourceAdapter {
                 .then(JSON.parse)
                 .catch(() => null)) as { success?: boolean; data?: MadaraAjaxItem[] | Array<{ message?: string }> } | null;
             if (json !== null && typeof json === 'object') {
-                // the endpoint answered: success:false with a message row, or an
-                // empty data array, both mean "no hit" -> not an error
-                if (json.success !== true || !Array.isArray(json.data) || json.data.length === 0) {
+                // success:false with an empty/no data array ("no hit") ends here;
+                // success:false with an error payload (e.g. "forbidden" on
+                // locked-down ajax) must fall through to the HTML search page
+                const errored = Array.isArray(json.data) && json.data.some(item => item && typeof item === 'object' && 'error' in item);
+                if (!errored && (json.success !== true || !Array.isArray(json.data) || json.data.length === 0)) {
                     return [];
                 }
-                return (json.data as MadaraAjaxItem[])
-                    .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
-                    .map(item => ({
-                        id: this._mangaIdFromUrl(item.url),
-                        title: this._decode(item.label || item.title || item.value || item.url),
-                        url: item.url,
-                        thumbnail: item.thumbnail
-                    }));
+                if (errored) {
+                    // ajax locked down ("forbidden") -> HTML search page below
+                } else {
+                    return (json.data as MadaraAjaxItem[])
+                        .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
+                        .map(item => ({
+                            id: this._mangaIdFromUrl(item.url),
+                            title: this._decode(item.label || item.title || item.value || item.url),
+                            url: item.url,
+                            thumbnail: item.thumbnail
+                        }));
+                }
             }
         } catch {
             /* fall through to the HTML search page */
@@ -172,11 +178,13 @@ export class MadaraConnector implements SourceAdapter {
         const html = await this._getText(`${this.base}/?s=${encodeURIComponent(query)}&post_type=wp-manga`);
         const document = parseDocument(html);
         const results: MangaInfo[] = [];
-        // themes disagree on the row markup (.c-tabs-item__content vs .page-item-detail)
-        for (const row of [...document.querySelectorAll('.c-tabs-item__content, .page-item-detail')]) {
-            // .post-title is manga-specific; the first link covers themes without it
-            const anchor = row.querySelector('.post-title a') || row.querySelector('a[href]');
-            const href = anchor?.getAttribute('href');
+        // themes disagree on the row markup (.c-tabs-item__content vs
+        // .page-item-detail vs the a.acard cards)
+        for (const row of [...document.querySelectorAll('.c-tabs-item__content, .page-item-detail, a.acard')]) {
+            const asRow = row.tagName === 'A' ? row : null;
+            // .post-title/.ac-t is manga-specific; the first link covers the rest
+            const anchor = row.querySelector('.post-title a, .ac-t') || asRow || row.querySelector('a[href]');
+            const href = (asRow ?? anchor)?.getAttribute('href');
             if (!anchor || !href) {
                 continue;
             }
@@ -285,23 +293,35 @@ export class MadaraConnector implements SourceAdapter {
         }
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
-
-        let images: string[] = [];
-        for (const selector of this._pageSelectors) {
-            images = [...document.querySelectorAll(selector)]
-                .map(img => img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'))
-                .filter((src): src is string => !!src && !src.startsWith('data:'))
-                .map(src => new URL(src.trim(), chapterUrl).href)
-                // drop site-injected ads/banners (e.g. Toonily discord assets)
-                .filter((src: string) => !/\/wp-content\/assets\//i.test(src));
-            if (images.length > 0) {
-                break;
-            }
+        // paged-style reader (one image per page): the list style renders the
+        // whole chapter at once — prefer it whenever the pager is present
+        const paged = document.querySelector('.next_page[href], .select_page') !== null;
+        let images = paged ? [] : this._pageImages(document, chapterUrl);
+        if (images.length === 0 && paged) {
+            const listUrl = new URL(chapterUrl);
+            listUrl.searchParams.set('style', 'list');
+            const listHtml = await this._getText(listUrl.href);
+            images = this._pageImages(parseDocument(listHtml), listUrl.href);
         }
         if (images.length === 0) {
             throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
         }
         return images;
+    }
+
+    private _pageImages(document: Document, baseUrl: string): string[] {
+        for (const selector of this._pageSelectors) {
+            const images = [...document.querySelectorAll(selector)]
+                .map(img => img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'))
+                .filter((src): src is string => !!src && !src.startsWith('data:'))
+                .map(src => new URL(src.trim(), baseUrl).href)
+                // drop site-injected ads/banners (e.g. Toonily discord assets)
+                .filter((src: string) => !/\/wp-content\/assets\//i.test(src));
+            if (images.length > 0) {
+                return images;
+            }
+        }
+        return [];
     }
 
     private _parseChapterNodes(nodes: Element[]): ChapterInfo[] {
@@ -511,8 +531,18 @@ export class MadaraConnector implements SourceAdapter {
             const html = await page.text().catch(() => '');
             // a WAF challenge served with HTTP 200 must not count as healthy
             const antibot = isAntiBotShell(html, page.status);
-            const ok = page.ok && !antibot;
-            return { result: { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : `HTTP ${page.status}` }, antibot };
+            // a redirect landing on another origin means the site is gone
+            // (Discord invite, parked domain, rebranded spam) — not healthy
+            const sameSite = new URL(page.url).hostname === new URL(this.base).hostname;
+            const ok = page.ok && !antibot && sameSite;
+            return {
+                result: {
+                    ok,
+                    latencyMs: Date.now() - startedAt,
+                    error: ok ? undefined : sameSite ? `HTTP ${page.status}` : 'Site déménagé (redirection externe)'
+                },
+                antibot
+            };
         } catch (error) {
             return { result: { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) }, antibot: false };
         }

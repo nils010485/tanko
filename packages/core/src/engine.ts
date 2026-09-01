@@ -41,7 +41,7 @@ export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
  * re-applies them over every new sync. Drop an entry once upstream ships
  * the same fix.
  */
-export const CONNECTOR_OVERRIDES = ['MangaFox.mjs'];
+export const CONNECTOR_OVERRIDES = ['MangaFox.mjs', 'ComicMeteor.mjs', 'ComicPolaris.mjs', 'LELScan.mjs', 'ToomicsKO.mjs'];
 
 const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;

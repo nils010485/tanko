@@ -10,7 +10,8 @@
             "!**/package-lock.json",
             "!**/tsconfig*.json",
             "!packages/dashboard/src/index.css",
-            "!.plasma"
+            "!.plasma",
+            "!scripts/*.json"
         ]
     },
     "formatter": {

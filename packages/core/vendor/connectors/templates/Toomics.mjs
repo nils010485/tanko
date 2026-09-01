@@ -62,12 +62,12 @@ export default class Toomics extends Connector {
                 let action = element.getAttribute('onclick');
                 if(action) {
                     if(action.includes('location.href=')) {
-                        element.href = action.match(/href='([^']+)'/)[1];
+                        element.href = action.match(/href='([^']+)'/)?.[1] ?? element.href;
                     } else {
-                        element.href = action.match(/popup\s*\(\s*'[^']+'\s*,\s*'[^']*'\s*,\s*'([^']+)'/)[1];
+                        element.href = action.match(/popup\s*\(\s*'[^']+'\s*,\s*'[^']*'\s*,\s*'([^']+)'/)?.[1] ?? element.href;
                     }
                 }
-                let chapter = element.querySelector(this.queryChapterNumber).innerText.trim();
+                let chapter = element.querySelector(this.queryChapterNumber)?.innerText?.trim() ?? element.textContent.trim();
                 //let title = element.querySelector('div.cell-title').innerText.replace(manga.title, '').trim();
                 return {
                     id: this.getRootRelativeOrAbsoluteLink(element, this.baseURL),

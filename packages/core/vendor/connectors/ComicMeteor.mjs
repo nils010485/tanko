@@ -1,7 +1,11 @@
 import SpeedBinb from './templates/SpeedBinb.mjs';
 
 /**
- *
+ * COMICメテオ — the old comic-meteor.jp WordPress is gone; the label now
+ * lives on the unified きらポ (KiraPo) platform. Listing is server-rendered
+ * + one JSON call, episodes are plain rows, and the reader is still
+ * SpeedBinb v01.6061 (ptimg) — fully handled by the parent template.
+ * Discovered & verified 2026-09 (see scripts/casework/comicmeteor.md).
  */
 export default class ComicMeteor extends SpeedBinb {
 
@@ -13,77 +17,61 @@ export default class ComicMeteor extends SpeedBinb {
         super.id = 'comicmeteor';
         super.label = 'COMICメテオ (COMIC Meteor)';
         this.tags = [ 'manga', 'japanese' ];
-        this.url = 'https://comic-meteor.jp';
+        this.url = 'https://kirapo.jp/meteor';
     }
 
     /**
-     *
-     */
-    _getMangaListFromPages( page ) {
-        page = page || 1;
-        let request = new Request( this.url + '/wp-admin/admin-ajax.php?action=get_flex_titles_for_toppage&get_num=64&page=' + page, this.requestOptions );
-        return this.fetchDOM( request, 'div.update_work_size div.update_work_info_img a', 5 )
-            .then( data => {
-                let mangaList = data.map( element => {
-                    return {
-                        id: this.getRootRelativeOrAbsoluteLink( element, request.url ),
-                        title: element.querySelector( 'source' ).getAttribute('alt').trim()
-                    };
-                } );
-                if( mangaList.length > 0 ) {
-                    return this._getMangaListFromPages( page + 1 )
-                        .then( mangas => mangaList.concat( mangas ) );
-                } else {
-                    return Promise.resolve( mangaList );
-                }
-            } );
-    }
-
-    /**
-     *
+     * Series: /titles?label=<label> renders the first 24 cards plus a
+     * data-read-at cursor; /api/title-list returns the whole rest at once.
      */
     _getMangaList( callback ) {
-        this._getMangaListFromPages()
+        let request = new Request( 'https://kirapo.jp/titles?label=meteor', this.requestOptions );
+        this.fetchDOM( request, 'main' )
             .then( data => {
-                callback( null, data );
+                let mangaList = [...data[0].querySelectorAll( 'a[href*="/titles/"] img.item-thumbnail' )].map( image => {
+                    return {
+                        id: new URL( image.closest( 'a' ).getAttribute( 'href' ), request.url ).pathname,
+                        title: image.getAttribute( 'alt' ).trim(),
+                        thumbnail: image.getAttribute( 'src' )
+                    };
+                } );
+                let readAt = data[0].querySelector( '[data-read-at]' )?.getAttribute( 'data-read-at' );
+                if( !readAt ) {
+                    return mangaList;
+                }
+                let api = new Request( 'https://kirapo.jp/api/title-list?label=meteor&read_at=' + encodeURIComponent( readAt ), this.requestOptions );
+                return this.fetchJSON( api )
+                    .then( json => {
+                        for( let item of ( json?.data ?? [] ) ) {
+                            if( item.url && item.name && !mangaList.some( manga => manga.id === new URL( item.url ).pathname ) ) {
+                                mangaList.push( { id: new URL( item.url ).pathname, title: item.name, thumbnail: item.thumbnail } );
+                            }
+                        }
+                        return mangaList;
+                    } )
+                    .catch( () => mangaList );
             } )
-            .catch( error => {
-                console.error( error, this );
-                callback( error, undefined );
-            } );
+            .then( data => callback( null, data ) )
+            .catch( error => callback( error, undefined ) );
     }
 
     /**
      *
      */
     _getChapterList( manga, callback ) {
-        let request = new Request( this.url + manga.id, this.requestOptions );
-        this.fetchDOM( request, 'div#contents' )
+        let request = new Request( new URL( manga.id, this.url ).href, this.requestOptions );
+        this.fetchDOM( request, 'div.episodes-container' )
             .then( data => {
-                data = data[0];
-                let chapterList = [...data.querySelectorAll( 'div.work_episode div.work_episode_box div.work_episode_table div.work_episode_link_btn a' )]
-                    .map( element => {
-                        return {
-                            id: this.getRootRelativeOrAbsoluteLink( element, request.url ),
-                            title: element.closest( 'div.work_episode_table' ).querySelector( 'div.work_episode_txt' ).innerText.replace( manga.title, '' ).trim(),
-                            language: ''
-                        };
-                    } );
-                if( chapterList.length === 0 ) {
-                    chapterList = [...data.querySelectorAll( 'div.latest_info_box div.latest_info_link_btn01 a' )]
-                        .map( element => {
-                            return {
-                                id: this.getRootRelativeOrAbsoluteLink( element, request.url ),
-                                title: element.text.replace( '読む', '' ).trim(),
-                                language: ''
-                            };
-                        } );
-                }
+                let chapterList = [...data[0].querySelectorAll( 'div.episode-item a.episode-read[href]' )].map( anchor => {
+                    let item = anchor.closest( 'div.episode-item' );
+                    return {
+                        id: this.getRootRelativeOrAbsoluteLink( anchor.getAttribute( 'href' ), request.url ),
+                        title: ( item?.querySelector( 'div.fw-bold' )?.textContent ?? anchor.textContent ?? '' ).trim(),
+                        language: ''
+                    };
+                } );
                 callback( null, chapterList );
             } )
-            .catch( error => {
-                console.error( error, manga );
-                callback( error, undefined );
-            } );
+            .catch( error => callback( error, undefined ) );
     }
 }

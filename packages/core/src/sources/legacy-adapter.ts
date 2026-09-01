@@ -6,7 +6,7 @@
 
 import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
 import { withAbortScope } from '../shims/abort-scope.js';
-import { isAntiBotShell } from '../shims/browser.js';
+import { browserEnabled, getPageHTML, isAntiBotShell } from '../shims/browser.js';
 import { type ChapterInfo, errorMessage, type HealthResult, type MangaInfo, type PageList, type SourceAdapter, SourceError } from './types.js';
 
 export class LegacySourceAdapter implements SourceAdapter {
@@ -89,6 +89,7 @@ export class LegacySourceAdapter implements SourceAdapter {
      */
     async checkHealth(): Promise<HealthResult> {
         const startedAt = Date.now();
+        let renderedViaBrowser = false;
         if (!this.connector.url) {
             return { ok: false, latencyMs: 0, error: 'No base URL' };
         }
@@ -104,7 +105,19 @@ export class LegacySourceAdapter implements SourceAdapter {
             }
             const body = await response.text();
             if (isAntiBotShell(body)) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Page protégée par anti-bot (JavaScript requis)' };
+                // the catalog operations (fetchUI) retry anti-bot shells in a
+                // real browser — the health check must agree or protected
+                // sources look dead while they actually work
+                if (browserEnabled()) {
+                    const rendered = await getPageHTML(this.connector.url, { timeoutMs: 30_000 }).catch(() => undefined);
+                    if (rendered && !isAntiBotShell(rendered.html)) {
+                        renderedViaBrowser = true;
+                    } else {
+                        return { ok: false, latencyMs: Date.now() - startedAt, error: 'Page protégée par anti-bot (JavaScript requis)' };
+                    }
+                } else {
+                    return { ok: false, latencyMs: Date.now() - startedAt, error: 'Page protégée par anti-bot (JavaScript requis)' };
+                }
             }
         } catch (error) {
             return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
@@ -132,12 +145,12 @@ export class LegacySourceAdapter implements SourceAdapter {
             ]).finally(() => clearTimeout(slowTimer));
             if (mangas === SLOW) {
                 // too slow to verify (catalog scanner) but root has real content
-                return { ok: true, latencyMs: Date.now() - startedAt };
+                return { ok: true, latencyMs: Date.now() - startedAt, via: renderedViaBrowser ? 'browser' : undefined };
             }
             if (!Array.isArray(mangas) || mangas.length === 0) {
                 return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
             }
-            return { ok: true, latencyMs: Date.now() - startedAt };
+            return { ok: true, latencyMs: Date.now() - startedAt, via: renderedViaBrowser ? 'browser' : undefined };
         } catch (error) {
             return { ok: false, latencyMs: Date.now() - startedAt, error: this._describeError(error) };
         }

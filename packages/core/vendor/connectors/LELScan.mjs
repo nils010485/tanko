@@ -24,7 +24,7 @@ export default class LELScan extends Connector {
             .then( data => {
                 let mangaList = data.map( element => {
                     return {
-                        id: this.getRelativeLink( element ),
+                        id: this.getRootRelativeOrAbsoluteLink( element, this.url ),
                         title: element.text.replace( 'scan', '' ).trim()
                     };
                 } );
@@ -46,7 +46,7 @@ export default class LELScan extends Connector {
                     let uri = new URL( element.value, this.url );
                     return {
                         id: uri.pathname + uri.search,
-                        title: element.text.trim(),
+                        title: ( element.textContent || element.text || '' ).trim(),
                         language: 'fr'
                     };
                 } );
@@ -85,7 +85,7 @@ export default class LELScan extends Connector {
          * TODO: only perform requests when from download manager
          * or when from browser for preview and selected chapter matches
          */
-        return this.fetchDOM( request, 'div#image source' )
+        return this.fetchDOM( request, 'div#image img' )
             .then( data => super._handleConnectorURI( this.getAbsolutePath( data[0], request.url ) ) );
     }
 }

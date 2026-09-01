@@ -45,11 +45,16 @@ export default class ToomicsKO extends Toomics {
         });
         let data = await this.fetchDOM(request, this.queryMangas);
         return data.map(element => {
+            let title = element.querySelector(this.queryMangaTitle)?.textContent ?? element.getAttribute('title') ?? element.textContent;
+            let link = element.dataset.toggle === 'modal' ? element.id.match(/idx(\d+)$/)?.[1] : this.getRootRelativeOrAbsoluteLink(element, this.baseURL).replace(/bridge\/type\/\d+/, 'episode');
+            if (!link) {
+                return null;
+            }
             return {
-                id: element.dataset.toggle === 'modal' ? element.id.match(/idx(\d+)$/)[1] : this.getRootRelativeOrAbsoluteLink(element, this.baseURL).replace(/bridge\/type\/\d+/, 'episode'),
-                title: element.querySelector(this.queryMangaTitle).textContent.replace(/\u005B[^\u005B\u005D]+\u005D$/, '').trim()
+                id: link,
+                title: title.replace(/\u005B[^\u005B\u005D]+\u005D$/, '').trim()
             };
-        });
+        }).filter(manga => manga !== null);
     }
 
     async _fetchPOST(path, data, responseMethodName) {

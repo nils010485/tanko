@@ -11,3 +11,7 @@ repro.tmp.mjs
 docker-compose.yml
 !docker-compose.yml.example
 .plasma/
+
+# local triage/investigation artifacts (regenerable)
+scripts/casework/
+scripts/triage-report.md

@@ -134,7 +134,8 @@ export default function Import({ onImported }: { onImported: () => void }) {
     };
 
     const typedPath = folderPath.trim();
-    const adoptsStorage = typedPath !== '' && storagePath !== '' && (!typedPath.startsWith('/') || normalizeServerPath(typedPath) !== normalizeServerPath(storagePath));
+    const adoptsStorage =
+        typedPath !== '' && storagePath !== '' && (!typedPath.startsWith('/') || normalizeServerPath(typedPath) !== normalizeServerPath(storagePath));
     return (
         <div className="space-y-4">
             <SectionTitle>{t('import.title')}</SectionTitle>

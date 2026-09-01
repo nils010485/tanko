@@ -81,6 +81,14 @@ export function installGlobals(): void {
     // document events are frontend-only notifications -> make dispatching a no-op
     // (linkedom rejects Node's native CustomEvent instances)
     dom.document.dispatchEvent = () => true;
+    // legacy connectors compare element hrefs against window.location.origin
+    // (Connector.getRelativeLink); linkedom exposes none -> give a never-matching
+    // origin so URL resolution falls back to the explicit base URI
+    try {
+        (dom.window as { location?: { origin?: string } }).location = { origin: 'https://tanko-shim.invalid' };
+    } catch {
+        /* linkedom made location read-only: the comparison then yields false anyway */
+    }
     // createElement('html') must return the robust parseHTML-backed container
     const realCreateElement = dom.document.createElement.bind(dom.document);
     dom.document.createElement = ((tag: string) => {

@@ -10,10 +10,14 @@
 import { existsSync } from 'node:fs';
 import type { Browser } from 'puppeteer-core';
 
+/** External Chrome/Chromium exposing CDP (e.g. a podman container publishing
+ * port 9222) — takes precedence over a local binary when set. */
+const BROWSER_URL = process.env.TANKO_BROWSER_URL?.trim() || undefined;
+
 const CHROMIUM_CANDIDATES = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
 
 export function detectChromium(): string | undefined {
-    return CHROMIUM_CANDIDATES.find(path => existsSync(path));
+    return BROWSER_URL ? 'remote' : CHROMIUM_CANDIDATES.find(path => existsSync(path));
 }
 
 export function browserEnabled(): boolean {
@@ -55,6 +59,11 @@ interface PageResult {
 let browserPromise: Promise<Browser> | undefined;
 
 async function launch(): Promise<Browser> {
+    if (BROWSER_URL) {
+        // external browser (podman/docker container with CDP): connect, never own it
+        const { default: puppeteer } = await import('puppeteer-core');
+        return puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null });
+    }
     const executablePath = detectChromium();
     if (!executablePath) {
         throw new Error('No Chromium binary found');
@@ -143,6 +152,11 @@ export async function closeBrowser(): Promise<void> {
     if (browserPromise) {
         const browser = await browserPromise.catch(() => undefined);
         browserPromise = undefined;
-        await browser?.close().catch(() => undefined);
+        if (BROWSER_URL) {
+            // remote browser is shared: release the connection, keep it running
+            await browser?.disconnect().catch(() => undefined);
+        } else {
+            await browser?.close().catch(() => undefined);
+        }
     }
 }
