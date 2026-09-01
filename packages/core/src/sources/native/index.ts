@@ -33,7 +33,7 @@ export function createNativeConnectors(): SourceAdapter[] {
         new MadaraConnector({
             id: 'toongod',
             label: 'ToonGod',
-            base: 'https://toongod.org',
+            base: 'https://www.toongod.org',
             tags: ['webtoon', 'english', 'manhwa']
         }),
         new MadaraConnector({
