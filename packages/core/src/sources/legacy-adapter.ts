@@ -9,6 +9,32 @@ import { withAbortScope } from '../shims/abort-scope.js';
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../shims/browser.js';
 import { type ChapterInfo, errorMessage, type HealthResult, type MangaInfo, type PageList, type SourceAdapter, SourceError } from './types.js';
 
+/** Language tags missing from the vendored connectors (verified per site),
+ *  merged into the adapter tags so the preferred-language filter applies. */
+const LEGACY_LANGUAGE_TAGS: Record<string, string[]> = {
+    comicvn: ['vietnamese'],
+    hentaihere: ['english'],
+    hoducomics: ['korean'],
+    imangascans: ['english'],
+    madokami: ['english'],
+    mangaforall: ['english'],
+    mangahispano: ['spanish'],
+    mangahome: ['english'],
+    mangaoku: ['turkish'],
+    mangaonline: ['german'],
+    mangaroom: ['japanese'],
+    mangashow: ['english'],
+    perveden: ['english'],
+    'perveden-it': ['italian'],
+    readmangaeu: ['english'],
+    shakai: ['russian'],
+    siberowl: ['english'],
+    turkcraft: ['turkish'],
+    truyentranhtuan: ['vietnamese'],
+    vnsharing: ['vietnamese'],
+    webtoontr: ['turkish']
+};
+
 export class LegacySourceAdapter implements SourceAdapter {
     readonly kind = 'legacy' as const;
 
@@ -23,7 +49,9 @@ export class LegacySourceAdapter implements SourceAdapter {
     }
 
     get tags(): string[] {
-        return this.connector.tags || [];
+        // upstream connectors shipped untagged: without a language tag they
+        // bypass the preferred-language source filter entirely
+        return [...new Set([...(this.connector.tags || []), ...(LEGACY_LANGUAGE_TAGS[this.id] ?? [])])];
     }
 
     get url(): string | undefined {
