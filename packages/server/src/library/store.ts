@@ -114,26 +114,30 @@ export class LibraryStore {
     /** Remove the entry from Tanko; with `disk`, also delete the series folder. */
     removeEntry(entryId: number, options: { disk?: boolean } = {}): { ok: boolean; deletedPath?: string } {
         const row = getEntryRow(this.ctx, entryId);
+        // before the delete: chapter paths vanish with the entry (cascade)
+        const directory = options.disk && row ? seriesDirectory(this.ctx, entryId, row) : null;
+        this.purgeJournals(entryId);
         const result = this.ctx.db.db.prepare('DELETE FROM library WHERE id = ?').run(entryId);
         if (Number(result.changes) === 0) {
             return { ok: false };
         }
-        if (options.disk && row) {
-            const directory = seriesDirectory(this.ctx, entryId, row);
-            // force:true makes rmSync silent on a missing path — check first so
-            // deletedPath only reports a folder that was actually removed
-            if (directory && fs.existsSync(directory)) {
-                try {
-                    fs.rmSync(directory, { recursive: true, force: true });
-                    return { ok: true, deletedPath: directory };
-                } catch {
-                    // entry is gone even if the folder could not be removed
-                }
+        if (directory && fs.existsSync(directory)) {
+            // check first so deletedPath only reports a folder actually removed
+            try {
+                fs.rmSync(directory, { recursive: true, force: true });
+                return { ok: true, deletedPath: directory };
+            } catch {
+                // entry is gone even if the folder could not be removed
             }
         }
         return { ok: true };
     }
 
+    /** No FK on the journal tables: explicit cleanup for a removed entry. */
+    private purgeJournals(entryId: number): void {
+        this.ctx.db.db.prepare('DELETE FROM chapter_history WHERE entry_id = ?').run(entryId);
+        this.ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE entry_id = ?').run(entryId);
+    }
     /** Directory holding the entry's files: deepest common ancestor of the
      *  downloaded chapter paths, falling back to the configured layout. */
     seriesDirectory(entryId: number, row?: EntryRow): string | null {
@@ -209,9 +213,7 @@ export class LibraryStore {
             if (!row || this._deadDirectory(row) === undefined) {
                 continue;
             }
-            // no FK on these two tables: clean the journal explicitly
-            this.ctx.db.db.prepare('DELETE FROM chapter_history WHERE entry_id = ?').run(id);
-            this.ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE entry_id = ?').run(id);
+            this.purgeJournals(id);
             removed += Number(this.ctx.db.db.prepare('DELETE FROM library WHERE id = ?').run(id).changes);
         }
         return removed;

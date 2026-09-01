@@ -88,6 +88,13 @@ export function migrateLibrarySchema(db: Database): void {
     db.db.prepare('UPDATE library SET last_chapter_at = ? WHERE last_chapter_at IS NULL').run(new Date().toISOString());
     const chapterColumns = db.db.prepare('PRAGMA table_info(library_chapters)').all() as Array<{ name: string }>;
     addColumn(db, 'library_chapters', chapterColumns, 'prev_status', 'prev_status TEXT');
+
+    // no FK on the journal tables: purge rows orphaned by older deletes
+    db.db.exec(`
+        DELETE FROM chapter_history WHERE entry_id NOT IN (SELECT id FROM library);
+        DELETE FROM entry_snapshots WHERE entry_id NOT IN (SELECT id FROM library);
+        DELETE FROM library_chapters WHERE entry_id NOT IN (SELECT id FROM library);
+    `);
 }
 
 /** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
