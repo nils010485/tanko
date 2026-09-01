@@ -4,16 +4,32 @@
  * reopened at any time — it simply polls the current job.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IconCheck, IconFolder, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
+import { IconAlert, IconCheck, IconFolder, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
 import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle, Toggle } from '../components/ui.js';
 import { type TFunction, useI18n } from '../i18n/index.js';
 import { api, type ImportJobSeries, type ImportJobStatus } from '../lib/api.js';
 
 const ACTIVE_STATUSES = new Set(['scanning', 'matching', 'syncing']);
 
+/** Normalize a server-side path for comparison (collapses '//', '.' and '..'). */
+function normalizeServerPath(input: string): string {
+    const segments: string[] = [];
+    for (const segment of input.replace(/\/+/g, '/').split('/')) {
+        if (!segment || segment === '.') {
+            continue;
+        }
+        if (segment === '..') {
+            segments.pop();
+        } else {
+            segments.push(segment);
+        }
+    }
+    return `/${segments.join('/')}`;
+}
 export default function Import({ onImported }: { onImported: () => void }) {
     const { t } = useI18n();
     const [folderPath, setFolderPath] = useState('');
+    const [storagePath, setStoragePath] = useState('');
     const [autoConfirm, setAutoConfirm] = useState<'auto' | 'none'>('none');
     const [autoDownload, setAutoDownload] = useState(false);
     const [state, setState] = useState<ImportJobStatus | null>(null);
@@ -37,6 +53,18 @@ export default function Import({ onImported }: { onImported: () => void }) {
         };
     }, [refresh]);
 
+    useEffect(() => {
+        void (async () => {
+            try {
+                const data = await api.settings();
+                setStoragePath(data.queue.dataDirectory);
+                setFolderPath(prev => prev || data.queue.dataDirectory);
+            } catch {
+                /* the warning simply stays hidden */
+            }
+        })();
+    }, []);
+
     const job = state?.job || null;
     const counters = state?.counters;
     const series = state?.series || [];
@@ -58,15 +86,17 @@ export default function Import({ onImported }: { onImported: () => void }) {
             }
         };
 
-    const start = run(
-        () =>
-            api.importJobStart({
-                path: folderPath.trim(),
-                autoConfirm,
-                autoDownload
-            }),
-        'start'
-    );
+    const start = run(async () => {
+        await api.importJobStart({
+            path: folderPath.trim(),
+            autoConfirm,
+            autoDownload
+        });
+        // the server adopts a differing folder as the storage folder — resync
+        const data = await api.settings();
+        setStoragePath(data.queue.dataDirectory);
+    }, 'start');
+
     // every job action is a no-op when there is no job (buttons are hidden then)
     const runJobAction = (action: (jobId: number) => Promise<unknown>) =>
         run(async () => {
@@ -103,6 +133,8 @@ export default function Import({ onImported }: { onImported: () => void }) {
         error: 'import.phaseError'
     };
 
+    const typedPath = folderPath.trim();
+    const adoptsStorage = typedPath !== '' && storagePath !== '' && (!typedPath.startsWith('/') || normalizeServerPath(typedPath) !== normalizeServerPath(storagePath));
     return (
         <div className="space-y-4">
             <SectionTitle>{t('import.title')}</SectionTitle>
@@ -129,6 +161,15 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     </div>
                 </div>
 
+                {adoptsStorage && (
+                    <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-3">
+                        <IconAlert size={15} className="mt-0.5 flex-none text-amber-400" />
+                        <p className="min-w-0 text-sm text-muted">
+                            <span className="font-semibold text-amber-300">{t('import.storageAdoptTitle')}</span>
+                            <span className="text-faint"> — {t('import.storageAdoptBody', { path: folderPath.trim(), storage: storagePath })}</span>
+                        </p>
+                    </div>
+                )}
                 <div className="flex flex-col gap-2.5 border-t border-line pt-3.5 sm:flex-row sm:gap-6">
                     <Toggle checked={autoConfirm === 'auto'} onChange={value => setAutoConfirm(value ? 'auto' : 'none')} label={t('import.autoConfirmLabel')} />
                     <Toggle checked={autoDownload} onChange={setAutoDownload} label={t('import.autoDownloadLabel')} />

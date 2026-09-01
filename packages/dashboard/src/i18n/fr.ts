@@ -535,15 +535,18 @@ export const fr: typeof import('./en.js').en = {
 
     // import
     'import.title': 'Importer une bibliothèque existante',
-    'import.intro': 'Analyse un dossier, retrouve chaque série sur les sources et marque les chapitres déjà présents comme téléchargés.',
+    'import.intro':
+        'Analyse un dossier, retrouve chaque série sur les sources et marque les chapitres déjà présents comme téléchargés. Un dossier différent du dossier de stockage le remplace : les prochains chapitres y seront écrits.',
     'import.phaseScanning': 'Analyse du dossier…',
     'import.phaseMatching': 'Recherche des correspondances…',
     'import.phaseReady': 'En attente de confirmation',
     'import.phaseSyncing': 'Synchronisation en cours…',
     'import.phaseDone': 'Import terminé',
     'import.phaseError': 'Erreur',
-    'import.folderLabel': 'Dossier de la bibliothèque (chemin dans le conteneur)',
+    'import.folderLabel': 'Dossier à analyser (bibliothèque existante)',
     'import.folderHint': 'Chemin tel que le serveur le voit — en Docker, le volume monté, pas le chemin de l’hôte.',
+    'import.storageAdoptTitle': 'Ce dossier remplacera le dossier de stockage',
+    'import.storageAdoptBody': 'les prochains téléchargements seront écrits dans « {path} » et non dans « {storage} ».',
     'import.reuseRoot': 'Réutiliser le dernier import : {path}',
     'import.startHint': 'Ré-importer une bibliothèque déjà importée est sans risque : les entrées existantes sont mises à jour, rien n’est écrasé ni supprimé.',
     'import.autoConfirmLabel': 'Confirmer automatiquement les correspondances fiables',

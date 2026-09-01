@@ -1,6 +1,10 @@
+import path from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { scanLibrary } from '../import/scanner.js';
+import type { Database } from '../db.js';
+import type { DownloadQueue } from '../downloader/queue.js';
+import { assertValidDirectory, scanLibrary } from '../import/scanner.js';
 import { type AutoConfirmMode, CRAWL_BUSY_ERROR, type ImportService } from '../import/service.js';
+import { persistQueueSettings } from './settings.js';
 
 const AUTO_CONFIRM_MODES = new Set<AutoConfirmMode>(['auto', 'all', 'none']);
 
@@ -18,7 +22,7 @@ async function runJobAction(reply: FastifyReply, _importer: ImportService, id: s
     }
 }
 
-export function registerImportRoutes(app: FastifyInstance, importer: ImportService): void {
+export function registerImportRoutes(app: FastifyInstance, importer: ImportService, queue: DownloadQueue, db: Database): void {
     // Scan a data folder and detect series/chapters (preview, no mutation)
     app.post<{ Body: { path: string } }>('/api/import/scan', async (request, reply) => {
         const targetPath = request.body?.path;
@@ -60,12 +64,20 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
                 return reply.code(400).send({ error: 'autoConfirm doit être "auto", "all" ou "none"' });
             }
             try {
-                return await importer.start(body.path, {
+                const resolved = assertValidDirectory(body.path);
+                const result = await importer.start(resolved, {
                     autoConfirm: body.autoConfirm,
                     autoDownload: body.autoDownload === true,
                     concurrency: body.concurrency,
                     sourceIds: Array.isArray(body.sourceIds) ? body.sourceIds : undefined
                 });
+                // an imported library is meant to be monitored from then on: adopt the
+                // scanned folder as storage (queued, not-yet-started downloads retarget
+                // too) — only after a successful start, so a rejected job changes nothing
+                if (resolved !== path.resolve(queue.getSettings().dataDirectory)) {
+                    persistQueueSettings(db, queue.updateSettings({ dataDirectory: resolved }));
+                }
+                return result;
             } catch (error) {
                 return reply.code(400).send({ error: (error as Error).message });
             }

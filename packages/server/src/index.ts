@@ -319,7 +319,7 @@ registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers, 
 registerSettingsRoutes(app, queue, database, covers);
 registerCoverRoutes(app, covers);
 registerImageRoutes(app);
-registerImportRoutes(app, importer);
+registerImportRoutes(app, importer, queue, database);
 
 // WebSocket endpoint: dashboard live events (token via query — WebSocket cannot carry headers)
 app.register(async fastify => {

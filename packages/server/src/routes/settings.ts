@@ -49,6 +49,11 @@ export function loadPersistedQueueSettings(db: Database): PersistedQueueSettings
     return readJsonSetting<PersistedQueueSettings>(db, QUEUE_SETTINGS_KEY, {});
 }
 
+/** Persist queue settings in the KV store (read back at startup). */
+export function persistQueueSettings(db: Database, settings: QueueSettings): void {
+    db.kvSet(QUEUE_SETTINGS_KEY, JSON.stringify(settings));
+}
+
 /** Preferred chapter/source languages (ISO codes); empty = no filter (all).
  *  Defaults to English until the user picks otherwise; the dashboard always
  *  saves an explicit list (possibly empty), so the default only applies to
@@ -192,7 +197,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             }
         }
         const settings = queue.updateSettings(body);
-        db.kvSet(QUEUE_SETTINGS_KEY, JSON.stringify(settings));
+        persistQueueSettings(db, settings);
         return {
             queue: settings,
             preferredLanguages: getLanguages(),

@@ -533,15 +533,18 @@ export const en = {
 
     // import
     'import.title': 'Import an existing library',
-    'import.intro': 'Scans a folder, matches each series on the sources and marks chapters already on disk as downloaded.',
+    'import.intro':
+        'Scans a folder, matches each series on the sources and marks chapters already on disk as downloaded. A folder different from the storage folder replaces it: future chapters will be written there.',
     'import.phaseScanning': 'Scanning folder…',
     'import.phaseMatching': 'Matching series…',
     'import.phaseReady': 'Waiting for confirmation',
     'import.phaseSyncing': 'Syncing…',
     'import.phaseDone': 'Import finished',
     'import.phaseError': 'Error',
-    'import.folderLabel': 'Library folder (path inside the container)',
+    'import.folderLabel': 'Folder to scan (existing library)',
     'import.folderHint': 'Path as seen by the server — in Docker, the mounted volume, not the host path.',
+    'import.storageAdoptTitle': 'This folder will replace the storage folder',
+    'import.storageAdoptBody': 'future downloads will be written to "{path}" instead of "{storage}".',
     'import.reuseRoot': 'Reuse the last import: {path}',
     'import.startHint': 'Re-importing an already-imported library is safe: existing entries are updated, nothing is overwritten or deleted.',
     'import.autoConfirmLabel': 'Automatically confirm confident matches',
