@@ -37,6 +37,10 @@ export interface EntryRow {
     staleness_next_probe_at: string | null;
     /** Alternative titles (JSON array) searched by the failover. */
     aliases: string | null;
+    /** Canonical series folder, relative to the data directory ('/'-separated,
+     *  multi-segment for legacy source-layout entries). NULL = legacy row not
+     *  backfilled yet, resolved dynamically. */
+    directory: string | null;
 }
 
 /** A source-wide download outage (≥ SOURCE_OUTAGE_ENTRIES distinct entries
@@ -92,6 +96,25 @@ export interface MigrationTarget {
     /** Chapters in the preferred languages, set once the candidate's chapter
      *  list has actually been fetched (picker, detection and outage flows). */
     chapterCount?: number;
+    /** User-validated provenance (library_alternatives): exempt from the
+     *  per-round validation cap — it outranks any crawl hit. */
+    linked?: boolean;
+}
+
+/** A recorded alternative provenance of an entry's work: same series on
+ *  another source, or another manga id on the same source (second team,
+ *  retranslation). Preferred failover candidate and manual migration target. */
+export interface AlternativeRow {
+    id: number;
+    entry_id: number;
+    source_id: string;
+    source_label: string;
+    manga_id: string;
+    title: string;
+    url: string | null;
+    chapter_count: number | null;
+    score: number | null;
+    added_at: string;
 }
 
 /** Probe candidate of the stalled-source failover regime. */

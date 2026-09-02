@@ -63,6 +63,19 @@ export function migrateLibrarySchema(db: Database): void {
             escalated_at TEXT,
             closed_at    TEXT
         );
+        CREATE TABLE IF NOT EXISTS library_alternatives (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id      INTEGER NOT NULL REFERENCES library(id) ON DELETE CASCADE,
+            source_id     TEXT NOT NULL,
+            source_label  TEXT NOT NULL,
+            manga_id      TEXT NOT NULL,
+            title         TEXT NOT NULL,
+            url           TEXT,
+            chapter_count INTEGER,
+            score         REAL,
+            added_at      TEXT NOT NULL,
+            UNIQUE(entry_id, source_id, manga_id)
+        );
     `);
     // databases created before the soft-close redesign: add the closed_at stamp
     const outageColumns = db.db.prepare('PRAGMA table_info(source_outages)').all() as Array<{ name: string }>;
@@ -81,6 +94,13 @@ export function migrateLibrarySchema(db: Database): void {
     addColumn(db, 'library', columns, 'staleness_next_probe_at', 'staleness_next_probe_at TEXT');
     addColumn(db, 'library', columns, 'paused', 'paused INTEGER NOT NULL DEFAULT 0');
     addColumn(db, 'library', columns, 'aliases', 'aliases TEXT');
+    // canonical series folder ('/'-separated, relative to the data directory);
+    // NOT unique — legacy libraries can contain real shares, and the index
+    // records reality instead of denying it (uniqueness is enforced at
+    // allocation time)
+    addColumn(db, 'library', columns, 'directory', 'directory TEXT');
+    // created after the column exists on every database (old and new alike)
+    db.db.exec('CREATE INDEX IF NOT EXISTS idx_library_directory ON library(directory)');
     // unknown last-new-chapter date (existing databases, imports, or rows
     // created between the ALTER and a crash): start from today so the
     // auto-unfollow cannot fire right on startup — runs on every boot, a

@@ -3,7 +3,7 @@
  * toggle, check / download actions and the full chapter list with per-chapter
  * download, retry, preview and restore. Reached via #/library/:id.
  */
-import type { LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
+import type { LibraryAlternativeDto, LibraryChapterDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChapterList, ChapterStatusBadge } from '../components/ChapterList.js';
 import { Cover } from '../components/Cover.js';
@@ -77,6 +77,8 @@ export default function Series({
         error: '',
         data: null
     });
+    const [linked, setLinked] = useState<LibraryAlternativeDto[] | null>(null);
+    const [unlinking, setUnlinking] = useState<number | null>(null);
     /** sourceId of the alternative being migrated to (row-level loading). */
     const [migratingTo, setMigratingTo] = useState<string | null>(null);
     /** Alias-editor input in the source picker. */
@@ -217,7 +219,7 @@ export default function Series({
         try {
             const data = await api.entryAlternatives(entryId);
             setPicker({ open: true, loading: false, error: '', data });
-            // names were auto-merged from AniList after an empty crawl: refresh so the alias chips show them
+            void loadLinked();
             if (data.autoAliases) {
                 await refreshLibrary();
             }
@@ -226,6 +228,27 @@ export default function Series({
         }
     };
 
+    /** Linked provenances of the same work: failover prefers them and the
+     *  user can migrate to one manually. Loaded with the picker. */
+    const loadLinked = async () => {
+        try {
+            setLinked(await api.linkedSources(entryId));
+        } catch {
+            setLinked([]); // a failed fetch must not break the picker
+        }
+    };
+
+    const unlink = async (alternativeId: number) => {
+        setUnlinking(alternativeId);
+        try {
+            await api.unlinkSource(entryId, alternativeId);
+            await loadLinked();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setUnlinking(null);
+        }
+    };
     const closePicker = () => setPicker(current => ({ ...current, open: false }));
 
     /** Save the alias list, refresh the entry, then re-run the source search —
@@ -578,6 +601,53 @@ export default function Series({
                         </div>
                         <div className="mt-1 text-xs text-faint">
                             {entry.sourceLabel} · {t('library.chaptersCount', { n: entry.chapterCount })} ({t('series.changeSourceCurrent')})
+                        </div>
+
+                        {/* linked provenances: recorded alternatives of the same work */}
+                        <div className="mt-3 rounded-lg border border-line bg-canvas/50 p-3">
+                            <div className="break-words text-sm font-semibold text-fg">{t('series.linkedTitle')}</div>
+                            <div className="mt-0.5 text-xs text-faint">{t('series.linkedHint')}</div>
+                            {linked === null ? (
+                                <div className="mt-2 text-xs text-faint">…</div>
+                            ) : linked.length === 0 ? (
+                                <div className="mt-2 text-xs text-faint">{t('series.linkedEmpty')}</div>
+                            ) : (
+                                <div className="mt-2 space-y-2">
+                                    {linked.map(alternative => (
+                                        <div key={alternative.id} className="flex items-center gap-3 rounded-lg border border-line bg-surface/60 p-2.5">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm text-fg">
+                                                    {alternative.sourceLabel}
+                                                    {alternative.title !== entry.title && <span className="ml-1 text-faint">— {alternative.title}</span>}
+                                                </div>
+                                            </div>
+                                            <Button
+                                                small
+                                                onClick={() =>
+                                                    void migrateTo({
+                                                        sourceId: alternative.sourceId,
+                                                        sourceLabel: alternative.sourceLabel,
+                                                        mangaId: alternative.mangaId,
+                                                        mangaTitle: alternative.title,
+                                                        chapterCount: alternative.chapterCount ?? entry.chapterCount,
+                                                        score: alternative.score ?? 1
+                                                    })
+                                                }
+                                                loading={migratingTo === alternative.sourceId}
+                                            >
+                                                {t('series.linkedMigrate')}
+                                            </Button>
+                                            <IconButton
+                                                title={t('series.linkedRemove')}
+                                                onClick={() => void unlink(alternative.id)}
+                                                disabled={unlinking === alternative.id}
+                                            >
+                                                <IconX size={14} />
+                                            </IconButton>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* alias editor: the other names the failover searches too (AniList or manual) */}

@@ -9,6 +9,7 @@
  * CRUD and DTO mapping live here.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import type { SourceRegistry } from '@tanko/core';
 import type { DeadSeriesDto, LibraryEntryDto } from '@tanko/shared';
 import type { Database } from '../db.js';
@@ -18,13 +19,14 @@ import { chapterAllowed } from '../languages.js';
 import * as chapters from './chapters.js';
 import type { StoreContext } from './context.js';
 import { getEntryRow, isDownloaded, makeQueries, seriesDirectory } from './context.js';
+import * as directories from './directories.js';
 import * as migration from './migration.js';
 import * as outages from './outages.js';
-import type { ChapterRow, EntryRow, MigrationTarget, SourceOutage, StalledCandidate } from './rows.js';
+import type { AlternativeRow, ChapterRow, EntryRow, MigrationTarget, SourceOutage, StalledCandidate } from './rows.js';
 import { normalizeAliases, normalizeTitle, SQL_INSERT_CHAPTER } from './rows.js';
 import { migrateLibrarySchema } from './schema.js';
 
-export type { ChapterRow, MigrationTarget, SourceOutage, StalledCandidate };
+export type { AlternativeRow, ChapterRow, MigrationTarget, SourceOutage, StalledCandidate };
 
 export class LibraryStore {
     private readonly ctx: StoreContext;
@@ -44,8 +46,9 @@ export class LibraryStore {
             getPreferredLanguages: opts.getPreferredLanguages
         };
         migrateLibrarySchema(opts.db);
+        // give legacy rows their canonical directory before anything reads it
+        directories.backfillDirectories(this.ctx);
     }
-
     /**
      * Add a series to the library. The current chapter list is snapshotted so
      * that only chapters published *after* this point are treated as new.
@@ -66,9 +69,14 @@ export class LibraryStore {
             throw new Error(`Source "${entry.sourceId}" not found`);
         }
         const now = new Date().toISOString();
+        const directory = directories.allocateDirectory(this.ctx, {
+            title: entry.title,
+            sourceLabel: source.label,
+            layout: this.ctx.queueSettings.directoryLayout
+        });
         const result = this.ctx.q.get<{ id: number }>(
-            `INSERT INTO library (source_id, source_label, manga_id, title, url, thumbnail, auto_download, last_checked_at, last_chapter_at, added_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO library (source_id, source_label, manga_id, title, url, thumbnail, auto_download, last_checked_at, last_chapter_at, added_at, directory)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(source_id, manga_id) DO UPDATE SET title = excluded.title, url = excluded.url,
                 thumbnail = COALESCE(excluded.thumbnail, library.thumbnail),
                 last_chapter_at = excluded.last_chapter_at
@@ -82,7 +90,8 @@ export class LibraryStore {
             entry.autoDownload === false ? 0 : 1,
             now,
             now,
-            now
+            now,
+            directory
         );
         if (!result) {
             throw new Error(`Failed to create the library entry for "${entry.title}"`);
@@ -97,7 +106,14 @@ export class LibraryStore {
                 if (!chapterAllowed(chapter.language, preferred)) {
                     continue;
                 }
-                const status = isDownloaded(this.ctx, source.label, entry.title, chapter.title) ? 'downloaded' : entry.backlog === 'ignore' ? 'missing' : 'new';
+                let status: 'downloaded' | 'missing' | 'new';
+                if (isDownloaded(this.ctx, source.label, entry.title, chapter.title, { id: result.id, directory })) {
+                    status = 'downloaded';
+                } else if (entry.backlog === 'ignore') {
+                    status = 'missing';
+                } else {
+                    status = 'new';
+                }
                 insert.run(result.id, chapter.id, chapter.title, chapter.language || null, status, now);
                 snapshot++;
             }
@@ -111,26 +127,84 @@ export class LibraryStore {
         return { entry: created, snapshot };
     }
 
-    /** Remove the entry from Tanko; with `disk`, also delete the series folder. */
-    removeEntry(entryId: number, options: { disk?: boolean } = {}): { ok: boolean; deletedPath?: string } {
+    /** Remove the entry from Tanko; with `disk`, also delete its files — the
+     *  whole series folder when no other entry shares it, else only the files
+     *  this entry has recorded (a shared folder must survive its co-tenants). */
+    removeEntry(entryId: number, options: { disk?: boolean } = {}): { ok: boolean; deletedPath?: string; deletedFiles?: number } {
         const row = getEntryRow(this.ctx, entryId);
         // before the delete: chapter paths vanish with the entry (cascade)
         const directory = options.disk && row ? seriesDirectory(this.ctx, entryId, row) : null;
+        const shared = directory != null && this._directoryShared(directory, entryId);
+        // recorded before the cascade; only the shared branch needs them
+        const recordedPaths = shared
+            ? this.ctx.q
+                  .all<{ path: string }>('SELECT path FROM library_chapters WHERE entry_id = ? AND path IS NOT NULL AND length(path) > 0', entryId)
+                  .map(item => item.path)
+            : [];
         this.purgeJournals(entryId);
         const result = this.ctx.db.db.prepare('DELETE FROM library WHERE id = ?').run(entryId);
         if (Number(result.changes) === 0) {
             return { ok: false };
         }
-        if (directory && fs.existsSync(directory)) {
-            // check first so deletedPath only reports a folder actually removed
+        if (!directory || !fs.existsSync(directory)) {
+            return { ok: true };
+        }
+        return shared ? this._deleteSharedFiles(recordedPaths, entryId) : this._deleteSeriesFolder(directory);
+    }
+
+    /** Delete the files this entry recorded in a shared folder — only those no
+     *  other entry also claims, and never outside the data directory. */
+    private _deleteSharedFiles(recordedPaths: string[], entryId: number): { ok: boolean; deletedFiles: number } {
+        const base = path.resolve(this.ctx.queueSettings.dataDirectory);
+        const claimed = new Set(
+            this.ctx.q
+                .all<{ path: string }>('SELECT path FROM library_chapters WHERE entry_id != ? AND path IS NOT NULL AND length(path) > 0', entryId)
+                .map(item => path.resolve(item.path))
+        );
+        let deletedFiles = 0;
+        for (const file of recordedPaths) {
+            const target = path.resolve(file);
+            if (claimed.has(target) || !target.startsWith(base + path.sep)) {
+                continue;
+            }
             try {
-                fs.rmSync(directory, { recursive: true, force: true });
-                return { ok: true, deletedPath: directory };
+                // 'img' format records a chapter DIRECTORY as its path
+                fs.rmSync(file, { force: true, recursive: true });
+                deletedFiles++;
             } catch {
-                // entry is gone even if the folder could not be removed
+                // keep going: the entry is gone regardless
             }
         }
-        return { ok: true };
+        return { ok: true, deletedFiles };
+    }
+
+    /** Delete the whole series folder, confined inside the data directory. */
+    private _deleteSeriesFolder(directory: string): { ok: boolean; deletedPath?: string } {
+        const base = path.resolve(this.ctx.queueSettings.dataDirectory);
+        const target = path.resolve(directory);
+        if (target === base || !target.startsWith(base + path.sep)) {
+            console.warn(`[library] refusing to delete outside the data directory: ${directory}`);
+            return { ok: true };
+        }
+        try {
+            // check first so deletedPath only reports a folder actually removed
+            fs.rmSync(directory, { recursive: true, force: true });
+            return { ok: true, deletedPath: directory };
+        } catch {
+            // entry is gone even if the folder could not be removed
+            return { ok: true };
+        }
+    }
+
+    /** Whether another entry's files also live in this directory (resolved
+     *  series directories already tolerate apostrophe and case variants). */
+    private _directoryShared(directory: string, entryId: number): boolean {
+        const target = path.resolve(directory);
+        const rows = this.ctx.q.all<{ id: number }>('SELECT id FROM library WHERE id != ?', entryId);
+        return rows.some(row => {
+            const other = seriesDirectory(this.ctx, row.id);
+            return other != null && path.resolve(other) === target;
+        });
     }
 
     /** No FK on the journal tables: explicit cleanup for a removed entry. */
@@ -307,6 +381,63 @@ export class LibraryStore {
             return null;
         }
         return this.ctx.q.all<EntryRow>('SELECT * FROM library').find(row => normalizeTitle(row.title) === needle) ?? null;
+    }
+
+    /** Record an alternative provenance for the entry's work — the same
+     *  series on another source, or another manga id on the same source
+     *  (second team, retranslation). The failover prefers these candidates
+     *  and the dashboard offers a manual migration to one. The alternative's
+     *  title joins the search aliases so the failover finds it under either
+     *  spelling. */
+    async addAlternative(entryId: number, target: { sourceId: string; mangaId: string; title: string; url?: string }): Promise<AlternativeRow | undefined> {
+        const entry = getEntryRow(this.ctx, entryId);
+        if (!entry) {
+            return undefined;
+        }
+        const source = await this.ctx.registry.get(target.sourceId);
+        if (!source) {
+            throw new Error(`Source "${target.sourceId}" not found`);
+        }
+        this.ctx.db.db
+            .prepare(
+                `INSERT INTO library_alternatives (entry_id, source_id, source_label, manga_id, title, url, added_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(entry_id, source_id, manga_id) DO UPDATE SET title = excluded.title, url = COALESCE(excluded.url, library_alternatives.url)`
+            )
+            .run(entryId, target.sourceId, source.label, target.mangaId, target.title, target.url || null, new Date().toISOString());
+        const aliases = normalizeAliases(entry.title, [...(JSON.parse(entry.aliases ?? '[]') as string[]), target.title]);
+        if (aliases.length > 0) {
+            this.ctx.db.db.prepare('UPDATE library SET aliases = ? WHERE id = ?').run(JSON.stringify(aliases), entryId);
+        }
+        return this.listAlternatives(entryId).find(row => row.source_id === target.sourceId && row.manga_id === target.mangaId);
+    }
+
+    listAlternatives(entryId: number): AlternativeRow[] {
+        return this.ctx.q.all<AlternativeRow>('SELECT * FROM library_alternatives WHERE entry_id = ? ORDER BY added_at ASC', entryId);
+    }
+
+    removeAlternative(entryId: number, alternativeId: number): boolean {
+        const result = this.ctx.db.db.prepare('DELETE FROM library_alternatives WHERE id = ? AND entry_id = ?').run(alternativeId, entryId);
+        return Number(result.changes) > 0;
+    }
+
+    /** The entry tracking this exact provenance, when any (duplicate add of
+     *  the same source+manga: an upsert, never a second entry). */
+    getEntryByProvenance(sourceId: string, mangaId: string): EntryRow | null {
+        return this.ctx.q.get('SELECT * FROM library WHERE source_id = ? AND manga_id = ?', sourceId, mangaId) ?? null;
+    }
+
+    /** Point the entry at an existing folder (import adoption): the scanned
+     *  path becomes its canonical directory when it lies inside the data
+     *  directory — downloads then complete the imported folder in place.
+     *  Returns the stored directory, null when the folder is outside. */
+    adoptDirectory(entryId: number, folder: string): string | null {
+        const rel = directories.relativeOrNull(this.ctx.queueSettings.dataDirectory, folder);
+        if (!rel) {
+            return null;
+        }
+        this.ctx.db.db.prepare('UPDATE library SET directory = ? WHERE id = ?').run(rel, entryId);
+        return rel;
     }
 
     /** Download failures since the last failover probe (the probe resets the counter). */

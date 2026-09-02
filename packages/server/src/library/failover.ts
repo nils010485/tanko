@@ -254,6 +254,25 @@ export class FailoverService {
         opts: { maxSources?: number; deadlineMs?: number } = {}
     ): AsyncGenerator<MigrationTarget[]> {
         const done = new Set<string>(); // attempted and/or rejected sources
+        // linked provenances first: the user validated them, they outrank any
+        // crawl hit and skip the search entirely (same-source links are not
+        // failover material — the source itself is the problem)
+        const linked = this.opts.store.listAlternatives(entry.id).filter(row => row.source_id !== entry.sourceId);
+        if (linked.length > 0) {
+            for (const row of linked) {
+                done.add(row.source_id);
+            }
+            yield linked.map(row => ({
+                sourceId: row.source_id,
+                sourceLabel: row.source_label,
+                mangaId: row.manga_id,
+                mangaTitle: row.title,
+                url: row.url ?? undefined,
+                score: 1,
+                chapterCount: row.chapter_count ?? undefined,
+                linked: true
+            }));
+        }
         for (let round = 0; round < VALIDATION_ROUNDS; round++) {
             const { candidates, searched } = await this.findAlternative(entry, { ...opts, excludeSources: done });
             for (const id of searched) {
@@ -296,7 +315,10 @@ export class FailoverService {
                 break;
             }
         }
-        return alternatives.sort((a, b) => b.chapterCount - a.chapterCount || (b.score ?? 0) - (a.score ?? 0));
+        // linked provenances lead (the user validated them); then the richer source wins
+        const linkedKeys = new Set(this.opts.store.listAlternatives(entry.id).map(row => `${row.source_id}\u0000${row.manga_id}`));
+        const isLinked = (alternative: SourceAlternativeDto): boolean => linkedKeys.has(`${alternative.sourceId}\u0000${alternative.mangaId}`);
+        return alternatives.sort((a, b) => Number(isLinked(b)) - Number(isLinked(a)) || b.chapterCount - a.chapterCount || (b.score ?? 0) - (a.score ?? 0));
     }
 
     /** Chapters of a candidate in the preferred languages, null when the
@@ -462,7 +484,7 @@ export class FailoverService {
                     continue;
                 }
                 triedSources.add(candidate.sourceId);
-                if (triedSources.size > MAX_VALIDATIONS_PER_ROUND) {
+                if (!candidate.linked && triedSources.size > MAX_VALIDATIONS_PER_ROUND) {
                     break; // bound the latency: 4 distinct sources max per round
                 }
                 if ((candidate.score ?? 0) < MIN_SUGGESTION_SCORE) {

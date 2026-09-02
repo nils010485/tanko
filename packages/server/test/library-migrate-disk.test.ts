@@ -116,4 +116,17 @@ describe('migrateEntry', () => {
         expect(chapterRow(entry.id, 'r60')?.path).toContain('Chapter 60.cbz');
         expect(rowCount(entry.id)).toBe(51); // absorbed in place, nothing duplicated
     });
+
+    it('keeps the canonical directory when the new source titles the series differently', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'rich', mangaId: 'm9', title: 'One Punch Man', backlog: 'ignore' });
+        const folder = path.join(tmpDir, 'downloads', 'Rich', 'One Punch Man');
+        fs.mkdirSync(folder, { recursive: true });
+        fs.writeFileSync(path.join(folder, 'Chapter 1.cbz'), 'x');
+        store.markChapter(entry.id, 'r1', 'downloaded', path.join(folder, 'Chapter 1.cbz'), 'test');
+        await store.migrateEntry(entry.id, { sourceId: 'starved', mangaId: 'm10', mangaTitle: 'One Punch-Man' });
+        const after = (database.db.prepare('SELECT directory FROM library WHERE id = ?').get(entry.id) as { directory: string | null }).directory;
+        expect(after).toBe('Rich/One Punch Man'); // untouched by the migration
+        expect(store.seriesDirectory(entry.id)).toBe(folder); // files still resolve there
+        expect(chapterRow(entry.id, 'only')?.path).toBe(path.join(folder, 'Chapter 1.cbz')); // file carried over by number
+    });
 });

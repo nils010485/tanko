@@ -5,15 +5,22 @@
 
 import type { ChapterDto, GlobalSearchStatusDto, MangaDto, SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChaptersModal, FollowDialog, GlobalResults, healthDot, MangaResultCard, SourcePicker } from '../components/discover/index.js';
+import type { DuplicateTarget } from '../components/discover/DuplicateDialog.js';
+import { ChaptersModal, DuplicateDialog, FollowDialog, GlobalResults, healthDot, MangaResultCard, SourcePicker } from '../components/discover/index.js';
 import { IconAlert, IconEyeOff, IconGitHub, IconGlobe, IconRefresh, IconSearch, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spinner } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
-import { api } from '../lib/api.js';
+import { api, RequestError } from '../lib/api.js';
 import { useEscapeKey } from '../lib/hooks.js';
 import { sourceRank, statusLabel } from '../lib/sources.js';
+
+/** Canonical URL of a search result, when the connector exposes one (some use
+ *  the manga id itself as a link). */
+function mangaUrlOf(manga: MangaDto): string | undefined {
+    return manga.url || (typeof manga.id === 'string' && manga.id.startsWith('http') ? manga.id : undefined);
+}
 
 /** Injected by vite at build time from package.json (see vite.config.ts). */
 declare const __APP_VERSION__: string;
@@ -56,6 +63,8 @@ export default function Discover({
     const [added, setAdded] = useState<Map<string, number>>(new Map());
     const [followTarget, setFollowTarget] = useState<MangaDto | null>(null);
     const [followCount, setFollowCount] = useState<number | null>(null);
+    const [duplicate, setDuplicate] = useState<DuplicateTarget | null>(null);
+    const [duplicateBusy, setDuplicateBusy] = useState(false);
     const comboRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
     const { t } = useI18n();
@@ -112,8 +121,9 @@ export default function Discover({
         setSelected(null);
         setPreview(null);
         setFollowTarget(null);
+        setDuplicate(null);
     }, []);
-    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null);
+    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null || duplicate !== null);
 
     const visibleSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);
@@ -274,19 +284,19 @@ export default function Discover({
             });
     };
 
-    const followManga = async (manga: MangaDto, backlog: 'ignore' | 'grab') => {
+    const followManga = async (manga: MangaDto, backlog: 'ignore' | 'grab', force = false) => {
         const key = `${manga.sourceId}:${manga.id}`;
         setAddingKey(key);
         try {
-            const mangaUrl = manga.url || (typeof manga.id === 'string' && manga.id.startsWith('http') ? manga.id : undefined);
             const result = await api.addToLibrary({
                 sourceId: manga.sourceId,
                 mangaId: manga.id,
                 title: manga.title,
-                url: mangaUrl,
+                url: mangaUrlOf(manga),
                 thumbnail: manga.thumbnail,
                 autoDownload: true,
-                backlog
+                backlog,
+                force
             });
             setAdded(current => new Map(current).set(key, result.entry.id));
             toast.success(
@@ -297,9 +307,49 @@ export default function Discover({
             onAddedToLibrary();
             setFollowTarget(null);
         } catch (error) {
-            toast.error((error as Error).message);
+            if (error instanceof RequestError && error.status === 409 && error.body?.existingEntry) {
+                // duplicate guard: offer link-as-alternative vs separate entry
+                setDuplicate({ manga, backlog, existing: error.body.existingEntry });
+                setFollowTarget(null);
+            } else {
+                toast.error((error as Error).message);
+            }
         } finally {
             setAddingKey(null);
+        }
+    };
+
+    /** Link the duplicate provenance to the tracked entry instead of creating
+     *  a second one: one work, one entry — the failover prefers the link. */
+    const linkDuplicate = async () => {
+        if (duplicate === null) {
+            return;
+        }
+        const { manga, existing } = duplicate;
+        setDuplicateBusy(true);
+        try {
+            await api.linkSource(existing.id, { sourceId: manga.sourceId, mangaId: manga.id, title: manga.title, url: mangaUrlOf(manga) });
+            toast.success(t('discover.duplicateLinked', { title: existing.title, source: manga.title }));
+            setDuplicate(null);
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setDuplicateBusy(false);
+        }
+    };
+
+    /** Force a separate entry: genuinely different works sharing a title. */
+    const forceDuplicate = async () => {
+        if (duplicate === null) {
+            return;
+        }
+        const { manga, backlog } = duplicate;
+        setDuplicateBusy(true);
+        try {
+            await followManga(manga, backlog, true);
+            setDuplicate(null);
+        } finally {
+            setDuplicateBusy(false);
         }
     };
 
@@ -522,6 +572,15 @@ export default function Discover({
                     addingKey={addingKey}
                     onFollow={followManga}
                     onClose={() => setFollowTarget(null)}
+                />
+            )}
+            {duplicate !== null && (
+                <DuplicateDialog
+                    target={duplicate}
+                    busy={duplicateBusy}
+                    onLink={() => void linkDuplicate()}
+                    onForce={() => void forceDuplicate()}
+                    onClose={() => setDuplicate(null)}
                 />
             )}
         </div>

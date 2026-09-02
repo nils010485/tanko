@@ -77,6 +77,25 @@ describe('chapterPaths', () => {
             fs.rmSync(base, { recursive: true, force: true });
         }
     });
+
+    it('lets an explicit series directory override the layout', () => {
+        // stored library.directory wins over whatever the current settings would compute
+        const paths = chapterPaths('/base', 'MangaDex', 'One Piece', 'Ch.12', 'source', path.join('/base', 'Custom', 'Folder'));
+        expect(paths.cbzFile).toBe(path.join('/base', 'Custom', 'Folder', 'Chapter 12.cbz'));
+    });
+
+    it('refuses a loose folder match the ownership guard rejects', () => {
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-paths-'));
+        try {
+            // a sibling names the same series differently, but another entry owns it
+            fs.mkdirSync(path.join(base, 'Into the light once again'), { recursive: true });
+            const paths = chapterPaths(base, 'Tapas', 'Into the Light, Once Again', 'Ch.1', 'series', undefined, () => true);
+            expect(paths.cbzFile.startsWith(path.join(base, 'Into the light once again'))).toBe(false);
+            expect(paths.cbzFile).toBe(path.join(base, 'Into the Light, Once Again', 'Chapter 1.cbz'));
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
 });
 
 describe('chapterFileNames', () => {

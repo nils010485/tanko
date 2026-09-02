@@ -23,6 +23,7 @@ import {
     Grid3x3,
     Import,
     LayoutGrid,
+    Link2,
     List,
     ListChecks,
     type LucideProps,
@@ -91,6 +92,7 @@ export const IconMenu = decorative(Menu);
 export const IconGrid = decorative(LayoutGrid);
 export const IconGridSmall = decorative(Grid3x3);
 export const IconList = decorative(List);
+export const IconLink = decorative(Link2);
 export const IconSliders = decorative(SlidersHorizontal);
 export const IconBookmark = decorative(Bookmark);
 export const IconBookmarkFilled = filled(decorative(Bookmark));

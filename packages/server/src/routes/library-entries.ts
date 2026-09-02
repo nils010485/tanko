@@ -3,11 +3,27 @@
  * dead-entry detection/pruning and disk resync. Extracted from routes/library.ts,
  * which registers the whole library API.
  */
-import type { LibraryBulkAction, LibraryEntryDto, SourceAlternativesResponseDto } from '@tanko/shared';
+import type { LibraryAlternativeDto, LibraryBulkAction, LibraryEntryDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { fetchTitleAliases } from '../library/anilist.js';
-import type { LibraryStore } from '../library/store.js';
+import type { AlternativeRow, LibraryStore } from '../library/store.js';
 import type { LibraryRouteDeps } from './library.js';
+
+/** Row → DTO of a recorded alternative provenance. */
+function toAlternativeDto(row: AlternativeRow): LibraryAlternativeDto {
+    return {
+        id: row.id,
+        entryId: row.entry_id,
+        sourceId: row.source_id,
+        sourceLabel: row.source_label,
+        mangaId: row.manga_id,
+        title: row.title,
+        url: row.url,
+        chapterCount: row.chapter_count,
+        score: row.score,
+        addedAt: row.added_at
+    };
+}
 
 /** Load an entry or reply 404; undefined means the reply has already been sent. */
 export function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: number): LibraryEntryDto | undefined {
@@ -68,6 +84,21 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
             return reply.code(409).send({
                 error: `Série déjà suivie via ${existing.source_label} (#${existing.id})`,
                 existingEntry: { id: existing.id, title: existing.title, sourceId: existing.source_id, sourceLabel: existing.source_label }
+            });
+        }
+        // the exact provenance is already tracked: forcing would hit the
+        // (source, manga) upsert and silently change nothing — there is no
+        // "separate series" to create for one provenance
+        const sameProvenance = store.getEntryByProvenance(body.sourceId, body.mangaId);
+        if (sameProvenance) {
+            return reply.code(409).send({
+                error: `Cette série est déjà suivie via cette même source (#${sameProvenance.id})`,
+                existingEntry: {
+                    id: sameProvenance.id,
+                    title: sameProvenance.title,
+                    sourceId: sameProvenance.source_id,
+                    sourceLabel: sameProvenance.source_label
+                }
             });
         }
         try {
@@ -345,6 +376,47 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         }
         store.setAliases(entry.id, aliases);
         return { entry: publishEntry(entry.id) };
+    });
+
+    // Recorded alternative provenance of the same work (linked from the
+    // duplicate guard): preferred failover candidates and manual migration targets
+    app.get<{ Params: { entryId: string } }>('/api/library/:entryId/linked-sources', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        return store.listAlternatives(entry.id).map(toAlternativeDto);
+    });
+
+    app.post<{ Params: { entryId: string }; Body: { sourceId?: string; mangaId?: string; title?: string; url?: string } }>(
+        '/api/library/:entryId/linked-sources',
+        async (request, reply) => {
+            const entry = requireEntry(reply, store, Number(request.params.entryId));
+            if (!entry) {
+                return reply;
+            }
+            const body = request.body;
+            if (!body?.sourceId || !body?.mangaId || !body?.title) {
+                return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
+            }
+            try {
+                const alternative = await store.addAlternative(entry.id, { sourceId: body.sourceId, mangaId: body.mangaId, title: body.title, url: body.url });
+                if (!alternative) {
+                    return reply.code(404).send({ error: 'Entry not found' });
+                }
+                return reply.code(201).send({ alternative: toAlternativeDto(alternative) });
+            } catch (error) {
+                return reply.code(400).send({ error: (error as Error).message });
+            }
+        }
+    );
+
+    app.delete<{ Params: { entryId: string; alternativeId: string } }>('/api/library/:entryId/linked-sources/:alternativeId', async (request, reply) => {
+        const entry = requireEntry(reply, store, Number(request.params.entryId));
+        if (!entry) {
+            return reply;
+        }
+        return { ok: store.removeAlternative(entry.id, Number(request.params.alternativeId)) };
     });
 
     // AniList lookup: merge the official + alternative titles into the aliases

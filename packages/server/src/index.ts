@@ -66,9 +66,11 @@ const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(ada
 const persistedQueueSettings = loadPersistedQueueSettings(database);
 const queueSettings: QueueSettings = {
     // persisted settings win over the built-in defaults so a reboot keeps the
-    // user-configured values (all editable in the Settings tab)
+    // user-configured values (all editable in the Settings tab). Default layout
+    // is flat ('series'): existing entries keep their stored directory, so this
+    // only decides where NEW series are allocated.
     dataDirectory: persistedQueueSettings.dataDirectory || config.dataDirectory,
-    directoryLayout: persistedQueueSettings.directoryLayout || 'source',
+    directoryLayout: persistedQueueSettings.directoryLayout || 'series',
     chapterFormat: persistedQueueSettings.chapterFormat || 'cbz',
     // NB: || (not ??) on the concurrency fields is intentional — a persisted 0
     // must not override the default, while throttleMs 0 is a valid value (hence ??).

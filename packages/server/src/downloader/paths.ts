@@ -78,7 +78,7 @@ export function chapterFileNames(chapterTitle: string): string[] {
  *  a folder spelled with the other apostrophe — sources title series with a
  *  typographic « Can’t » while NAS folders are usually ASCII « Can't » (and
  *  vice versa). Downloads, counts and deletions then share the real folder. */
-function resolveSeriesDirectory(directory: string): string {
+export function resolveSeriesDirectory(directory: string, isOwned?: (directory: string) => boolean): string {
     if (fs.existsSync(directory)) {
         return directory;
     }
@@ -90,13 +90,18 @@ function resolveSeriesDirectory(directory: string): string {
     // last resort: a sibling folder whose name differs only by case or
     // punctuation (« Into the light once again » on disk for a source titled
     // « Into the Light, Once Again ») — without it the disk pass scans a
-    // folder that does not exist and local chapters stay invisible
+    // folder that does not exist and local chapters stay invisible.
+    // `isOwned` rejects candidates another entry owns, so two entries never
+    // converge on one folder through a spelling variant.
     const parent = path.dirname(directory);
     const wanted = directoryKey(path.basename(directory));
     try {
         for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
             if ((entry.isDirectory() || entry.isSymbolicLink()) && directoryKey(entry.name) === wanted) {
-                return path.join(parent, entry.name);
+                const candidate = path.join(parent, entry.name);
+                if (!isOwned?.(candidate)) {
+                    return candidate;
+                }
             }
         }
     } catch {
@@ -104,11 +109,10 @@ function resolveSeriesDirectory(directory: string): string {
     }
     return directory;
 }
-
 /** Loose comparison key for folder lookup: lowercase letters/digits only, so
  *  case and punctuation differences (comma, colon, extra spaces…) don't
  *  prevent matching an existing series folder. */
-function directoryKey(name: string): string {
+export function directoryKey(name: string): string {
     return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
@@ -117,15 +121,25 @@ export function chapterPaths(
     sourceLabel: string,
     mangaTitle: string,
     chapterTitle: string,
-    layout: DirectoryLayout = 'source'
+    layout: DirectoryLayout = 'source',
+    /** Explicit series directory (a stored library.directory) overriding the
+     *  layout-derived path, so downloads keep completing the entry's own
+     *  folder even after a source migration or a layout change. */
+    seriesDirOverride?: string,
+    /** Ownership predicate rejecting loose folder matches (see
+     *  resolveSeriesDirectory). */
+    isOwned?: (directory: string) => boolean
 ): ChapterPaths {
     const seriesDir = resolveSeriesDirectory(
-        layout === 'series' ? path.join(baseDirectory, sanitizeName(mangaTitle)) : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle))
+        seriesDirOverride ??
+            (layout === 'series'
+                ? path.join(baseDirectory, sanitizeName(mangaTitle))
+                : path.join(baseDirectory, sanitizeName(sourceLabel), sanitizeName(mangaTitle))),
+        isOwned
     );
     const names = chapterFileNames(chapterTitle);
     const chapterName = names[0] ?? sanitizeName(chapterTitle);
     let existing: string | undefined;
-    // exact spellings first (fast path)
     for (const name of names) {
         if (fs.existsSync(path.join(seriesDir, `${name}.cbz`))) {
             existing = path.join(seriesDir, `${name}.cbz`);

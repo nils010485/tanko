@@ -48,7 +48,11 @@ export async function migrateEntry(ctx: StoreContext, entryId: number, target: M
     // 'downloaded' row to carry — rebuilding on a richer source must not
     // mark those files missing just because the old source ignored them
     const disk = diskByNumber(seriesDirectory(ctx, entryId));
-    return rebuildChapters(ctx, entryId, target, source, downloaded, disk);
+    const result = await rebuildChapters(ctx, entryId, target, source, downloaded, disk);
+    // the consumed linked provenance is spent: the entry now lives there, and
+    // the migration snapshot already offers the way back
+    ctx.db.db.prepare('DELETE FROM library_alternatives WHERE entry_id = ? AND source_id = ? AND manga_id = ?').run(entryId, target.sourceId, target.mangaId);
+    return result;
 }
 
 /** After a migration rebuilt the chapter list on a new source, re-queue the
@@ -136,6 +140,9 @@ async function rebuildChapters(
     const chapters = await source.getChapters({ id: target.mangaId, title: target.mangaTitle });
     const preferred = ctx.getPreferredLanguages?.() || [];
     const now = new Date().toISOString();
+    // the entry's canonical folder is untouched by the migration: downloads
+    // and disk checks keep using it under the new source's title
+    const entryDirectory = ctx.q.get<{ directory: string | null }>('SELECT directory FROM library WHERE id = ?', entryId)?.directory ?? null;
 
     ctx.db.db.prepare('DELETE FROM library_chapters WHERE entry_id = ?').run(entryId);
     ctx.db.db
@@ -168,7 +175,7 @@ async function rebuildChapters(
             insert.run(entryId, chapter.id, chapter.title, chapter.language || null, 'downloaded', fromDisk, now, now);
             kept++;
         } else {
-            const status = isDownloaded(ctx, source.label, target.mangaTitle, chapter.title) ? 'downloaded' : 'new';
+            const status = isDownloaded(ctx, source.label, target.mangaTitle, chapter.title, { id: entryId, directory: entryDirectory }) ? 'downloaded' : 'new';
             insert.run(entryId, chapter.id, chapter.title, chapter.language || null, status, null, now, null);
         }
     }

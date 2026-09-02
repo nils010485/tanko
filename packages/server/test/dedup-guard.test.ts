@@ -59,6 +59,30 @@ describe('findEntryByTitle (cross-source duplicate guard)', () => {
     });
 });
 
+describe('library_alternatives (linked provenances)', () => {
+    it('adds, lists and removes an alternative, merging its title into the aliases', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'kali', mangaId: 'm-alt', title: 'Alice in Cypherland', backlog: 'ignore' });
+
+        const alternative = await store.addAlternative(entry.id, { sourceId: 'mangadex', mangaId: 'md-1', title: 'Alice in Cypherland (Official)' });
+        expect(alternative).toBeDefined();
+        expect(alternative?.source_label).toBe('Source'); // resolved from the registry
+        expect(store.listAlternatives(entry.id)).toHaveLength(1);
+
+        // the alternative's spelling joins the failover search aliases
+        const fresh = store.getEntry(entry.id);
+        expect(fresh?.aliases).toContain('Alice in Cypherland (Official)');
+
+        // same provenance twice: upsert, not a duplicate row
+        await store.addAlternative(entry.id, { sourceId: 'mangadex', mangaId: 'md-1', title: 'Alice in Cypherland (Official)' });
+        expect(store.listAlternatives(entry.id)).toHaveLength(1);
+        await store.addAlternative(entry.id, { sourceId: 'mangadex', mangaId: 'md-2', title: 'Alice in Cypherland (Team B)' });
+        expect(store.listAlternatives(entry.id)).toHaveLength(2);
+
+        expect(store.removeAlternative(entry.id, alternative?.id ?? 0)).toBe(true);
+        expect(store.listAlternatives(entry.id)).toHaveLength(1);
+    });
+});
+
 describe('markDownloadedByNumber (re-import reconciliation)', () => {
     it('marks not-yet-downloaded chapters with their local file, skips already-downloaded ones', async () => {
         const { entry } = await store.addEntry({ sourceId: 'mangadex', mangaId: 'm-2', title: 'Solo Max-Level Newbie' });

@@ -151,6 +151,22 @@ export interface LibraryEntryDto {
     aliases?: string[];
 }
 
+/** A recorded alternative provenance of a library entry's work: same series
+ *  on another source, or another manga id on the same source (second team,
+ *  retranslation). Preferred failover candidate and manual migration target. */
+export interface LibraryAlternativeDto {
+    id: number;
+    entryId: number;
+    sourceId: string;
+    sourceLabel: string;
+    mangaId: string;
+    title: string;
+    url?: string | null;
+    chapterCount?: number | null;
+    score?: number | null;
+    addedAt: string;
+}
+
 /** Actions accepted by POST /api/library/bulk (library selection mode). */
 export type LibraryBulkAction = 'pause' | 'resume' | 'hide' | 'unhide' | 'check' | 'downloadNew' | 'rematch' | 'delete';
 /** Recap returned by POST /api/library/bulk. */
@@ -448,4 +464,6 @@ export type WsEvent =
 export interface ApiError {
     error: string;
     details?: string;
+    /** Duplicate-series guard (HTTP 409): the tracked entry this add collided with. */
+    existingEntry?: { id: number; title: string; sourceId: string; sourceLabel: string };
 }

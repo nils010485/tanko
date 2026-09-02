@@ -98,3 +98,33 @@ describe('resyncLocalFiles', () => {
         expect(result.entries).toBe(3); // the three series with files above
     });
 });
+
+describe('preferred languages (constructor propagation)', () => {
+    it('filters the initial snapshot to the preferred languages', async () => {
+        const bilingual = new LibraryStore({
+            db: database,
+            registry: {
+                get: async () => ({
+                    label: 'Source',
+                    getChapters: async () => [
+                        { id: 'en1', title: 'Chapter 1', language: 'en' },
+                        { id: 'ru1', title: 'Chapter 1 (Russian)', language: 'ru' }
+                    ]
+                }),
+                list: async () => []
+            } as never,
+            queueSettings: {
+                dataDirectory: path.join(tmpDir, 'downloads'),
+                directoryLayout: 'source',
+                chapterFormat: 'cbz',
+                parallelSources: 1,
+                concurrencyPerSource: 1,
+                throttleMs: 0
+            },
+            getPreferredLanguages: () => ['en']
+        });
+        const { entry } = await bilingual.addEntry({ sourceId: 'src', mangaId: 'lang-m1', title: 'Language Filter', backlog: 'ignore' });
+        const chapters = bilingual.listChapters(entry.id);
+        expect(chapters.map(chapter => chapter.chapterId)).toEqual(['en1']);
+    });
+});

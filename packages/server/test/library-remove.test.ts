@@ -119,3 +119,52 @@ describe('LibraryStore removeEntry', () => {
         }
     });
 });
+
+describe('removeEntry with a shared folder (disk: true)', () => {
+    /** Direct-SQL insert with a chosen manga id (the title-based slug would collide). */
+    function insertTitled(title: string, mangaId: string): number {
+        const row = database.db
+            .prepare("INSERT INTO library (source_id, source_label, manga_id, title, auto_download, added_at) VALUES ('s', 'Source', ?, ?, 1, ?)")
+            .run(mangaId, title, new Date().toISOString());
+        return Number(row.lastInsertRowid);
+    }
+
+    function claimFile(entryId: number, chapterId: string, filePath: string): void {
+        database.db
+            .prepare("INSERT INTO library_chapters (entry_id, chapter_id, title, status, path, discovered_at) VALUES (?, ?, ?, 'downloaded', ?, ?)")
+            .run(entryId, chapterId, 'Chapter', filePath, new Date().toISOString());
+    }
+
+    it('keeps the folder and deletes only the files no other entry claims', () => {
+        const a = insertTitled('Shared Series', 'shared-a');
+        const b = insertTitled('Shared Series', 'shared-b');
+        const folder = path.join(tmpDir, 'downloads', 'Shared');
+        fs.mkdirSync(folder, { recursive: true });
+        fs.writeFileSync(path.join(folder, 'Chapter 1.cbz'), 'x');
+        fs.writeFileSync(path.join(folder, 'Chapter 2.cbz'), 'x');
+        claimFile(a, 'c1', path.join(folder, 'Chapter 1.cbz'));
+        claimFile(b, 'c1', path.join(folder, 'Chapter 1.cbz')); // claimed by both
+        claimFile(a, 'c2', path.join(folder, 'Chapter 2.cbz')); // only a
+
+        const result = store.removeEntry(a, { disk: true });
+        expect(result.ok).toBe(true);
+        expect(result.deletedPath).toBeUndefined(); // no folder removal
+        expect(fs.existsSync(folder)).toBe(true); // b still lives there
+        expect(fs.existsSync(path.join(folder, 'Chapter 1.cbz'))).toBe(true); // protected by b
+        expect(fs.existsSync(path.join(folder, 'Chapter 2.cbz'))).toBe(false); // only a had it
+    });
+
+    it('refuses to delete files outside the data directory even when shared', () => {
+        const a = insertTitled('Outside Series', 'outside-a');
+        const outside = path.join(tmpDir, 'elsewhere', 'Outside');
+        fs.mkdirSync(outside, { recursive: true });
+        const file = path.join(outside, 'Chapter 1.cbz');
+        fs.writeFileSync(file, 'x');
+        claimFile(a, 'c1', file);
+
+        const result = store.removeEntry(a, { disk: true });
+        expect(result.ok).toBe(true);
+        expect(result.deletedPath).toBeUndefined();
+        expect(fs.existsSync(file)).toBe(true); // confinement holds per file
+    });
+});

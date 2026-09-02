@@ -121,6 +121,10 @@ async function syncSeries(
         title: mangaTitle,
         autoDownload
     });
+    // the scanned folder is the entry's home: adopt it as the canonical
+    // directory when it lies inside the data directory, so downloads
+    // complete the imported folder instead of starting a sibling
+    ctx.store.adoptDirectory(entry.id, series.path);
     const { pairs, mode } = pairChapters(local.byNumber, sourceByNumber);
 
     for (const pair of pairs) {

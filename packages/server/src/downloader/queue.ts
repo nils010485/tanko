@@ -12,6 +12,7 @@ import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { DownloadJobDto, DownloadStatus, QueueSettingsDto, QueueStatusDto } from '@tanko/shared';
 import JSZip from 'jszip';
 import type { Database } from '../db.js';
+import { makeQueries, ownershipGuard } from '../library/context.js';
 import type { EventBus } from '../ws.js';
 import { CBZ_MEMORY_GUARD_BYTES, finalizeCbz, spillArchiveToDirectory } from './archive.js';
 import { fetchPageWithRetries, getPageListWithRetries, PAGE_LIST_REFRESHES } from './pages.js';
@@ -373,6 +374,17 @@ export class DownloadQueue {
         return row.n > 0;
     }
 
+    /** Stored canonical folder of a job's library entry, when it has one: the
+     *  download keeps completing the entry's directory even after a source
+     *  migration rewrote its title, or the layout setting changed. */
+    private _entrySeriesDir(entryId: number): string | undefined {
+        if (!this.libraryPresent) {
+            return undefined;
+        }
+        const entry = this.opts.db.db.prepare('SELECT directory FROM library WHERE id = ?').get(entryId) as { directory: string | null } | undefined;
+        return entry?.directory ? path.join(this.opts.settings.dataDirectory, ...entry.directory.split('/')) : undefined;
+    }
+
     /** Whether the library entry (when tracked) still downloads from this
      *  source — jobs orphaned by a source migration must not be retried. */
     private _entryTracksSource(entryId: number, sourceId: string): boolean {
@@ -585,8 +597,17 @@ export class DownloadQueue {
             }
 
             const pages = await getPageListWithRetries(source, row, () => this._checkCancel(row.id));
-
-            const paths = chapterPaths(this.opts.settings.dataDirectory, source.label, row.manga_title, row.chapter_title, this.opts.settings.directoryLayout);
+            const seriesDir = row.entry_id != null ? this._entrySeriesDir(row.entry_id) : undefined;
+            const owned = ownershipGuard(makeQueries(this.opts.db), this.opts.settings.dataDirectory, row.entry_id ?? undefined);
+            const paths = chapterPaths(
+                this.opts.settings.dataDirectory,
+                source.label,
+                row.manga_title,
+                row.chapter_title,
+                this.opts.settings.directoryLayout,
+                seriesDir,
+                owned
+            );
             const isCbz = this.opts.settings.chapterFormat === 'cbz';
             const output = isCbz ? paths.cbzFile : paths.directory;
 

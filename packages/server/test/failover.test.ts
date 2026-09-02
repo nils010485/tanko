@@ -353,3 +353,24 @@ describe('outage failover (maybeMigrate)', () => {
         expect(suggestion?.chapterCount).toBe(3); // counted during the usability probe
     });
 });
+
+describe('linked provenances (library_alternatives)', () => {
+    it('are offered first by the picker, without crawling', async () => {
+        await store.addAlternative(entryId, { sourceId: 'stranger', mangaId: 'linked-1', title: 'Starved Series — Official' });
+        const alternatives = await failover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
+        // the linked provenance leads, ahead of any crawl hit
+        expect(alternatives[0]).toMatchObject({ sourceId: 'stranger', mangaId: 'linked-1' });
+        // consumed by a migration to it
+        await store.migrateEntry(entryId, { sourceId: 'stranger', mangaId: 'linked-1', mangaTitle: 'Starved Series — Official' });
+        expect(store.listAlternatives(entryId)).toHaveLength(0);
+    });
+
+    it('are the failover’s first migration target when the source dies', async () => {
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'lm', title: 'Linked Rescue', backlog: 'ignore' });
+        await store.addAlternative(entry.id, { sourceId: 'richer', mangaId: 'lm-2', title: 'Linked Rescue' });
+        expect(await failover.maybeMigrate({ id: entry.id, sourceId: 'current', title: 'Linked Rescue' })).toBe('migrated');
+        const migrated = store.getEntry(entry.id);
+        expect(migrated?.sourceId).toBe('richer');
+        expect(migrated?.mangaId).toBe('lm-2');
+    });
+});

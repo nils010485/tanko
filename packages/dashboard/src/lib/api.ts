@@ -14,6 +14,7 @@ import type {
     DownloadsPageDto,
     GlobalSearchStatusDto,
     ImportJobStatusDto,
+    LibraryAlternativeDto,
     LibraryBulkAction,
     LibraryBulkSummary,
     LibraryChapterDto,
@@ -103,6 +104,18 @@ export function resetBootToken(): void {
     bootTokenPromise = null;
 }
 
+/** Request failure carrying the parsed error body (e.g. the duplicate
+ *  guard's existingEntry on HTTP 409) and the HTTP status. */
+export class RequestError extends Error {
+    constructor(
+        message: string,
+        readonly status: number,
+        readonly body: ApiError | null
+    ) {
+        super(message);
+    }
+}
+
 async function request<T>(url: string, init?: RequestInit, retried = false): Promise<T> {
     // only declare JSON when there actually is a body, otherwise Fastify tries to
     // parse an empty payload and answers 400 (e.g. DELETE /api/library/:id)
@@ -122,7 +135,7 @@ async function request<T>(url: string, init?: RequestInit, retried = false): Pro
     }
     if (!response.ok) {
         const body: ApiError | null = await response.json().catch(() => null);
-        throw new Error(body?.error || `HTTP ${response.status}`);
+        throw new RequestError(body?.error || `HTTP ${response.status}`, response.status, body);
     }
     return response.json();
 }
@@ -160,7 +173,14 @@ export const api = {
         thumbnail?: string;
         autoDownload?: boolean;
         backlog?: 'ignore' | 'grab';
+        /** Bypass the duplicate-title guard: track this as a separate series. */
+        force?: boolean;
     }) => request<{ entry: LibraryEntryDto; snapshot: number; queued?: number }>('/api/library', { method: 'POST', body: JSON.stringify(entry) }),
+    linkedSources: (entryId: number) => request<LibraryAlternativeDto[]>(`/api/library/${entryId}/linked-sources`),
+    linkSource: (entryId: number, target: { sourceId: string; mangaId: string; title: string; url?: string }) =>
+        request<{ alternative: LibraryAlternativeDto }>(`/api/library/${entryId}/linked-sources`, { method: 'POST', body: JSON.stringify(target) }),
+    unlinkSource: (entryId: number, alternativeId: number) =>
+        request<{ ok: boolean }>(`/api/library/${entryId}/linked-sources/${alternativeId}`, { method: 'DELETE' }),
     library: (hidden = false) => request<LibraryEntryDto[]>(`/api/library${hidden ? '?hidden=1' : ''}`),
     removeFromLibrary: (entryId: number, disk = false) =>
         request<{ ok: boolean; deletedPath: string | null }>(`/api/library/${entryId}${disk ? '?disk=1' : ''}`, { method: 'DELETE' }),

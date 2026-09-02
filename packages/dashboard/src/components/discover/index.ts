@@ -4,6 +4,8 @@
  */
 
 export { ChaptersModal } from './ChaptersModal.js';
+export type { DuplicateTarget } from './DuplicateDialog.js';
+export { DuplicateDialog } from './DuplicateDialog.js';
 export { FollowDialog } from './FollowDialog.js';
 export { GlobalResults } from './GlobalResults.js';
 export { MangaResultCard } from './MangaResultCard.js';
