@@ -28,6 +28,7 @@ import {
 } from './library/failover.js';
 import { LibraryStore } from './library/store.js';
 import { registerActivityRoutes } from './routes/activity.js';
+import { registerCacheRoutes } from './routes/cache.js';
 import { registerCoverRoutes } from './routes/covers.js';
 import { registerDownloadRoutes } from './routes/downloads.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -327,6 +328,7 @@ registerSourceUpdateRoutes(app, config, database);
 registerDownloadRoutes(app, queue, sourceRegistry, library);
 registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers, jobs);
 registerSettingsRoutes(app, queue, database, covers);
+registerCacheRoutes(app, cacheStore);
 registerCoverRoutes(app, covers);
 registerImageRoutes(app);
 registerImportRoutes(app, importer, queue, database);

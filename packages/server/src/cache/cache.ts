@@ -8,4 +8,6 @@ export interface CacheStore {
     /** Stores a value with a time-to-live in seconds. */
     set(key: string, value: unknown, ttlSeconds: number): Promise<void>;
     delete(key: string): Promise<void>;
+    /** Removes every entry, returning how many were deleted. */
+    clear(): Promise<number>;
 }

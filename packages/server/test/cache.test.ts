@@ -48,6 +48,14 @@ describe('SqliteCacheStore', () => {
         await store.delete('k4');
         expect(await store.get('k4')).toBeUndefined();
     });
+
+    it('clears every entry and returns the removed count', async () => {
+        await store.set('a', 1, 60);
+        await store.set('b', 2, 60);
+        expect(await store.clear()).toBe(2);
+        expect(await store.get('a')).toBeUndefined();
+        expect(await store.get('b')).toBeUndefined();
+    });
 });
 
 function fakeLegacyAdapter(calls: { search: number; chapters: number }): SourceAdapter {

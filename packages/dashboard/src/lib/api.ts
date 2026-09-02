@@ -309,6 +309,9 @@ export const api = {
     coversStatus: () => request<CoverStatusDto>('/api/library/covers/status'),
     regenCovers: () => request<{ started: boolean }>('/api/library/covers/regenerate', { method: 'POST' }),
 
+    // internal source cache (maintenance)
+    clearCache: () => request<{ cleared: number }>('/api/maintenance/cache/clear', { method: 'POST' }),
+
     // import (preview scan + server-side persistent jobs)
     importScan: (path: string) => request<ImportScanResult>('/api/import/scan', { method: 'POST', body: JSON.stringify({ path }) }),
     importJobStart: (payload: { path: string; autoConfirm?: 'auto' | 'all' | 'none'; autoDownload?: boolean; sourceIds?: string[] }) =>

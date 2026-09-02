@@ -1,12 +1,12 @@
 /**
  * Tasks view: scheduled checks (cron, auto-download, auto-unfollow),
  * notifications, manual run and the maintenance tools — covers cache,
- * failed-source rematch and the better-source scan.
+ * internal source cache, failed-source rematch and the better-source scan.
  */
 import type { LibraryEntryDto, ScheduleSettingsDto, ScheduleStatusDto } from '@tanko/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
-import { IconBell, IconDownload, IconRefresh, IconSliders } from '../components/icons.js';
+import { IconBell, IconDownload, IconRefresh, IconSliders, IconTrash } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
@@ -51,6 +51,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
     const [regenBusy, setRegenBusy] = useState(false);
     const [rematchBusy, setRematchBusy] = useState(false);
+    const [cacheBusy, setCacheBusy] = useState(false);
     const [dlMissingBusy, setDlMissingBusy] = useState(false);
     const [confirmMissing, setConfirmMissing] = useState(false);
     const toast = useToast();
@@ -117,6 +118,18 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
             toast.error((error as Error).message);
         } finally {
             setRegenBusy(false);
+        }
+    };
+
+    const clearInternalCache = async () => {
+        setCacheBusy(true);
+        try {
+            const { cleared } = await api.clearCache();
+            toast.success(t('tasks.clearCacheDone', { n: cleared }));
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setCacheBusy(false);
         }
     };
 
@@ -391,6 +404,18 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
                         <div className="mt-auto flex justify-end">
                             <Button small variant="ghost" onClick={regenCovers} loading={regenBusy} disabled={covers?.running || covers?.enabled === false}>
                                 <IconRefresh size={13} /> {t('schedule.regenCovers')}
+                            </Button>
+                        </div>
+                    </Card>
+
+                    <Card className="flex h-full flex-col gap-3 p-4">
+                        <div>
+                            <div className="text-sm font-medium">{t('tasks.clearCacheTitle')}</div>
+                            <div className="mt-0.5 text-xs text-faint">{t('tasks.clearCacheHint')}</div>
+                        </div>
+                        <div className="mt-auto flex justify-end">
+                            <Button small variant="ghost" onClick={clearInternalCache} loading={cacheBusy}>
+                                <IconTrash size={13} /> {t('tasks.clearCache')}
                             </Button>
                         </div>
                     </Card>
