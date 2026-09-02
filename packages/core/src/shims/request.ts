@@ -159,6 +159,11 @@ export class HeadlessRequest {
     jar: CookieJar;
     /** Shared so parallel evaluations (download queue) hit one global per-host cap. */
     private gate = new HostGate();
+    /**
+     * Hosts that answered 429/503+Retry-After: no request leaves before the
+     * announced delay, so parallel callers don't each collect their own 429.
+     */
+    private blockedUntil = new Map<string, number>();
 
     constructor() {
         this.userAgent = randomUserAgent();
@@ -174,6 +179,7 @@ export class HeadlessRequest {
         const legacyRequest = typeof request === 'string' ? { url: request, headers: new Headers() } : request;
         const url = legacyRequest.url;
         const deadline = Date.now() + timeout;
+        await this.awaitHostBackoff(url, deadline);
 
         let response: Response | undefined;
         for (let attempt = 0; ; attempt++) {
@@ -201,11 +207,50 @@ export class HeadlessRequest {
 
             const retryable = response.status === 429 || (response.status === 503 && response.headers.has('retry-after'));
             const wait = retryAfterMs(response) ?? RETRY_BACKOFF_MS * (attempt + 1);
+            if (retryable) {
+                this.markHostBackoff(url, wait);
+            }
             if (!retryable || attempt === RATE_LIMIT_ATTEMPTS - 1 || Date.now() + wait >= deadline) {
                 return response;
             }
             await response.body?.cancel().catch(() => undefined); // free the socket before idling
             await new Promise(resolve => setTimeout(resolve, wait));
+        }
+    }
+
+    /**
+     * Wait out a host-wide rate-limit block recorded by an earlier request.
+     * The wait is clamped to the caller's deadline: the fetch signal then
+     * decides what still fits in the budget.
+     */
+    private async awaitHostBackoff(url: string, deadline: number): Promise<void> {
+        const host = new URL(url).hostname;
+        const until = this.blockedUntil.get(host);
+        if (!until || until <= Date.now()) {
+            this.blockedUntil.delete(host); // no-op for absent hosts
+            return;
+        }
+        const wait = Math.max(0, Math.min(until, deadline) - Date.now());
+        if (wait > 0) {
+            await new Promise(resolve => setTimeout(resolve, wait));
+        }
+    }
+
+    /**
+     * Publish a 429/503 wait to every future request on this host (only ever
+     * extends the block); expired entries are pruned along the way.
+     */
+    private markHostBackoff(url: string, waitMs: number): void {
+        const host = new URL(url).hostname;
+        const now = Date.now();
+        const until = now + waitMs;
+        if (until > (this.blockedUntil.get(host) ?? 0)) {
+            this.blockedUntil.set(host, until);
+        }
+        for (const [blockedHost, expires] of this.blockedUntil) {
+            if (expires <= now) {
+                this.blockedUntil.delete(blockedHost);
+            }
         }
     }
 

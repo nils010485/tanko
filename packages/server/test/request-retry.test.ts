@@ -81,4 +81,22 @@ describe('HeadlessRequest.fetch rate-limit retry', () => {
             await server.close();
         }
     });
+
+    it('blocks the host after a 429 so later requests wait out the Retry-After', async () => {
+        const server = scriptedServer([{ status: 429, headers: { 'retry-after': '3' } }, { status: 200 }]);
+        await server.start();
+        try {
+            const headless = new HeadlessRequest();
+            // tiny budget: the 429 comes back at once, but the host is marked
+            const first = await headless.fetch(server.url(), 500);
+            expect(first.status).toBe(429);
+            const startedAt = Date.now();
+            const second = await headless.fetch(server.url());
+            expect(second.status).toBe(200);
+            expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2500);
+            expect(server.hits()).toBe(2); // the second call waited instead of re-hitting
+        } finally {
+            await server.close();
+        }
+    }, 10000);
 });
