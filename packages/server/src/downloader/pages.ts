@@ -4,7 +4,7 @@
  * with backoff, and URL decoration for error messages.
  */
 import type { SourceAdapter } from '@tanko/core';
-import { LegacySourceAdapter, randomUserAgent } from '@tanko/core';
+import { LegacySourceAdapter, NOT_IN_BROWSER_MODE, randomUserAgent } from '@tanko/core';
 import { withTimeout } from '../util/timeout.js';
 import { detectMime } from './paths.js';
 import type { DomainGate } from './rate-limiter.js';
@@ -130,13 +130,15 @@ async function fetchPage(url: string, source: SourceAdapter): Promise<{ mime: st
             try {
                 // source in a solved browser session: its image host may
                 // block plain HTTP just like the site itself (undici TLS fingerprint)
-                return await source.fetchPageImage(url);
+                // 3x budget: connectors run internal retry ladders (e.g. comick's
+                // 4 fetches + 2/4/8s backoff ≈ 254s) that must fit under the cap
+                return await withTimeout(source.fetchPageImage(url), PAGE_FETCH_TIMEOUT_MS * 3, `page image ${describePageUrl(url)}`);
             } catch (error) {
                 // only browser-session connectors opt out this way: a real
                 // HTTP failure after their internal retries must not trigger
                 // a raw fetch without the Referer the CDN requires (pointless
                 // extra hit on an already rate-limited host, masked error)
-                if ((error as Error).message !== 'not in browser mode') {
+                if ((error as Error).message !== NOT_IN_BROWSER_MODE) {
                     throw error;
                 }
             }

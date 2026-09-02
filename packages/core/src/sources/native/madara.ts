@@ -14,7 +14,7 @@ import { BROWSER_SESSION_MS, type BrowserResponse, browserCapturePageImages, bro
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { errorMessage, NOT_IN_BROWSER_MODE, SourceError } from '../types.js';
 import { absoluteUrl, pinToOrigin } from './http.js';
 
 const UA = randomUserAgent();
@@ -481,7 +481,7 @@ export class MadaraConnector implements SourceAdapter {
         // only the site's own host shares the solved session: a foreign image
         // CDN would trigger a pointless 30s solve of a challenge it hasn't got
         if (Date.now() >= this._browserUntil || origin !== this.base) {
-            throw new Error('not in browser mode'); // caller falls back to raw fetch
+            throw new Error(NOT_IN_BROWSER_MODE); // caller falls back to raw fetch
         }
         const response = await browserFetchBinary(origin, url);
         if (response.status !== 200) {

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs on `git push` (activated via: git config core.hooksPath .githooks).
+# Failing lint or tests blocks the push (bypass with --no-verify at your
+# own risk — CI will flag it anyway).
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "[pre-push] lint..."
+npm run lint
+echo "[pre-push] build... (server tests import @tanko/core's dist)"
+npm run build
+echo "[pre-push] tests..."
+npm test

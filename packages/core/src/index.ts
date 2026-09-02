@@ -15,4 +15,4 @@ export { MangastreamConnector } from './sources/native/mangastream.js';
 export { VComicsConnector } from './sources/native/vcomics.js';
 export { SourceRegistry } from './sources/registry.js';
 export type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from './sources/types.js';
-export { SourceError } from './sources/types.js';
+export { NOT_IN_BROWSER_MODE, SourceError } from './sources/types.js';

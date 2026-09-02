@@ -65,6 +65,11 @@ export interface SourceAdapter {
     fetchPageImage?(url: string): Promise<{ mime: string; data: Uint8Array }>;
 }
 
+/** Sentinel thrown by fetchPageImage implementations that cannot handle
+ *  the URL (no solved browser session, foreign CDN): the downloader then
+ *  falls back to a raw fetch. Shared between core and server. */
+export const NOT_IN_BROWSER_MODE = 'not in browser mode';
+
 export class SourceError extends Error {
     constructor(
         message: string,

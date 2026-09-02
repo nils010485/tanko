@@ -101,6 +101,15 @@ Tests:
 npm test
 ```
 
+### Git hooks
+
+A versioned `pre-push` hook runs lint + tests before every push. Activate
+it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Monorepo layout
 
 ```
