@@ -95,26 +95,26 @@ async function check(id) {
             return out;
         }
         const h = await a.checkHealth().catch(e => ({ ok: false, error: String(e.message).slice(0, 40) }));
-        out.health = h.ok ? 'OK' : 'FAIL:' + (h.error || '').slice(0, 40);
+        out.health = h.ok ? 'OK' : `FAIL:${(h.error || '').slice(0, 40)}`;
         if (!h.ok) return out;
         const list = await a.searchMangas(QUERIES[id] ?? 'one').catch(e => ({ err: String(e.message).slice(0, 40) }));
         if (!Array.isArray(list)) {
-            out.search = 'ERR:' + list.err;
+            out.search = `ERR:${list.err}`;
             return out;
         }
         out.search = list.length;
         if (!list.length) return out;
         const ch = await a.getChapters(list[0]).catch(e => ({ err: String(e.message).slice(0, 40) }));
         if (!Array.isArray(ch)) {
-            out.ch = 'ERR:' + ch.err;
+            out.ch = `ERR:${ch.err}`;
             return out;
         }
         out.ch = ch.length;
         if (!ch.length) return out;
         const pg = await a.getPages(list[0], ch[Math.max(0, ch.length - 1)]).catch(e => ({ err: String(e.message).slice(0, 40) }));
-        out.pg = Array.isArray(pg) ? pg.length : 'ERR:' + pg.err;
+        out.pg = Array.isArray(pg) ? pg.length : `ERR:${pg.err}`;
     } catch (e) {
-        out.health = 'EXC:' + String(e.message).slice(0, 30);
+        out.health = `EXC:${String(e.message).slice(0, 30)}`;
     }
     return out;
 }

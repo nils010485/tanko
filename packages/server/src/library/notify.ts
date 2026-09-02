@@ -6,6 +6,7 @@
  * notify, preserving the historical behavior.
  */
 import type { NotificationEventToggles } from '@tanko/shared';
+import { fetchGuarded } from '../util/net-guard.js';
 
 export interface NotificationSettings {
     enabled: boolean;
@@ -49,7 +50,9 @@ export async function sendNotification(settings: NotificationSettings, title: st
                   headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: title },
                   body: `${title}\n${body}`
               };
-        const response = await fetch(settings.webhookUrl, { ...init, signal: AbortSignal.timeout(15000) });
+        // the webhook URL is user-configured: still route it through the
+        // private-range guard so a mistyped or hostile URL cannot probe the LAN
+        const response = await fetchGuarded(settings.webhookUrl, { ...init, signal: AbortSignal.timeout(15000) });
         return response.ok;
     } catch (error) {
         console.warn('[notify] webhook failed:', (error as Error).message);

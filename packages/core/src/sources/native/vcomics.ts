@@ -14,9 +14,10 @@
  */
 
 import { parseDocument } from '../../shims/dom.js';
-import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
+import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { fetchWithRetries } from './http.js';
 
 const UA = randomUserAgent();
 
@@ -230,32 +231,8 @@ export class VComicsConnector implements SourceAdapter {
         };
     }
 
-    private async _request(url: string, attempt = 0): Promise<Response> {
-        let response: Response;
-        try {
-            response = await fetch(url, {
-                headers: this._headers(),
-                redirect: 'follow',
-                signal: AbortSignal.timeout(60000)
-            });
-        } catch (error) {
-            // network/timeout failure -> transient, retry with backoff
-            if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, 2500 * (attempt + 1)));
-                return this._request(url, attempt + 1);
-            }
-            throw new SourceError(`GET ${url} failed after retries`, this.id, error);
-        }
-        // protection/rate-limit responses -> transient, honor Retry-After
-        if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempt < 2) {
-            await new Promise(resolve => setTimeout(resolve, retryAfterMs(response) ?? 2500 * (attempt + 1)));
-            return this._request(url, attempt + 1);
-        }
-        if (!response.ok) {
-            // permanent client errors (404, ...) -> fail fast, no retry
-            throw new SourceError(`GET ${url} returned ${response.status}`, this.id);
-        }
-        return response;
+    private _request(url: string): Promise<Response> {
+        return fetchWithRetries(url, { id: this.id, headers: this._headers() });
     }
 
     private async _getText(url: string): Promise<string> {

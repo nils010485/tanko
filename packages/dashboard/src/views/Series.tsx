@@ -19,11 +19,11 @@ import {
     IconPlay,
     IconRefresh,
     IconSearch,
-    IconUndo,
-    IconX
+    IconUndo
 } from '../components/icons.js';
 
 import { PagePreview } from '../components/PagePreview.js';
+import { SourcePickerDialog } from '../components/series/SourcePickerDialog.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
@@ -86,6 +86,12 @@ export default function Series({
     const { t, formatDate } = useI18n();
     /** Ignore responses that resolve after a newer fetch started (series switch, poll, refresh). */
     const requestSeq = useRef(0);
+    /** Ignore page responses that resolve after the preview was closed or replaced. */
+    const previewSeq = useRef(0);
+    const closePreview = () => {
+        previewSeq.current++;
+        setPreview(null);
+    };
 
     useEffect(() => {
         localStorage.setItem(CHAPTERS_SORT_KEY, chapterSort);
@@ -117,6 +123,7 @@ export default function Series({
         setChapters(null);
         setChapterQuery('');
         setSelectedChapters(new Set());
+        previewSeq.current++;
         setPreview(null);
         setBusy({});
         void loadChapters();
@@ -130,7 +137,7 @@ export default function Series({
         return () => clearInterval(timer);
     }, [jobsActive, loadChapters]);
 
-    useEscapeKey(() => setPreview(null), preview !== null);
+    useEscapeKey(closePreview, preview !== null);
     useEscapeKey(() => setPicker(current => ({ ...current, open: false })), picker.open);
 
     const setBusyFlag = (key: string, value: boolean) => setBusy(current => ({ ...current, [key]: value }));
@@ -383,11 +390,14 @@ export default function Series({
 
     const openPreview = async (chapter: LibraryChapterDto) => {
         if (!entry) return;
+        const seq = ++previewSeq.current;
         setPreview({ title: chapter.title, pages: null, loading: true, error: '' });
         try {
             const result = await api.pages(entry.sourceId, entry.mangaId, chapter.chapterId, entry.title, chapter.title);
+            if (previewSeq.current !== seq) return; // closed or replaced meanwhile
             setPreview({ title: chapter.title, pages: result.pages || [], loading: false, error: '' });
         } catch (error) {
+            if (previewSeq.current !== seq) return;
             setPreview({ title: chapter.title, pages: [], loading: false, error: (error as Error).message });
         }
     };
@@ -576,166 +586,27 @@ export default function Series({
                 loading={preview?.loading ?? false}
                 error={preview?.error ?? ''}
                 sourceId={entry.sourceId}
-                onClose={() => setPreview(null)}
+                onClose={closePreview}
             />
 
             {picker.open && (
-                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (useEscapeKey below)
-                <div
-                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-                    onClick={event => {
-                        if (event.target === event.currentTarget) closePicker();
-                    }}
-                >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={t('series.changeSource')}
-                        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-xl shadow-black/50"
-                    >
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="break-words text-sm font-semibold text-fg">{t('series.changeSource')}</div>
-                            <IconButton title={t('common.close')} onClick={closePicker}>
-                                <IconX size={14} />
-                            </IconButton>
-                        </div>
-                        <div className="mt-1 text-xs text-faint">
-                            {entry.sourceLabel} · {t('library.chaptersCount', { n: entry.chapterCount })} ({t('series.changeSourceCurrent')})
-                        </div>
-
-                        {/* linked provenances: recorded alternatives of the same work */}
-                        <div className="mt-3 rounded-lg border border-line bg-canvas/50 p-3">
-                            <div className="break-words text-sm font-semibold text-fg">{t('series.linkedTitle')}</div>
-                            <div className="mt-0.5 text-xs text-faint">{t('series.linkedHint')}</div>
-                            {linked === null ? (
-                                <div className="mt-2 text-xs text-faint">…</div>
-                            ) : linked.length === 0 ? (
-                                <div className="mt-2 text-xs text-faint">{t('series.linkedEmpty')}</div>
-                            ) : (
-                                <div className="mt-2 space-y-2">
-                                    {linked.map(alternative => (
-                                        <div key={alternative.id} className="flex items-center gap-3 rounded-lg border border-line bg-surface/60 p-2.5">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="truncate text-sm text-fg">
-                                                    {alternative.sourceLabel}
-                                                    {alternative.title !== entry.title && <span className="ml-1 text-faint">— {alternative.title}</span>}
-                                                </div>
-                                            </div>
-                                            <Button
-                                                small
-                                                onClick={() =>
-                                                    void migrateTo({
-                                                        sourceId: alternative.sourceId,
-                                                        sourceLabel: alternative.sourceLabel,
-                                                        mangaId: alternative.mangaId,
-                                                        mangaTitle: alternative.title,
-                                                        chapterCount: alternative.chapterCount ?? entry.chapterCount,
-                                                        score: alternative.score ?? 1
-                                                    })
-                                                }
-                                                loading={migratingTo === alternative.sourceId}
-                                            >
-                                                {t('series.linkedMigrate')}
-                                            </Button>
-                                            <IconButton
-                                                title={t('series.linkedRemove')}
-                                                onClick={() => void unlink(alternative.id)}
-                                                disabled={unlinking === alternative.id}
-                                            >
-                                                <IconX size={14} />
-                                            </IconButton>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* alias editor: the other names the failover searches too (AniList or manual) */}
-                        <div className="mt-3 rounded-lg border border-line bg-canvas/50 p-3">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-xs text-faint">{t('series.aliases')}:</span>
-                                {(entry.aliases ?? []).map(alias => (
-                                    <button
-                                        key={alias}
-                                        type="button"
-                                        onClick={() => void saveAliases((entry.aliases ?? []).filter(item => item !== alias))}
-                                        title={t('series.aliasRemoveHint')}
-                                        className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-fg transition-colors hover:border-red-500/50 hover:text-red-400"
-                                    >
-                                        {alias} <IconX size={10} />
-                                    </button>
-                                ))}
-                                <Button small variant="ghost" onClick={fetchAliasesFromAniList} loading={busy.aliasFetch} title={t('series.aliasFetchHint')}>
-                                    {t('series.aliasFetch')}
-                                </Button>
-                            </div>
-                            <form
-                                className="mt-2 flex gap-2"
-                                onSubmit={event => {
-                                    event.preventDefault();
-                                    void addAlias();
-                                }}
-                            >
-                                <input
-                                    value={aliasInput}
-                                    onChange={event => setAliasInput(event.target.value)}
-                                    placeholder={t('series.aliasPlaceholder')}
-                                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface/60 px-2.5 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent/60 focus:outline-none"
-                                />
-                                <Button small type="submit" disabled={aliasInput.trim() === ''}>
-                                    {t('series.aliasAdd')}
-                                </Button>
-                            </form>
-                            <div className="mt-1.5 text-xs text-faint">{t('series.aliasesHint')}</div>
-                        </div>
-                        {picker.loading ? (
-                            <div className="mt-4 flex items-center gap-2 text-sm text-faint">
-                                <Spinner /> {t('series.changeSourceSearching')}
-                            </div>
-                        ) : picker.error ? (
-                            <div className="mt-4 text-sm text-red-400">{picker.error}</div>
-                        ) : (picker.data?.alternatives.length ?? 0) === 0 ? (
-                            <div className="mt-4 text-sm text-faint">
-                                {t('series.changeSourceEmpty')}
-                                {picker.data?.autoAliases && (
-                                    <div className="mt-1 text-xs text-faint">
-                                        {t('series.changeSourceTriedAliases', { names: picker.data.autoAliases.join(', ') })}
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
-                                {picker.data?.alternatives.map(alternative => (
-                                    <div
-                                        key={`${alternative.sourceId}:${alternative.mangaId}`}
-                                        className="flex items-center gap-3 rounded-lg border border-line bg-canvas/50 p-3"
-                                    >
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-sm text-fg">
-                                                {alternative.sourceLabel}
-                                                {alternative.mangaTitle !== entry.title && <span className="ml-1 text-faint">— {alternative.mangaTitle}</span>}
-                                            </div>
-                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-faint">
-                                                <span className="text-fg">{t('library.chaptersCount', { n: alternative.chapterCount })}</span>
-                                                {alternative.chapterCount > entry.chapterCount && (
-                                                    <span className="text-emerald-400">
-                                                        {t('series.changeSourceMore', { n: alternative.chapterCount - entry.chapterCount })}
-                                                    </span>
-                                                )}
-                                                <span>{t('series.changeSourceMatch', { n: Math.round((alternative.score ?? 0) * 100) })}</span>
-                                            </div>
-                                        </div>
-                                        <Button small onClick={() => migrateTo(alternative)} loading={migratingTo === alternative.sourceId}>
-                                            {t('library.migrate')}
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <SourcePickerDialog
+                    entry={entry}
+                    picker={picker}
+                    linked={linked}
+                    migratingTo={migratingTo}
+                    unlinking={unlinking}
+                    aliasInput={aliasInput}
+                    onAliasInput={setAliasInput}
+                    aliasFetchBusy={busy.aliasFetch ?? false}
+                    onClose={closePicker}
+                    onMigrate={target => void migrateTo(target)}
+                    onUnlink={alternativeId => void unlink(alternativeId)}
+                    onSaveAliases={aliases => void saveAliases(aliases)}
+                    onAddAlias={() => void addAlias()}
+                    onFetchAliases={() => void fetchAliasesFromAniList()}
+                />
             )}
-
             <ConfirmDialog
                 open={missingDialog}
                 title={t('series.downloadMissingTitle')}

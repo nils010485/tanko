@@ -15,6 +15,7 @@ import { browserEnabled, getPageHTML, isAntiBotShell } from '../../shims/browser
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { pinToOrigin } from './http.js';
 
 const API = 'https://api.comick.dev';
 const SITE = 'https://comick.dev';
@@ -207,7 +208,11 @@ export class ComickConnector implements SourceAdapter {
         const base = slug ? `${MIRROR}/comic/${slug}` : `${MIRROR}/comic/x`;
         const chapters: ChapterInfo[] = [];
         const seen = new Set<string>();
-        for (let page = 1; ; page++) {
+        // hard page cap (madara-style) + stall detection: a server that keeps
+        // returning the same full page must not turn this into an endless loop
+        const MAX_PAGES = 50; // 50 x 50 = hard cap of 2500 chapters
+        let addedPreviousPage = -1;
+        for (let page = 1; page <= MAX_PAGES; page++) {
             const url = new URL(`/comic/${manga.id}/chapters`, API);
             url.searchParams.set('page', String(page));
             url.searchParams.set('limit', '50');
@@ -220,9 +225,10 @@ export class ComickConnector implements SourceAdapter {
                 }
                 this._addChapter(chapters, seen, chapter, `${base}/${chapter.hid}-chapter-${chapter.chap}-${chapter.lang || CHAPTER_LANG}`);
             }
-            if (items.length < (response.limit || 50)) {
+            if (items.length < (response.limit || 50) || chapters.length === addedPreviousPage) {
                 break;
             }
+            addedPreviousPage = chapters.length;
         }
         return chapters;
     }
@@ -268,7 +274,9 @@ export class ComickConnector implements SourceAdapter {
     }
 
     /** Reader HTML; retry transient Cloudflare shells, then browser fallback. */
-    private async _getReaderHtml(url: string): Promise<string> {
+    private async _getReaderHtml(rawUrl: string): Promise<string> {
+        // chapter urls may come back from API requests: pin to the reader host
+        const url = pinToOrigin(rawUrl, MIRROR, { id: this.id });
         for (let attempt = 0; attempt < 3; attempt++) {
             let response: Response | undefined;
             try {

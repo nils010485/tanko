@@ -10,6 +10,7 @@ import { listChapterEntries } from '../downloader/paths.js';
 import type { DownloadQueue } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
+import { withTimeout } from '../util/timeout.js';
 import { enqueueSelected, markChaptersQueued } from './chapters.js';
 import type { StoreContext } from './context.js';
 import { getEntryRow, isDownloaded, seriesDirectory } from './context.js';
@@ -137,7 +138,13 @@ async function rebuildChapters(
     downloadedByNumber: Map<number, ChapterRow>,
     diskByNumber: Map<number, string>
 ): Promise<{ kept: number; total: number }> {
-    const chapters = await source.getChapters({ id: target.mangaId, title: target.mangaTitle });
+    // the validation probe is already bounded — the commit re-fetch must be
+    // too, or a hanging connector strands the entry in `probing` forever
+    const chapters = await withTimeout(
+        source.getChapters({ id: target.mangaId, title: target.mangaTitle }),
+        2 * 60 * 1000,
+        `getChapters(${target.mangaTitle})`
+    );
     const preferred = ctx.getPreferredLanguages?.() || [];
     const now = new Date().toISOString();
     // the entry's canonical folder is untouched by the migration: downloads
@@ -196,7 +203,15 @@ export function rollbackMigration(ctx: StoreContext, entryId: number): boolean {
     if (!snapshot) {
         return false;
     }
-    const data = JSON.parse(snapshot.data) as { entry: EntryRow; chapters: ChapterRow[] };
+    // a corrupted snapshot (interrupted write) must not 500 the route — and
+    // must not stay in place blocking every later rollback either
+    let data: { entry: EntryRow; chapters: ChapterRow[] };
+    try {
+        data = JSON.parse(snapshot.data) as { entry: EntryRow; chapters: ChapterRow[] };
+    } catch {
+        ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE id = ?').run(snapshot.id);
+        throw new Error('Snapshot de migration corrompu — il a été supprimé, réessayez');
+    }
     ctx.db.db
         .prepare(
             `UPDATE library SET source_id = ?, source_label = ?, manga_id = ?, title = ?, url = ?,

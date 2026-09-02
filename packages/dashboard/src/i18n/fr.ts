@@ -352,6 +352,7 @@ export const fr: typeof import('./en.js').en = {
 
     // downloads
     'downloads.title': 'Téléchargements',
+    'downloads.staleData': 'Serveur injoignable — la liste affichée est peut-être périmée.',
     'downloads.filterAll': 'Tous',
     'downloads.filterQueued': 'En attente',
     'downloads.filterDownloading': 'En cours',

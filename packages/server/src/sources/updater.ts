@@ -5,6 +5,7 @@
  */
 
 import { execFile as execFileCallback } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,6 +50,18 @@ async function cloneUpstream(destination: string): Promise<string> {
     return stdout.trim();
 }
 
+/** sha256 manifest of the synced connectors — loadConnectors refuses to
+ *  import files that no longer match (truncated write, tampered data dir). */
+function writeConnectorsManifest(connectorsDir: string, commit: string): void {
+    const files: Record<string, string> = {};
+    for (const file of fs.readdirSync(connectorsDir).filter(name => name.endsWith('.mjs') && !name.startsWith('.'))) {
+        files[file] = createHash('sha256')
+            .update(fs.readFileSync(path.join(connectorsDir, file)))
+            .digest('hex');
+    }
+    fs.writeFileSync(path.join(connectorsDir, '.manifest.json'), JSON.stringify({ commit, files }, null, 2));
+}
+
 function validateTree(connectorsDir: string, engineDir: string): void {
     if (!fs.existsSync(engineDir)) {
         throw new Error('Dossier engine introuvable dans les sources Hakuneko');
@@ -91,6 +104,7 @@ export async function syncConnectors(options: { dataDirectory: string; db: Datab
                 fs.copyFileSync(path.join(VENDOR_PATH, 'connectors', file), path.join(vendorDir, 'connectors', file));
             }
             validateTree(path.join(vendorDir, 'connectors'), path.join(vendorDir, 'engine'));
+            writeConnectorsManifest(path.join(vendorDir, 'connectors'), commit);
         } catch (error) {
             fs.rmSync(vendorDir, { recursive: true, force: true });
             if (hadPrevious) {

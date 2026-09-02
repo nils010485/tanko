@@ -2,6 +2,7 @@
  * Bootstrap the headless Hakuneko engine:
  * install globals, wire up the Engine global and load legacy connectors.
  */
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -45,6 +46,12 @@ export const CONNECTOR_OVERRIDES = ['MangaFox.mjs', 'ComicMeteor.mjs', 'ComicPol
 
 const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;
+/**
+ * The global fetch wrapper is installed once but must delegate to the
+ * CURRENT engine's session (cookie jar, gate) — a second createEngine with
+ * another dataDirectory would otherwise silently keep the first jar.
+ */
+let activeRequest: HeadlessRequest | undefined;
 /** Active vendor directory: synced copy in the data directory if present, else the built-in one. */
 let activeVendorPath = VENDOR_PATH;
 
@@ -93,6 +100,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     const settings = new HeadlessSettings(dataDirectory);
     const storage = new HeadlessStorage(settings);
     const request = new HeadlessRequest();
+    activeRequest = request;
 
     // Intercept the legacy 'connector://' protocol used for protected media
     // (e.g. MangaDex@Home) and route it to the owning connector.
@@ -116,7 +124,20 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             // transformation happens headless — otherwise CDNs receive literal x-*
             // headers and serve hotlink-protection HTML instead of the image.
             if (input instanceof Request && [...input.headers.keys()].some(name => name.toLowerCase().startsWith('x-'))) {
-                return request.fetch(input);
+                const bridge = activeRequest ?? request;
+                // the legacy bridge cannot take a signal: race it so an aborted
+                // crawl stops waiting (the bridge's own deadline reclaims the
+                // socket) — mirrors the signal merge of the native branch below
+                const scope = currentAbortSignal();
+                const own = init?.signal ?? input.signal;
+                const signal = scope && own ? AbortSignal.any([scope, own]) : (scope ?? own);
+                if (!signal) {
+                    return bridge.fetch(input);
+                }
+                const aborted = new Promise<never>((_, reject) => {
+                    signal.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
+                });
+                return Promise.race([bridge.fetch(input), aborted]);
             }
             // Kill the whole crawl when the owning operation is aborted (see
             // shims/abort-scope.ts): the scope signal rides along every fetch.
@@ -146,6 +167,31 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
 }
 
 /**
+ * Synced copies ship a sha256 manifest (written by the updater at sync time);
+ * the built-in vendor has none — integrity checking is skipped there. A file
+ * failing its hash (truncated write, tampered data directory) is never imported.
+ */
+function readManifest(directory: string): Record<string, string> | null {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(path.join(directory, '.manifest.json'), 'utf8')) as { files?: Record<string, string> };
+        return parsed.files ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function manifestMatches(manifest: Record<string, string>, directory: string, file: string): boolean {
+    const expected = manifest[file];
+    if (!expected) {
+        return false;
+    }
+    const actual = createHash('sha256')
+        .update(fs.readFileSync(path.join(directory, file)))
+        .digest('hex');
+    return actual === expected;
+}
+
+/**
  * Load all legacy connectors (top-level .mjs files, excluding templates/system).
  * Failed imports are counted and skipped.
  */
@@ -157,11 +203,17 @@ export async function loadConnectors(): Promise<LoadResult> {
 
     const directory = path.join(getVendorDirectory(), 'connectors');
     const files = fs.readdirSync(directory).filter(file => file.endsWith('.mjs') && !file.startsWith('.'));
+    const manifest = readManifest(directory);
 
     const connectors: LegacyConnector[] = [];
     let failures = 0;
     for (const file of files) {
         try {
+            if (manifest && !manifestMatches(manifest, directory, file)) {
+                failures++;
+                console.warn(`[engine] connector "${file}" failed the integrity check — skipped (resync to fix)`);
+                continue;
+            }
             const module = await import(pathToFileURL(path.join(directory, file)).href);
             const connector = new module.default() as LegacyConnector;
             if (!connectorRegistry.has(connector.id)) {

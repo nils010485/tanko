@@ -5,7 +5,7 @@
  */
 
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../../shims/browser.js';
-import { randomUserAgent } from '../../shims/request.js';
+import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import { SourceError } from '../types.js';
 
 /** Resolve href against base, null when href is empty or unparseable. */
@@ -18,6 +18,75 @@ export function absoluteUrl(href: string | undefined | null, base: string): stri
     } catch {
         return null;
     }
+}
+
+const RETRY_ATTEMPTS = 3; // initial try + 2 retries
+const REQUEST_TIMEOUT_MS = 60_000;
+const RETRY_BASE_DELAY_MS = 2500;
+
+export interface RetryingFetchOptions {
+    /** connector id (error attribution) */
+    id: string;
+    headers?: Record<string, string>;
+}
+
+/**
+ * Plain GET with the shared retry ladder: 60s timeout, network failures and
+ * transient statuses (403/429/5xx, honoring Retry-After) retried with
+ * 2500ms×n backoff, permanent client errors failing fast. Single copy —
+ * connector-specific behavior (browser escalation, JSON shells) lives in
+ * the connectors themselves.
+ */
+export async function fetchWithRetries(url: string, options: RetryingFetchOptions, attempt = 0): Promise<Response> {
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            headers: options.headers,
+            redirect: 'follow',
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        });
+    } catch (error) {
+        // network/timeout failure -> transient, retry with backoff
+        if (attempt < RETRY_ATTEMPTS - 1) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_BASE_DELAY_MS * (attempt + 1)));
+            return fetchWithRetries(url, options, attempt + 1);
+        }
+        throw new SourceError(`GET ${url} failed after retries`, options.id, error);
+    }
+    // protection/rate-limit responses -> transient, honor Retry-After
+    if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempt < RETRY_ATTEMPTS - 1) {
+        await new Promise(resolve => setTimeout(resolve, retryAfterMs(response) ?? RETRY_BASE_DELAY_MS * (attempt + 1)));
+        return fetchWithRetries(url, options, attempt + 1);
+    }
+    if (!response.ok) {
+        // permanent client errors (404, ...) -> fail fast, no retry
+        throw new SourceError(`GET ${url} returned ${response.status}`, options.id);
+    }
+    return response;
+}
+
+/**
+ * Same-origin pin: manga/chapter URLs handed back by the API may be absolute —
+ * pin them to the connector's declared origin (plus explicit CDN exceptions)
+ * so a crafted id cannot point the scraper (or the headless browser) at
+ * internal addresses (SSRF). Relative ids resolve against base as usual.
+ */
+export function pinToOrigin(url: string, base: string, options?: { id?: string; allowedHosts?: RegExp[] }): string {
+    let parsed: URL;
+    try {
+        parsed = new URL(url, base);
+    } catch {
+        throw new SourceError(`Invalid URL "${url}"`, options?.id ?? 'unknown');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new SourceError(`Blocked non-http(s) URL "${url}"`, options?.id ?? 'unknown');
+    }
+    const sameOrigin = parsed.origin === new URL(base).origin;
+    const cdnOk = options?.allowedHosts?.some(pattern => pattern.test(parsed.hostname)) ?? false;
+    if (!sameOrigin && !cdnOk) {
+        throw new SourceError(`Blocked cross-origin URL "${parsed.href}" (expected ${new URL(base).origin})`, options?.id ?? 'unknown');
+    }
+    return parsed.href;
 }
 
 export interface NativeTextOptions {

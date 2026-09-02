@@ -22,6 +22,20 @@ export function useEscapeKey(onEscape: () => void, active = true): void {
         return () => document.removeEventListener('keydown', onKey);
     }, [onEscape, active]);
 }
+/**
+ * A ref flipped to true on unmount — long loops started from onClick
+ * handlers (polling, batch actions) check it to stop early.
+ */
+export function useUnmounted(): React.MutableRefObject<boolean> {
+    const unmounted = useRef(false);
+    useEffect(
+        () => () => {
+            unmounted.current = true;
+        },
+        []
+    );
+    return unmounted;
+}
 
 /**
  * Long-press (~500 ms, steady pointer) gesture for cards/rows: returns a

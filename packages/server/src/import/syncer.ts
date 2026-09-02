@@ -9,6 +9,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ChapterInfo, SourceAdapter, SourceRegistry } from '@tanko/core';
 import { chapterAllowed } from '../languages.js';
 import type { LibraryStore } from '../library/store.js';
+import { withTimeout } from '../util/timeout.js';
 import { parseChapterNumber, scanLibrary } from './scanner.js';
 import type { ImportOptions, JobRow, JobStatus, SeriesRow } from './service.js';
 
@@ -159,7 +160,9 @@ async function sourceChapters(
     chapters: ChapterInfo[];
     byNumber: Map<number, ChapterInfo>;
 }> {
-    const allChapters = await source.getChapters(manga);
+    // the cancel flag is checked between series — a hanging connector would
+    // defeat it, so bound the call like the scheduler does
+    const allChapters = await withTimeout(source.getChapters(manga), 2 * 60 * 1000, `getChapters(${manga.title})`);
     const chapters = allChapters.filter(chapter => chapterAllowed(chapter.language, preferred));
     const byNumber = new Map<number, ChapterInfo>();
     for (const chapter of chapters) {

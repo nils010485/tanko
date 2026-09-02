@@ -5,14 +5,14 @@
  * fetchBrowser) for sites that need JavaScript. In headless mode we emulate
  * this with:
  *  - plain HTTP fetch (undici via node:fetch) with transformed x-* headers
- *  - a shared tough-cookie jar (session-like behaviour)
- *  - a vm sandbox where the fetched HTML is parsed with linkedom and inline
- *    <script> contents + the connector's injection script are evaluated
+ *  - an isolated evaluation process where the fetched HTML is parsed with
+ *    linkedom and inline <script> contents + the connector's injection
+ *    script are evaluated (see shims/evaluate.ts / evaluate-child.ts)
  */
-import vm from 'node:vm';
 import { CookieJar } from 'tough-cookie';
 import { browserEnabled, getPageHTML, isAntiBotShell } from './browser.js';
-import { parseDocument } from './dom.js';
+import { evaluateIsolated } from './evaluate.js';
+import type { WireRequest, WireResponse } from './evaluate-child.js';
 
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -83,10 +83,6 @@ export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string)
  * chapter) trips server-side throttling that answers 200 with empty bodies.
  * Gate sandboxed requests to a browser-like per-host concurrency.
  */
-/** Attempts before giving up on an endpoint that keeps answering 200 with an empty body. */
-const AJAX_EMPTY_ATTEMPTS = 3;
-/** Per-attempt cap so ajax retries (backoff included) fit the caller's overall timeout. */
-const AJAX_ATTEMPT_TIMEOUT_MS = 15000;
 const MAX_IN_FLIGHT_PER_HOST = 5;
 
 /** Attempts (total) for rate-limited responses before giving up. */
@@ -301,227 +297,23 @@ export class HeadlessRequest {
 
     _evaluateInPage(url: string, html: string, script: string, timeout?: number): Promise<unknown> {
         const timeoutMs = typeof timeout === 'number' && Number.isFinite(timeout) ? timeout : 60000;
-        const inlineTimeout = Math.min(timeoutMs, 10000);
-        const document = parseDocument(html);
-        const location = new URL(url);
+        return evaluateIsolated({ url, html, script, timeoutMs, inlineTimeout: Math.min(timeoutMs, 10000), userAgent: this.userAgent }, request =>
+            this.fetchSandboxed(url, request)
+        );
+    }
 
-        // page scripts schedule timers that may throw later — a raw setTimeout
-        // callback escapes the inline try/catch and kills the whole process
-        const safeSetTimeout = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) =>
-            setTimeout(() => {
-                try {
-                    callback(...args);
-                } catch {
-                    /* hostile page script, ignore */
-                }
-            }, ms);
-        // intervals are tracked so they can be cleared once the evaluation
-        // settles (the legacy BrowserWindow was destroyed after each script)
-        const trackedIntervals = new Set<ReturnType<typeof setInterval>>();
-        const safeSetInterval = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
-            const id = setInterval(() => {
-                try {
-                    callback(...args);
-                } catch {
-                    /* hostile page script, ignore */
-                }
-            }, ms);
-            trackedIntervals.add(id);
-            return id;
-        };
-        const gate = this.gate;
-        const sandbox: Record<string, unknown> = {
-            console,
-            setTimeout: safeSetTimeout,
-            clearTimeout,
-            setInterval: safeSetInterval,
-            clearInterval,
-            URL,
-            URLSearchParams,
-            TextDecoder,
-            TextEncoder,
-            atob,
-            btoa,
-            JSON,
-            Math,
-            Date,
-            RegExp,
-            Promise,
-            Object,
-            Array,
-            String,
-            Number,
-            Boolean,
-            Symbol,
-            Map,
-            Set,
-            WeakMap,
-            Error,
-            TypeError,
-            RangeError,
-            parseInt,
-            parseFloat,
-            isNaN,
-            decodeURI,
-            decodeURIComponent,
-            encodeURI,
-            encodeURIComponent,
-            crypto: globalThis.crypto,
-            fetch: (input: Request | string, init?: RequestInit) => {
-                const request = typeof input === 'string' ? new Request(new URL(input, location.href).href, init) : input;
-                // browsers send the page URL as Referer on every subrequest;
-                // hotlink protection (mangahere & co.) rejects without it
-                request.headers.set('x-referer', request.headers.get('x-referer') || location.href);
-                return gate.run(request.url, () => this.fetch(request));
-            },
-            Headers,
-            Request,
-            Response,
-            AbortController,
-            AbortSignal,
-            CustomEvent,
-            Event,
-            EventTarget,
-            document,
-            navigator: { userAgent: this.userAgent },
-            location
-        };
-        // jQuery is always loaded from an external <script src> which we never
-        // fetch — connectors like MangaHere/MangaFox rely on $.ajax, so provide
-        // a minimal promise-based subset (inline page scripts may overwrite it)
-        const ajax = async (settings: unknown) => {
-            const options = (typeof settings === 'string' ? { url: settings } : (settings ?? {})) as {
-                type?: unknown;
-                method?: unknown;
-                url?: unknown;
-                data?: unknown;
-                headers?: HeadersInit;
-                error?: (jqXHR: undefined, textStatus: string, error: Error) => void;
-                success?: (data: string, textStatus: string, jqXHR: unknown) => void;
-            };
-            const target = new URL(String(options.url ?? location.href), location.href);
-            const method = String(options.type ?? options.method ?? 'GET').toUpperCase();
-            const data = options.data;
-            let body: string | undefined;
-            if (data !== undefined && data !== null) {
-                if (method === 'GET') {
-                    const params = new URLSearchParams(target.search);
-                    // data may be a plain object or a pre-serialized query string
-                    const entries = typeof data === 'string' ? new URLSearchParams(data) : Object.entries(data as Record<string, unknown>);
-                    for (const [key, value] of entries) {
-                        params.append(key, String(value));
-                    }
-                    target.search = params.toString();
-                } else {
-                    body = typeof data === 'string' ? data : JSON.stringify(data);
-                }
-            }
-            const headers = new Headers(options.headers);
-            // jQuery/XHR always sends the page URL as Referer — sites with
-            // hotlink protection answer missing-referer requests with 200 + empty body
-            if (!headers.has('Referer') && !headers.has('x-referer')) {
-                headers.set('x-referer', location.href);
-            }
-            if (body !== undefined && !headers.has('Content-Type')) {
-                headers.set('Content-Type', typeof data === 'string' ? 'application/x-www-form-urlencoded' : 'application/json');
-            }
-            // per-attempt timeouts + retry backoffs must fit the caller's overall
-            // budget — orphaned fetches would keep gate slots and hammer the host
-            // after the evaluation's race already reported a timeout
-            const deadline = Date.now() + timeoutMs;
-            let text = '';
-            let response: Response | undefined;
-            let networkError: unknown;
-            try {
-                for (let attempt = 1; ; attempt++) {
-                    const remaining = deadline - Date.now();
-                    if (remaining <= 0) {
-                        break;
-                    }
-                    response = await gate.run(target.href, () =>
-                        this.fetch({ url: target.href, method, headers, _body: body }, Math.min(remaining, AJAX_ATTEMPT_TIMEOUT_MS))
-                    );
-                    if (!response.ok) {
-                        break;
-                    }
-                    text = await response.text();
-                    // some endpoints (e.g. mangahere chapterfun.ashx) intermittently
-                    // answer 200 with an empty body — retry with backoff instead of
-                    // returning junk the connector's eval() cannot use
-                    if (text.trim() || attempt === AJAX_EMPTY_ATTEMPTS) {
-                        break;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, Math.min(1000 * attempt, Math.max(0, deadline - Date.now()))));
-                }
-            } catch (error) {
-                networkError = error;
-            }
-            if (networkError !== undefined || (response !== undefined && !response.ok)) {
-                const error = networkError instanceof Error ? networkError : new Error(String(networkError ?? `HTTP ${response?.status}`));
-                options.error?.(undefined, 'error', error);
-                // like jQuery, the jqXHR promise rejects on transport/HTTP errors
-                throw error;
-            }
-            // jqXHR-like third argument (the real response body is already consumed)
-            const jqXHR = response && {
-                status: response.status,
-                responseText: text,
-                getResponseHeader: (name: string) => response.headers.get(name)
-            };
-            options.success?.(text, 'success', jqXHR);
-            return text;
-        };
-        sandbox.$ = { ajax };
-        sandbox.jQuery = sandbox.$;
-        // window is the sandbox itself (window.document / window.location land here)
-        sandbox.window = sandbox;
-        sandbox.self = sandbox;
-        sandbox.globalThis = sandbox;
-        sandbox.top = sandbox;
-        sandbox.parent = sandbox;
-
-        const context = vm.createContext(sandbox);
-
-        // Execute inline scripts so site-defined globals (e.g. ts_reader) exist.
-        // External scripts (src=...) are skipped.
-        for (const element of [...document.querySelectorAll('script')]) {
-            const source = element.getAttribute('src');
-            const code = element.textContent;
-            if (!source && code && code.trim()) {
-                try {
-                    vm.runInContext(code, context, { timeout: inlineTimeout });
-                } catch {
-                    /* page scripts may fail harmlessly (missing browser APIs) */
-                }
-            }
+    /**
+     * Host-side transport for the sandbox: re-materializes the plain-wire
+     * request the child proxied over IPC and runs it through the shared
+     * per-host gate + session fetch (cookies, header transforms, backoffs).
+     */
+    private async fetchSandboxed(pageUrl: string, wire: WireRequest): Promise<WireResponse> {
+        const headers = new Headers(wire.headers);
+        if (!headers.has('x-referer')) {
+            headers.set('x-referer', pageUrl);
         }
-
-        // connectors hand us expression snippets that may end with a
-        // statement semicolon (« new Promise(...); ») — a naive
-        // '(' + script + ')' wrap is then a syntax error
-        const expression = script.trim().replace(/;+\s*$/, '');
-        let result: unknown;
-        try {
-            result = vm.runInContext(`(${expression})`, context, { timeout: timeoutMs });
-        } catch (error) {
-            if (!(error instanceof SyntaxError)) {
-                throw error;
-            }
-            result = vm.runInContext(`(function(){${expression}})()`, context, { timeout: timeoutMs });
-        }
-        // the snippet may resolve a promise that never settles (a page script
-        // waiting on browser-only APIs) — race it so the caller is never stuck
-        const settled = Promise.resolve(result);
-        let timer: NodeJS.Timeout | undefined;
-        const expired = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('script evaluation timed out')), timeoutMs);
-            timer.unref?.();
-        });
-        return Promise.race([settled, expired]).finally(() => {
-            clearTimeout(timer);
-            for (const id of trackedIntervals) {
-                clearInterval(id);
-            }
-        });
+        const request = new Request(wire.url, { method: wire.method, headers, body: wire.bodyB64 ? Buffer.from(wire.bodyB64, 'base64') : undefined });
+        const response = await this.gate.run(wire.url, () => this.fetch(request, wire.timeoutMs));
+        return { status: response.status, headers: [...response.headers.entries()], bodyB64: Buffer.from(await response.arrayBuffer()).toString('base64') };
     }
 }

@@ -1,9 +1,9 @@
 /**
  * Live state from the WebSocket event bus + REST snapshots.
- * Keeps jobs / library / schedule / logs in sync with the server.
+ * Keeps library / schedule / queue status / logs in sync with the server.
  */
 
-import type { ActivityLogDto, DownloadJobDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
+import type { ActivityLogDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto, WsEvent } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, getBootToken, resetBootToken } from './api.js';
 
@@ -12,8 +12,6 @@ export type LogLine = ActivityLogDto;
 
 export interface LiveState {
     connected: boolean;
-    jobs: DownloadJobDto[];
-    jobsLoaded: boolean;
     library: LibraryEntryDto[];
     libraryLoaded: boolean;
     /** Authoritative queue counters, pushed over WS (null before the first snapshot). */
@@ -26,7 +24,6 @@ export interface LiveState {
     sourcesVersion: number;
     markActivitySeen: () => void;
     refreshLibrary: () => Promise<void>;
-    refreshJobs: () => Promise<void>;
 }
 
 /** Insert-or-replace by id; prepend controls where new items appear. */
@@ -42,8 +39,6 @@ function upsert<T extends { id: number }>(list: T[], item: T, prepend = false): 
 
 export function useLiveState(): LiveState {
     const [connected, setConnected] = useState(false);
-    const [jobs, setJobs] = useState<DownloadJobDto[]>([]);
-    const [jobsLoaded, setJobsLoaded] = useState(false);
     const [library, setLibrary] = useState<LibraryEntryDto[]>([]);
     const [libraryLoaded, setLibraryLoaded] = useState(false);
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
@@ -54,15 +49,6 @@ export function useLiveState(): LiveState {
     const logSeq = useRef(0);
     /** Row ids already known (REST load or previous frames) — WS replay dedupe. */
     const seenLogIds = useRef<Set<number>>(new Set());
-
-    const refreshJobs = useCallback(async () => {
-        try {
-            setJobs((await api.downloads()).jobs);
-            setJobsLoaded(true);
-        } catch {
-            /* server may be briefly unavailable */
-        }
-    }, []);
 
     const refreshLibrary = useCallback(async () => {
         try {
@@ -117,7 +103,6 @@ export function useLiveState(): LiveState {
         setUnreadErrors(0);
     }, []);
     useEffect(() => {
-        refreshJobs();
         refreshLibrary();
         refreshSchedule();
         refreshQueueStatus();
@@ -143,7 +128,6 @@ export function useLiveState(): LiveState {
             ws.onopen = () => {
                 setConnected(true);
                 // missed events while disconnected (queue cleared, jobs finished…) — resync
-                refreshJobs();
                 refreshLibrary();
                 refreshSchedule();
                 refreshQueueStatus();
@@ -163,12 +147,6 @@ export function useLiveState(): LiveState {
                 try {
                     const message = JSON.parse(event.data) as WsEvent;
                     switch (message.type) {
-                        case 'job.updated':
-                            setJobs(current => upsert(current, message.job, true));
-                            break;
-                        case 'job.removed':
-                            setJobs(current => current.filter(job => job.id !== message.jobId));
-                            break;
                         case 'library.updated':
                             // the event may be published without the cover decoration; keep the last known coverUrl
                             setLibrary(current =>
@@ -218,12 +196,10 @@ export function useLiveState(): LiveState {
             clearTimeout(retry);
             socket?.close();
         };
-    }, [refreshJobs, refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity, refreshUnread]);
+    }, [refreshLibrary, refreshSchedule, refreshQueueStatus, refreshActivity, refreshUnread]);
 
     return {
         connected,
-        jobs,
-        jobsLoaded,
         library,
         libraryLoaded,
         queueStatus,
@@ -232,7 +208,6 @@ export function useLiveState(): LiveState {
         unreadErrors,
         sourcesVersion,
         markActivitySeen,
-        refreshLibrary,
-        refreshJobs
+        refreshLibrary
     };
 }

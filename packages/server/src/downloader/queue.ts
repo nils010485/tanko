@@ -14,10 +14,11 @@ import JSZip from 'jszip';
 import type { Database } from '../db.js';
 import { makeQueries, ownershipGuard } from '../library/context.js';
 import type { EventBus } from '../ws.js';
-import { CBZ_MEMORY_GUARD_BYTES, finalizeCbz, spillArchiveToDirectory } from './archive.js';
-import { fetchPageWithRetries, getPageListWithRetries, PAGE_LIST_REFRESHES } from './pages.js';
+import { finalizeCbz } from './archive.js';
+import { downloadChapterPages } from './chapter-download.js';
+import { getPageListWithRetries } from './pages.js';
 import type { ChapterPaths } from './paths.js';
-import { chapterPaths, type DirectoryLayout, outputExists, pageFileName } from './paths.js';
+import { chapterPaths, type DirectoryLayout, outputExists } from './paths.js';
 import { DomainGate } from './rate-limiter.js';
 
 /** Map a job row back to enqueue() input (retry paths). */
@@ -69,12 +70,11 @@ const REVALIDATE_BASE_MS = 24 * 60 * 60 * 1000;
 const REVALIDATE_CAP_MS = 7 * 24 * 60 * 60 * 1000;
 /** Overall cap for one chapter's page loop (paused time excluded); getPages is
  *  already bounded by its own per-attempt timeout. */
-const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
 
 /** Statuses that make an existing job ineligible for requeue. */
 const ACTIVE_STATUSES = new Set<DownloadStatus>(['completed', 'queued', 'downloading']);
 
-interface JobRow {
+export interface JobRow {
     id: number;
     entry_id: number | null;
     source_id: string;
@@ -442,6 +442,11 @@ export class DownloadQueue {
     }
 
     updateSettings(patch: Partial<QueueSettings>): QueueSettings {
+        // NB: fields are mutated IN PLACE on purpose. opts.settings is shared
+        // by reference with LibraryStore / CoverService / failover, which read
+        // it at call time (disk paths, chapter format) — replacing the object
+        // would freeze them on stale values. Single-threaded + this comment is
+        // the contract.
         const settings = this.opts.settings;
         if (patch.chapterFormat === 'img' || patch.chapterFormat === 'cbz') {
             settings.chapterFormat = patch.chapterFormat;
@@ -577,15 +582,28 @@ export class DownloadQueue {
             }
             this.activePerSource.set(row.source_id, running + 1);
             this._update(row.id, { status: 'downloading' });
-            this._runJob(row).finally(() => {
-                const remaining = (this.activePerSource.get(row.source_id) ?? 1) - 1;
-                if (remaining > 0) {
-                    this.activePerSource.set(row.source_id, remaining);
-                } else {
-                    this.activePerSource.delete(row.source_id);
-                }
-                this._schedule();
-            });
+            this._runJob(row)
+                .finally(() => {
+                    const remaining = (this.activePerSource.get(row.source_id) ?? 1) - 1;
+                    if (remaining > 0) {
+                        this.activePerSource.set(row.source_id, remaining);
+                    } else {
+                        this.activePerSource.delete(row.source_id);
+                    }
+                    this._schedule();
+                })
+                .catch(error => {
+                    // _runJob handles download errors internally — a rejection
+                    // here comes from the cleanup path (SQLite write, finish
+                    // hooks). Swallow it into the log: an unhandled rejection
+                    // would take the whole server down.
+                    this.opts.events.publishLog({
+                        level: 'error',
+                        category: 'system',
+                        code: 'downloads.internalError',
+                        message: `Erreur interne après le job #${row.id} : ${String((error as Error)?.message ?? error)}`
+                    });
+                });
         }
     }
 
@@ -652,87 +670,20 @@ export class DownloadQueue {
         }
     }
 
-    /** Download every page to the output folder (or in-memory zip), publishing progress.
-     *   Returns the mode actually used: a CBZ chapter whose pages outgrow the
-     *   memory guard is flushed to the img directory mid-flight and stays 'img'.
-     *   Pages served through signed URLs that expire mid-chapter are recovered
-     *   by refreshing the page list (fresh URLs) and retrying the same index. */
-    private async _downloadPages(
+    private _downloadPages(
         row: JobRow,
         pages: string[],
         source: SourceAdapter,
         paths: ChapterPaths,
         zip: JSZip | undefined
     ): Promise<{ mode: 'cbz' | 'img'; pageCount: number }> {
-        let leadingZeroes = String(pages.length).length;
-        const startedAt = Date.now();
-        let pausedMs = 0;
-        let archive = zip;
-        let archiveBytes = 0;
-        let refreshesLeft = PAGE_LIST_REFRESHES;
-        for (let index = 0; index < pages.length; index++) {
-            this._checkCancel(row.id);
-            const pauseStart = Date.now();
-            await this._waitWhilePaused();
-            pausedMs += Date.now() - pauseStart;
-            this._checkCancel(row.id);
-            if (Date.now() - startedAt - pausedMs > CHAPTER_DEADLINE_MS) {
-                throw new Error(`chapter download timed out after ${Math.round(CHAPTER_DEADLINE_MS / 60000)}min (${index}/${pages.length} pages)`);
-            }
-
-            let page: { mime: string; data: Uint8Array };
-            try {
-                page = await fetchPageWithRetries(pages[index], source, this.gate);
-            } catch (error) {
-                // Signed image URLs (connector:// payloads carrying ?acc=…&expires=…)
-                // go stale while the chapter downloads: the CDN then answers with a
-                // tiny HTML error page that retrying the same URL can never fix.
-                // Refresh the page list for a fresh set of URLs and retry once.
-                if (refreshesLeft <= 0) {
-                    throw error;
-                }
-                refreshesLeft--;
-                let fresh: string[];
-                try {
-                    fresh = await getPageListWithRetries(source, row, () => this._checkCancel(row.id));
-                } catch (refreshError) {
-                    if ((refreshError as Error)?.message === 'cancelled') {
-                        throw refreshError;
-                    }
-                    throw new Error(`${(error as Error).message} (page-list refresh failed: ${(refreshError as Error).message})`);
-                }
-                if (index >= fresh.length) {
-                    throw error; // the chapter shrank server-side: don't guess a mapping
-                }
-                if (fresh.length !== pages.length) {
-                    this._update(row.id, { pages_total: fresh.length });
-                }
-                pages = fresh;
-                // the refreshed list may be longer: keep zero-padding in step
-                leadingZeroes = String(pages.length).length;
-                page = await fetchPageWithRetries(pages[index], source, this.gate);
-            }
-            const { mime, data } = page;
-            const fileName = pageFileName(index + 1, mime, leadingZeroes);
-            if (archive) {
-                archiveBytes += data.length;
-                if (archiveBytes > CBZ_MEMORY_GUARD_BYTES) {
-                    await spillArchiveToDirectory(this.opts.events, archive, paths, row.id);
-                    archive = undefined;
-                }
-            }
-            if (archive) {
-                archive.file(fileName, Buffer.from(data));
-            } else {
-                fs.writeFileSync(path.join(paths.directory, fileName), Buffer.from(data));
-            }
-
-            this._update(row.id, {
-                pages_done: index + 1,
-                progress: Math.round(((index + 1) / pages.length) * 100)
-            });
-        }
-        return { mode: archive ? 'cbz' : 'img', pageCount: pages.length };
+        return downloadChapterPages(row, pages, source, paths, zip, {
+            events: this.opts.events,
+            gate: this.gate,
+            checkCancel: jobId => this._checkCancel(jobId),
+            waitWhilePaused: () => this._waitWhilePaused(),
+            update: (jobId, patch) => this._update(jobId, patch)
+        });
     }
 
     private _notifyFinished(jobId: number): void {

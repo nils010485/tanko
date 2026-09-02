@@ -4,11 +4,11 @@
  * internal source cache, failed-source rematch and the better-source scan.
  */
 import type { LibraryEntryDto, ScheduleSettingsDto, ScheduleStatusDto } from '@tanko/shared';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
 import { IconBell, IconDownload, IconRefresh, IconSliders, IconTrash } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
+import { Badge, Button, Card, ErrorBanner, Input, SectionTitle, Skeleton, Spinner, Toggle } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api, type CoverStatusDto, type SchedulePatch } from '../lib/api.js';
@@ -47,6 +47,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     const [settings, setSettings] = useState<ScheduleSettingsDto | null>(null);
     const [cron, setCron] = useState('');
     const [saving, setSaving] = useState(false);
+    const [loadError, setLoadError] = useState('');
     const [running, setRunning] = useState(false);
     const [covers, setCovers] = useState<CoverStatusDto | null>(null);
     const [regenBusy, setRegenBusy] = useState(false);
@@ -67,13 +68,19 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     const pendingCount = library
         .filter(entry => !entry.hidden)
         .reduce((sum, entry) => sum + entry.newCount + (entry.missingCount ?? 0) + (entry.failedCount ?? 0), 0);
-
-    useEffect(() => {
-        api.schedule().then(data => {
+    const loadSchedule = useCallback(async () => {
+        try {
+            const data = await api.schedule();
             setSettings(data.settings);
             setCron(data.settings.cron);
-        });
+            setLoadError('');
+        } catch (error) {
+            setLoadError((error as Error).message);
+        }
     }, []);
+    useEffect(() => {
+        void loadSchedule();
+    }, [loadSchedule]);
 
     // cover cache status: polled every few seconds while the view is open
     useEffect(() => {
@@ -203,15 +210,19 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
         return (
             <div className="space-y-6">
                 <SectionTitle>{t('tasks.title')}</SectionTitle>
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {['sk-a', 'sk-b'].map(key => (
-                        <Card key={key} className="space-y-4 p-4">
-                            <Skeleton className="h-4 w-1/2" />
-                            <Skeleton className="h-3 w-2/3" />
-                            <Skeleton className="h-8 w-full" />
-                        </Card>
-                    ))}
-                </div>
+                {loadError ? (
+                    <ErrorBanner message={loadError} onRetry={() => void loadSchedule()} />
+                ) : (
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        {['sk-a', 'sk-b'].map(key => (
+                            <Card key={key} className="space-y-4 p-4">
+                                <Skeleton className="h-4 w-1/2" />
+                                <Skeleton className="h-3 w-2/3" />
+                                <Skeleton className="h-8 w-full" />
+                            </Card>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     }

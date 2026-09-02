@@ -177,7 +177,9 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
         }
         setLoadingMore(true);
         if (nextOffset.current === null) {
-            nextOffset.current = logs.length;
+            // only persisted rows count towards the server-side offset —
+            // ephemeral live rows (negative ids) would skip older pages
+            nextOffset.current = logs.filter(log => log.id > 0).length;
         }
         try {
             const result = await api.activity({ limit: 50, offset: nextOffset.current });

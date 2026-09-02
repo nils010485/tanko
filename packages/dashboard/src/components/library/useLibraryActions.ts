@@ -4,7 +4,7 @@
  * pending-dialog state and toasts. All of it lives here — the view renders.
  */
 import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/index.js';
 import { api } from '../../lib/api.js';
 import { enqueueEntryChapters, rematchOutcomeKey } from '../../lib/chapters.js';
@@ -332,15 +332,28 @@ export function useLibraryActions({
         }
     };
 
+    /** Ignore responses that resolve after the user switched entries. */
+    const chaptersSeq = useRef(0);
     const openChapters = async (entry: LibraryEntryDto) => {
         if (expanded === entry.id) {
             setExpanded(null);
             setChapters(null);
             return;
         }
+        const seq = ++chaptersSeq.current;
         setExpanded(entry.id);
         setChapters(null);
-        setChapters(await api.entryChapters(entry.id));
+        try {
+            const list = await api.entryChapters(entry.id);
+            if (chaptersSeq.current === seq) {
+                setChapters(list);
+            }
+        } catch (error) {
+            if (chaptersSeq.current === seq) {
+                setChapters([]);
+                toast.error((error as Error).message);
+            }
+        }
     };
 
     return {

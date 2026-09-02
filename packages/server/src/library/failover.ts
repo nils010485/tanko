@@ -161,8 +161,15 @@ export class FailoverService {
             onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
             /** Webhook hook: an exact-match migration was applied automatically. */
             onAutoMigrate?: (entry: { id: number; title: string }, target: { sourceLabel: string }, kept: number, total: number) => void;
+            /** Structured log sink (Activity feed) — absent: diagnostics dropped. */
+            log?: (message: string) => void;
         }
     ) {}
+
+    /** Emit a failover diagnostic through the structured sink when wired. */
+    private _log(message: string): void {
+        this.opts.log?.(message);
+    }
 
     /**
      * One crawl round: search alternative sources in parallel waves until a
@@ -435,14 +442,14 @@ export class FailoverService {
             if ((better.score ?? 0) >= EXACT_MATCH_SCORE && this.opts.isAutoMigrateExactEnabled?.()) {
                 const result = await this.opts.store.migrateEntry(entry.id, better);
                 this.opts.onAutoMigrate?.(entry, better, result.kept, result.total);
-                console.log(
+                this._log(
                     `[failover] "${entry.title}" migré automatiquement vers ${better.sourceLabel} (correspondance exacte, ${result.kept}/${result.total} chapitres conservés)`
                 );
                 return true;
             }
             this.opts.store.setMigrationSuggestion(entry.id, better);
             this.opts.onSuggestion?.(entry, better, chapterCount);
-            console.log(`[failover] "${entry.title}" : ${reason} (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
+            this._log(`[failover] "${entry.title}" : ${reason} (${chapterCount} ch.), suggestion ${better.sourceLabel} (${better.chapterCount} ch.)`);
             return true;
         } finally {
             this.detectionRunning.delete(entry.id);
@@ -517,7 +524,7 @@ export class FailoverService {
             );
             const usable = chapters.filter(item => chapterAllowed(item.language, preferred));
             if (!usable.length) {
-                console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
+                this._log(`[failover] "${entry.title}" : ${candidate.sourceLabel} ne sert aucun chapitre dans les langues préférées`);
                 return null;
             }
             const pages = await withTimeout(
@@ -530,7 +537,7 @@ export class FailoverService {
             }
             return usable.length;
         } catch (error) {
-            console.log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
+            this._log(`[failover] "${entry.title}" : ${candidate.sourceLabel} inutilisable (${(error as Error).message})`);
             return null;
         }
     }
@@ -540,7 +547,7 @@ export class FailoverService {
         const confidence = confidenceFor(target.score);
         if (confidence === 'auto' && auto) {
             const result = await this.opts.store.migrateEntry(entry.id, target);
-            console.log(`[failover] "${entry.title}" migré vers ${target.sourceLabel} (${result.kept}/${result.total} chapitres conservés)`);
+            this._log(`[failover] "${entry.title}" migré vers ${target.sourceLabel} (${result.kept}/${result.total} chapitres conservés)`);
             return 'migrated';
         }
         this.opts.store.setMigrationSuggestion(entry.id, target);

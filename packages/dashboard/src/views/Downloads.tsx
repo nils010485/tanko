@@ -11,7 +11,7 @@ import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
 import { IconChevronDown, IconDownload, IconPause, IconPlay, IconRefresh, IconTrash, IconX } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, IconButton, ProgressBar, SectionTitle, Skeleton } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, ErrorBanner, IconButton, ProgressBar, SectionTitle, Skeleton } from '../components/ui.js';
 import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
@@ -65,19 +65,35 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
     const [menuOpen, setMenuOpen] = useState(false);
     const [confirm, setConfirm] = useState<CleanAction | null>(null);
     const [retrying, setRetrying] = useState(false);
+    /** Consecutive poll failures — flips the stale-data banner past a threshold. */
+    const failStreak = useRef(0);
+    const [stale, setStale] = useState(false);
     const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
     const menuRef = useRef<HTMLDivElement>(null);
 
+    /** Ignore responses that resolve after a newer fetch started (filter typing, page change, 4s poll). */
+    const requestSeq = useRef(0);
     const load = useCallback(async () => {
+        const seq = ++requestSeq.current;
         try {
             const result = await api.downloads({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, status: status || undefined, q: query || undefined });
-            setJobs(result.jobs);
-            setTotal(result.total);
-            setCounts(result.counts);
+            if (requestSeq.current === seq) {
+                setJobs(result.jobs);
+                setTotal(result.total);
+                setCounts(result.counts);
+                failStreak.current = 0;
+                setStale(false);
+            }
         } catch {
-            /* transient — keep the last page */
+            // transient — keep the last page, but flag staleness past a few misses
+            if (requestSeq.current === seq) {
+                failStreak.current++;
+                setStale(failStreak.current >= 3);
+            }
         } finally {
-            setLoaded(true);
+            if (requestSeq.current === seq) {
+                setLoaded(true);
+            }
         }
     }, [page, status, query]);
 
@@ -358,6 +374,8 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
                 {queueStatus && queueStatus.active > 0 && <Badge tone="green">{t('downloads.activeCount', { n: queueStatus.active })}</Badge>}{' '}
                 {queueStatus && queueStatus.queued > 0 && <Badge tone="zinc">{t('downloads.queuedCount', { n: queueStatus.queued })}</Badge>}
             </SectionTitle>
+
+            {stale && <ErrorBanner message={t('downloads.staleData')} />}
 
             <Card className="space-y-3 p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

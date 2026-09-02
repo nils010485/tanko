@@ -12,6 +12,8 @@ import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ErrorBanner, IconButton, Input, SectionTitle, Spinner } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
+import { useUnmounted } from '../lib/hooks.js';
+import { pollUntil } from '../lib/poll.js';
 import { sourceRank, statusLabel, statusTextClass } from '../lib/sources.js';
 
 type KindFilter = 'all' | 'native' | 'legacy';
@@ -99,20 +101,19 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
     const pageItems = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
     const goTo = (next: number) => setNav({ key: filterKey, page: next });
 
+    const unmounted = useUnmounted();
     const recheckAll = async () => {
         setRechecking(true);
         try {
             await api.checkSources();
             toast.info(t('sources.recheckStarted'));
-            // poll while the background probe refreshes statuses
-            for (let i = 0; i < 40; i++) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                const list = await refreshSources();
-                const stillChecking = list.some(source => source.health === 'checking');
-                if (!stillChecking && i > 2) {
-                    break;
-                }
-            }
+            // poll while the background probe refreshes statuses (stop on unmount)
+            await pollUntil(() => refreshSources(), {
+                cancelled: () => unmounted.current,
+                done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
+            });
+        } catch (error) {
+            toast.error((error as Error).message);
         } finally {
             setRechecking(false);
         }

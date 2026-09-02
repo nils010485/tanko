@@ -13,7 +13,8 @@ import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spinner } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api, RequestError } from '../lib/api.js';
-import { useEscapeKey } from '../lib/hooks.js';
+import { useEscapeKey, useUnmounted } from '../lib/hooks.js';
+import { pollUntil } from '../lib/poll.js';
 import { sourceRank, statusLabel } from '../lib/sources.js';
 
 /** Canonical URL of a search result, when the connector exposes one (some use
@@ -68,6 +69,13 @@ export default function Discover({
     const comboRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
     const { t } = useI18n();
+    const unmounted = useUnmounted();
+    /** Ignore page responses that resolve after the preview was closed or replaced. */
+    const previewSeq = useRef(0);
+    const closePreview = () => {
+        previewSeq.current++;
+        setPreview(null);
+    };
 
     const refreshSources = useCallback(async () => {
         const list = await api.sources();
@@ -76,18 +84,20 @@ export default function Discover({
     }, []);
 
     useEffect(() => {
-        refreshSources().then(list => {
-            const visible = list.filter(source => !source.hidden);
-            const preferred =
-                visible.find(source => source.id === 'toonily') ||
-                visible.find(source => source.kind === 'native') ||
-                visible.find(source => source.health === 'ok') ||
-                visible[0];
-            if (preferred) {
-                setSourceId(preferred.id);
-            }
-        });
-    }, [refreshSources]);
+        refreshSources()
+            .then(list => {
+                const visible = list.filter(source => !source.hidden);
+                const preferred =
+                    visible.find(source => source.id === 'toonily') ||
+                    visible.find(source => source.kind === 'native') ||
+                    visible.find(source => source.health === 'ok') ||
+                    visible[0];
+                if (preferred) {
+                    setSourceId(preferred.id);
+                }
+            })
+            .catch((error: unknown) => toast.error((error as Error).message));
+    }, [refreshSources, toast]);
     // rolling health re-checks push sources.updated — refresh the statuses live
     const seenSourcesVersion = useRef(sourcesVersion);
     useEffect(() => {
@@ -119,6 +129,7 @@ export default function Discover({
     // close the chapters / page-preview / follow dialogs with Escape
     const closeModals = useCallback(() => {
         setSelected(null);
+        previewSeq.current++;
         setPreview(null);
         setFollowTarget(null);
         setDuplicate(null);
@@ -147,20 +158,17 @@ export default function Discover({
             setHidingBroken(false);
         }
     };
-
     const recheckAll = async () => {
         setRechecking(true);
         try {
             await api.checkSources();
-            // poll while the background probe refreshes statuses
-            for (let i = 0; i < 40; i++) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                const list = await refreshSources();
-                const stillChecking = list.some(source => source.health === 'checking');
-                if (!stillChecking && i > 2) {
-                    break;
-                }
-            }
+            // poll while the background probe refreshes statuses (stop on unmount)
+            await pollUntil(() => refreshSources(), {
+                cancelled: () => unmounted.current,
+                done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
+            });
+        } catch (error) {
+            toast.error((error as Error).message);
         } finally {
             setRechecking(false);
         }
@@ -244,18 +252,23 @@ export default function Discover({
         if (!selected) {
             return;
         }
+        const seq = ++previewSeq.current;
         setPreviewTitle(chapter.title);
         setPreview(null);
         setPreviewError('');
         setPreviewLoading(true);
         try {
             const result = await api.pages(selected.sourceId, selected.id, chapter.id, selected.title, chapter.title);
+            if (previewSeq.current !== seq) return; // closed or replaced meanwhile
             setPreview(result.pages || []);
         } catch (error) {
+            if (previewSeq.current !== seq) return;
             setPreview([]);
             setPreviewError((error as Error).message);
         } finally {
-            setPreviewLoading(false);
+            if (previewSeq.current === seq) {
+                setPreviewLoading(false);
+            }
         }
     };
 
@@ -563,7 +576,7 @@ export default function Discover({
                 loading={previewLoading}
                 error={previewError}
                 sourceId={selected ? selected.sourceId : sourceId}
-                onClose={() => setPreview(null)}
+                onClose={closePreview}
             />
             {followTarget !== null && (
                 <FollowDialog

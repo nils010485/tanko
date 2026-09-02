@@ -57,6 +57,9 @@ export function describePageUrl(url: string): string {
  * limiting, transient anti-bot pages) — retry with backoff before
  * failing the whole job.
  */
+/** Same budget as the plain-HTTP branch's AbortSignal timeout. */
+const PAGE_FETCH_TIMEOUT_MS = 120 * 1000;
+
 export async function getPageListWithRetries(
     source: SourceAdapter,
     row: PageJobRef,
@@ -116,12 +119,12 @@ async function fetchPage(url: string, source: SourceAdapter): Promise<{ mime: st
     let response: Response;
     if (url.startsWith('connector://')) {
         // routed to the owning connector by the global fetch wrapper
-        response = await fetch(url);
+        response = await withTimeout(fetch(url), PAGE_FETCH_TIMEOUT_MS, `connector page ${describePageUrl(url)}`);
     } else if (source instanceof LegacySourceAdapter) {
         // apply legacy x-* header transformations + cookie jar via the legacy engine bridge
         const engine = (globalThis as unknown as { Engine: EngineGlobal }).Engine;
         const request = new Request(url, source.connector.requestOptions);
-        response = await engine.Request.fetch(request);
+        response = await withTimeout(engine.Request.fetch(request), PAGE_FETCH_TIMEOUT_MS, `legacy page ${describePageUrl(url)}`);
     } else {
         if (source.fetchPageImage) {
             try {

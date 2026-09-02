@@ -15,6 +15,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { absoluteUrl, pinToOrigin } from './http.js';
 
 const UA = randomUserAgent();
 
@@ -188,12 +189,17 @@ export class MadaraConnector implements SourceAdapter {
             if (!anchor || !href) {
                 continue;
             }
+            // one malformed href must not sink the whole search
+            const url = absoluteUrl(href, this.base);
+            if (!url) {
+                continue;
+            }
             const img = row.querySelector('img');
             const thumbnail = img?.getAttribute('data-src') || img?.getAttribute('data-backup') || img?.getAttribute('src') || undefined;
             results.push({
-                id: this._mangaIdFromUrl(href),
+                id: this._mangaIdFromUrl(url),
                 title: this._decode((anchor.textContent || '').replace(/\s+/g, ' ').trim()),
-                url: new URL(href, this.base).href,
+                url,
                 thumbnail: thumbnail && !thumbnail.startsWith('data:') ? thumbnail : undefined
             });
         }
@@ -207,7 +213,7 @@ export class MadaraConnector implements SourceAdapter {
             chapters = await this._getChaptersApi(manga);
         }
         if (chapters.length === 0) {
-            const mangaUrl = manga.url || this._mangaUrlFromId(manga.id);
+            const mangaUrl = this._pin(manga.url || this._mangaUrlFromId(manga.id));
             const html = await this._getText(mangaUrl);
             const document = parseDocument(html);
             chapters = this._parseChapterNodes([...document.querySelectorAll(this._chapterSelector)]);
@@ -282,7 +288,7 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = this._pin(chapter.url || chapter.id);
         // client-side readers (blob: images): capture the real URLs mid-render
         if (this._capturePages) {
             const captured = await browserCapturePageImages(this.base, chapterUrl);
@@ -354,15 +360,28 @@ export class MadaraConnector implements SourceAdapter {
 
     private _mangaUrlFromId(id: string): string {
         if (id.startsWith('http')) {
-            return id;
+            // ids come back from API requests: a crafted absolute id must not
+            // point the scraper (or the browser session) at another host
+            return pinToOrigin(id, this.base, { id: this.id });
         }
         return this.base + id;
     }
 
+    /** Same-origin pin for client-supplied manga/chapter URLs (SSRF guard). */
+    private _pin(url: string): string {
+        return pinToOrigin(url, this.base, { id: this.id });
+    }
+
     private _decode(text: string): string {
-        return String(text)
-            .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-            .replace(/&amp;/g, '&');
+        return (
+            String(text)
+                // hostile or truncated entities (> 0x10FFFF) would throw — keep them verbatim
+                .replace(/&#(\d+);/g, (_, n) => {
+                    const code = Number(n);
+                    return code <= 0x10ffff ? String.fromCodePoint(code) : _;
+                })
+                .replace(/&amp;/g, '&')
+        );
     }
 
     private async _request(url: string, init: RequestInit, attempt = 0): Promise<MinimalResponse> {
@@ -425,6 +444,7 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     private async _getText(url: string): Promise<string> {
+        url = this._pin(url);
         const response = await this._request(url, {
             headers: {
                 'User-Agent': UA,

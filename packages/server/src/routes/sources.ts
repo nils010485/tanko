@@ -100,7 +100,12 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
         const holder = source as unknown as ConnectorHolder;
         const connector = holder.connector || holder.inner?.connector;
         const legacyRequest = new Request(url, connector?.requestOptions);
-        return (globalThis as EngineGlobal).Engine.Request.fetch(legacyRequest);
+        const response = await (globalThis as EngineGlobal).Engine.Request.fetch(legacyRequest);
+        // the legacy engine follows redirects internally and cannot be
+        // hop-checked: the final URL is the last guard available — refuse to
+        // serve bodies that ended up on a private address
+        await assertPublicHttpUrl(response.url || url);
+        return response;
     }
     return fetchGuarded(url, {
         headers: {

@@ -16,6 +16,7 @@ import type { Database } from '../db.js';
 import { countLocalChapters } from '../downloader/paths.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { chapterAllowed } from '../languages.js';
+import { withTimeout } from '../util/timeout.js';
 import * as chapters from './chapters.js';
 import type { StoreContext } from './context.js';
 import { getEntryRow, isDownloaded, makeQueries, seriesDirectory } from './context.js';
@@ -99,7 +100,12 @@ export class LibraryStore {
 
         let snapshot = 0;
         try {
-            const chaptersFound = await source.getChapters({ id: entry.mangaId, title: entry.title });
+            // a hanging connector must not stall the import/add forever
+            const chaptersFound = await withTimeout(
+                source.getChapters({ id: entry.mangaId, title: entry.title }),
+                2 * 60 * 1000,
+                `getChapters(${entry.title})`
+            );
             const insert = this.ctx.db.db.prepare(SQL_INSERT_CHAPTER);
             const preferred = this.ctx.getPreferredLanguages?.() || [];
             for (const chapter of chaptersFound) {

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.js';
@@ -97,30 +98,41 @@ export function readUiLanguage(db: Database): UiLanguage {
     return db.kvGet(UI_LANGUAGE_KEY) === 'fr' ? 'fr' : 'en';
 }
 
-/** Total size in bytes of all files under a directory (recursive). */
-export function directorySize(directory: string): number {
+/** Disk usage moves slowly and the walk is expensive (tens of thousands of
+ *  CBZ) — serve the last result for a minute instead of walking repeatedly. */
+const SIZE_CACHE_TTL_MS = 60 * 1000;
+let sizeCache: { directory: string; bytes: number; at: number } | null = null;
+
+/** Total size in bytes of all files under a directory (recursive, async:
+ *  the sync walk used to freeze the event loop on every GET /api/settings). */
+export async function directorySize(directory: string): Promise<number> {
+    // keyed by directory: the data directory can be retargeted at runtime
+    if (sizeCache && sizeCache.directory === directory && Date.now() - sizeCache.at < SIZE_CACHE_TTL_MS) {
+        return sizeCache.bytes;
+    }
     let total = 0;
-    const walk = (dir: string) => {
+    const walk = async (dir: string): Promise<void> => {
         let entries: fs.Dirent[];
         try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
+            entries = await fsp.readdir(dir, { withFileTypes: true });
         } catch {
             return;
         }
         for (const entry of entries) {
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) {
-                walk(full);
+                await walk(full);
             } else if (entry.isFile()) {
                 try {
-                    total += fs.statSync(full).size;
+                    total += (await fsp.stat(full)).size;
                 } catch {
                     /* skip unreadable files */
                 }
             }
         }
     };
-    walk(directory);
+    await walk(directory);
+    sizeCache = { directory, bytes: total, at: Date.now() };
     return total;
 }
 
@@ -131,7 +143,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         const settings = queue.getSettings();
         return {
             queue: settings,
-            diskUsedBytes: directorySize(settings.dataDirectory),
+            diskUsedBytes: await directorySize(settings.dataDirectory),
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,

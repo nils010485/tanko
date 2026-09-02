@@ -351,6 +351,7 @@ export const en = {
 
     // downloads
     'downloads.title': 'Downloads',
+    'downloads.staleData': 'Server unreachable — the list shown may be stale.',
     'downloads.filterAll': 'All',
     'downloads.filterQueued': 'Queued',
     'downloads.filterDownloading': 'Downloading',

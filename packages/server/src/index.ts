@@ -61,6 +61,28 @@ console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed
 
 const database = new Database(config.dataDirectory);
 const events = new EventBus();
+
+// last-resort handlers: log (and surface in Activity) instead of dying
+// silently — the downloader owns long-running state that must not vanish
+process.on('unhandledRejection', reason => {
+    console.error('[server] unhandled rejection:', reason);
+    events.publishLog({
+        level: 'error',
+        category: 'system',
+        code: 'system.unhandledRejection',
+        message: `Rejet de promesse non géré : ${String(reason)}`
+    });
+});
+process.on('uncaughtException', error => {
+    console.error('[server] uncaught exception:', error);
+    events.publishLog({
+        level: 'error',
+        category: 'system',
+        code: 'system.uncaughtException',
+        message: `Exception non interceptée : ${error.message}`
+    });
+});
+
 const activity = new ActivityService({ db: database });
 // every `log` event is persisted; the returned row id tags the broadcast copy
 events.setLogSink(event => activity.add(event));
@@ -83,6 +105,8 @@ const queueSettings: QueueSettings = {
     throttleMs: persistedQueueSettings.throttleMs ?? 250,
     historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? 30
 };
+// NB: queueSettings stays shared by reference with LibraryStore/failover —
+// queue.updateSettings() mutates it in place so retargeting propagates live.
 const preferredLanguages = createLanguagePreference(database);
 const hideAdultSourcesPref = createHideAdultSourcesPref(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });
@@ -122,6 +146,7 @@ const failover = new FailoverService({
     store: library,
     listSources: listSourceInfos,
     getPreferredLanguages: preferredLanguages,
+    log: message => events.publishLog({ level: 'info', category: 'failover', message }),
     isDetectionEnabled: createIncompleteDetectionPref(database),
     isStalledDetectionEnabled: createStalledDetectionPref(database),
     isAutoMigrateExactEnabled: createAutoMigrateExactPref(database),
