@@ -124,15 +124,17 @@ export class ComickConnector implements SourceAdapter {
     }
 
     /** cdn1.comicknew.pictures requires Referer: https://comick.art/
-     *  and transiently rate-limits bursts (429): retry with backoff. */
+     *  and rate-limits in short bursts (429, no Retry-After header; the
+     *  bucket refills in seconds but parallel chapters + auto-retries can
+     *  drain it for longer): exponential backoff. */
     async fetchPageImage(url: string, attempt = 0): Promise<{ mime: string; data: Uint8Array }> {
         const response = await fetch(url, {
             headers: { 'user-agent': UA, referer: `${MIRROR}/`, accept: 'image/*,*/*' },
             signal: AbortSignal.timeout(60000)
         });
         if (!response.ok) {
-            if (attempt < 2 && (response.status === 429 || response.status === 403 || response.status >= 500)) {
-                await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+            if (attempt < 3 && (response.status === 429 || response.status === 403 || response.status >= 500)) {
+                await new Promise(resolve => setTimeout(resolve, 2000 * 2 ** attempt));
                 return this.fetchPageImage(url, attempt + 1);
             }
             throw new SourceError(`HTTP ${response.status} fetching page image on ${this.label}`, this.id);

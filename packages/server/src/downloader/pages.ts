@@ -131,8 +131,14 @@ async function fetchPage(url: string, source: SourceAdapter): Promise<{ mime: st
                 // source in a solved browser session: its image host may
                 // block plain HTTP just like the site itself (undici TLS fingerprint)
                 return await source.fetchPageImage(url);
-            } catch {
-                /* not in browser mode / session expired -> raw fetch below */
+            } catch (error) {
+                // only browser-session connectors opt out this way: a real
+                // HTTP failure after their internal retries must not trigger
+                // a raw fetch without the Referer the CDN requires (pointless
+                // extra hit on an already rate-limited host, masked error)
+                if ((error as Error).message !== 'not in browser mode') {
+                    throw error;
+                }
             }
         }
         let referer: string;
