@@ -182,6 +182,7 @@ export class ComickConnector implements SourceAdapter {
     /** art chapter-list: all languages mixed -> filter, paginate to last_page. */
     private async _artChapters(art: ArtComic): Promise<ChapterInfo[]> {
         const chapters: ChapterInfo[] = [];
+        const seen = new Set<string>();
         for (let page = 1; ; page++) {
             const url = new URL(`/api/comics/${art.slug}/chapter-list`, MIRROR);
             url.searchParams.set('page', String(page));
@@ -190,7 +191,7 @@ export class ComickConnector implements SourceAdapter {
                 if (chapter.lang !== CHAPTER_LANG || !chapter.hid || !chapter.chap) {
                     continue;
                 }
-                chapters.push(this._chapterInfo(chapter, `${MIRROR}/comic/${art.slug}/${chapter.hid}-chapter-${chapter.chap}-${chapter.lang}`));
+                this._addChapter(chapters, seen, chapter, `${MIRROR}/comic/${art.slug}/${chapter.hid}-chapter-${chapter.chap}-${chapter.lang}`);
             }
             const totalPages = response.pagination?.last_page || 1;
             if (page >= totalPages) {
@@ -205,6 +206,7 @@ export class ComickConnector implements SourceAdapter {
         const slug = manga.url?.match(/\/comic\/([^/]+)/)?.[1];
         const base = slug ? `${MIRROR}/comic/${slug}` : `${MIRROR}/comic/x`;
         const chapters: ChapterInfo[] = [];
+        const seen = new Set<string>();
         for (let page = 1; ; page++) {
             const url = new URL(`/comic/${manga.id}/chapters`, API);
             url.searchParams.set('page', String(page));
@@ -216,13 +218,25 @@ export class ComickConnector implements SourceAdapter {
                 if (!chapter.hid || !chapter.chap) {
                     continue;
                 }
-                chapters.push(this._chapterInfo(chapter, `${base}/${chapter.hid}-chapter-${chapter.chap}-${chapter.lang || CHAPTER_LANG}`));
+                this._addChapter(chapters, seen, chapter, `${base}/${chapter.hid}-chapter-${chapter.chap}-${chapter.lang || CHAPTER_LANG}`);
             }
             if (items.length < (response.limit || 50)) {
                 break;
             }
         }
         return chapters;
+    }
+
+    /** The APIs list one row per scanlation group: keep a single row per
+     *  language+chapter number (first release wins, like the MangaDex connector). */
+    private _addChapter(chapters: ChapterInfo[], seen: Set<string>, chapter: DevChapter, url: string): void {
+        const number = Number(chapter.chap) || chapter.chap;
+        const key = `${chapter.lang || CHAPTER_LANG}:c${number}`;
+        if (seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        chapters.push(this._chapterInfo(chapter, url));
     }
 
     private _chapterInfo(chapter: DevChapter, url: string): ChapterInfo {
