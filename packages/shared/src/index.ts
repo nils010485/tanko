@@ -294,6 +294,8 @@ export interface AppSettingsResponseDto {
     /** Opt-in: migration suggestions with an exact title match (score 100 %)
      *  are applied immediately, without user confirmation. */
     autoMigrateExactMatch: boolean;
+    /** Hide adult sources (tags 'hentai'/'porn'/'adult') from search and lists. */
+    hideAdultSources: boolean;
     diskUsedBytes: number;
 }
 

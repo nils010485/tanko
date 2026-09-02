@@ -78,6 +78,18 @@ export function sourceUsable(tags: string[], preferred: string[]): boolean {
     const languages = sourceLanguages(tags);
     return languages === undefined || languages.some(code => preferred.includes(code));
 }
+/** Tags marking a source as adult-only (HakuNeko connectors + native adapters). */
+const ADULT_TAGS = new Set(['hentai', 'porn', 'adult']);
+
+/** A source is adult when its tags carry one of the adult markers. */
+export function isAdultSource(tags: readonly string[]): boolean {
+    return tags.some(tag => ADULT_TAGS.has(tag.toLowerCase()));
+}
+
+/** A source stays listed unless adult sources are hidden and this one is adult. */
+export function adultAllowed(tags: readonly string[], hideAdult: boolean): boolean {
+    return !hideAdult || !isAdultSource(tags);
+}
 
 /** A chapter is kept when its language is unknown or preferred. */
 export function chapterAllowed(language: string | undefined, preferred: string[]): boolean {

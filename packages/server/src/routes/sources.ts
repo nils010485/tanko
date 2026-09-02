@@ -1,7 +1,7 @@
 import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
 import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
+import { adultAllowed, chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
 import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
@@ -112,12 +112,19 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
     });
 }
 
-export function registerSourceRoutes(app: FastifyInstance, sourceRegistry: SourceRegistry, getPreferredLanguages: () => string[] = () => []): void {
+export function registerSourceRoutes(
+    app: FastifyInstance,
+    sourceRegistry: SourceRegistry,
+    getPreferredLanguages: () => string[] = () => [],
+    getHideAdultSources: () => boolean = () => false
+): void {
     app.get('/api/sources', async (): Promise<SourceDto[]> => {
         const sources = await sourceRegistry.list();
+        const hideAdult = getHideAdultSources();
+        const visible = sources.filter(source => adultAllowed(source.tags || [], hideAdult));
         const health = app.healthService ? app.healthService.getAll() : {};
         const hidden = app.healthService ? app.healthService.getHiddenSet() : new Set<string>();
-        return sources.map(source => {
+        return visible.map(source => {
             const record = health[source.id];
             return {
                 id: source.id,

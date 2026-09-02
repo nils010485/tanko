@@ -288,6 +288,7 @@ export const api = {
             incompleteSourceDetection?: boolean;
             stalledSourceDetection?: boolean;
             autoMigrateExactMatch?: boolean;
+            hideAdultSources?: boolean;
         }
     ) =>
         request<{
@@ -298,6 +299,7 @@ export const api = {
             incompleteSourceDetection: boolean;
             stalledSourceDetection: boolean;
             autoMigrateExactMatch: boolean;
+            hideAdultSources: boolean;
         }>('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify(patch)

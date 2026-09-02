@@ -69,3 +69,22 @@ describe('settings: ui language', () => {
         expect(readUiLanguage(database)).toBe('en');
     });
 });
+
+describe('settings: hide adult sources', () => {
+    it('defaults to false and persists through PATCH', async () => {
+        const before = await app.inject({ method: 'GET', url: '/api/settings' });
+        expect(before.json().hideAdultSources).toBe(false);
+
+        const on = await app.inject({ method: 'PATCH', url: '/api/settings', payload: { hideAdultSources: true } });
+        expect(on.statusCode).toBe(200);
+        expect(on.json().hideAdultSources).toBe(true);
+
+        const off = await app.inject({ method: 'PATCH', url: '/api/settings', payload: { hideAdultSources: false } });
+        expect(off.json().hideAdultSources).toBe(false);
+    });
+
+    it('rejects a non-boolean value', async () => {
+        const response = await app.inject({ method: 'PATCH', url: '/api/settings', payload: { hideAdultSources: 'yes' } });
+        expect(response.statusCode).toBe(400);
+    });
+});

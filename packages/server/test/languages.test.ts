@@ -3,7 +3,7 @@
  * against the preferred-language list.
  */
 import { describe, expect, it } from 'vitest';
-import { chapterAllowed, mangaLanguagesAllowed, normalizeLanguage, sourceUsable } from '../src/languages.js';
+import { adultAllowed, chapterAllowed, isAdultSource, mangaLanguagesAllowed, normalizeLanguage, sourceUsable } from '../src/languages.js';
 
 describe('normalizeLanguage', () => {
     it('maps tag words and ISO codes, including regional variants', () => {
@@ -23,6 +23,22 @@ describe('sourceUsable', () => {
     it('a single-language source must match a preferred language', () => {
         expect(sourceUsable(['french'], ['en'])).toBe(false);
         expect(sourceUsable(['french'], ['en', 'fr'])).toBe(true);
+    });
+});
+
+describe('isAdultSource', () => {
+    it('detects the adult marker tags used by connectors and native adapters', () => {
+        expect(isAdultSource(['hentai'])).toBe(true);
+        expect(isAdultSource(['manga', 'porn', 'english'])).toBe(true);
+        expect(isAdultSource(['hentai', 'adult', 'english'])).toBe(true);
+        expect(isAdultSource(['manga', 'english'])).toBe(false);
+        expect(isAdultSource([])).toBe(false);
+    });
+
+    it('adultAllowed drops adult sources only when they are hidden', () => {
+        expect(adultAllowed(['hentai'], true)).toBe(false);
+        expect(adultAllowed(['manga', 'english'], true)).toBe(true);
+        expect(adultAllowed(['hentai'], false)).toBe(true);
     });
 });
 

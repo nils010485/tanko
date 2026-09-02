@@ -663,6 +663,12 @@ export const en = {
     'settings.currentFolder': 'Current folder:',
     'settings.refresh': 'Refresh',
     'settings.sources': 'Sources',
+    'settings.hideAdultSources': 'Hide adult sources',
+    'settings.hideAdultSourcesHint':
+        'Removes sources tagged adult (hentai, porn…) from the source list, global search, import matching and migration suggestions',
+    'settings.hideAdultSourcesWarning':
+        'Some sources mix adult and non-adult content: hiding them also removes their non-adult series, which reduces search coverage. Series already in your library keep updating.',
+    'settings.hideAdultSourcesConfirm': 'Hide anyway',
     'settings.sectionSourcesDesc': 'Connector list synced from HakuNeko',
     'settings.sourcesAvailable': 'sources available',
     'settings.lastUpdate': 'Last update:',

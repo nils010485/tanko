@@ -12,13 +12,15 @@ const UI_LANGUAGE_KEY = 'ui-language';
 const INCOMPLETE_DETECTION_KEY = 'incomplete-detection';
 const STALLED_DETECTION_KEY = 'stalled-detection';
 const AUTO_MIGRATE_EXACT_KEY = 'auto-migrate-exact';
+const HIDE_ADULT_SOURCES_KEY = 'hide-adult-sources';
 
 /** Opt-in boolean flags sharing the same validate/persist/read logic:
  *  PATCH body field → KV store key. */
 const BOOLEAN_FLAGS = [
     { field: 'incompleteSourceDetection', key: INCOMPLETE_DETECTION_KEY },
     { field: 'stalledSourceDetection', key: STALLED_DETECTION_KEY },
-    { field: 'autoMigrateExactMatch', key: AUTO_MIGRATE_EXACT_KEY }
+    { field: 'autoMigrateExactMatch', key: AUTO_MIGRATE_EXACT_KEY },
+    { field: 'hideAdultSources', key: HIDE_ADULT_SOURCES_KEY }
 ] as const;
 
 type BooleanFlagField = (typeof BOOLEAN_FLAGS)[number]['field'];
@@ -84,6 +86,12 @@ export function createAutoMigrateExactPref(db: Database): () => boolean {
     return () => readJsonSetting<boolean>(db, AUTO_MIGRATE_EXACT_KEY, false);
 }
 
+/** Opt-in: hide adult sources (tags 'hentai'/'porn'/'adult') from the source
+ *  list, global search, failover and import matching. Persisted in the KV store. */
+export function createHideAdultSourcesPref(db: Database): () => boolean {
+    return () => readJsonSetting<boolean>(db, HIDE_ADULT_SOURCES_KEY, false);
+}
+
 /** Dashboard interface language; English until the user picks otherwise. */
 export function readUiLanguage(db: Database): UiLanguage {
     return db.kvGet(UI_LANGUAGE_KEY) === 'fr' ? 'fr' : 'en';
@@ -139,6 +147,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             incompleteSourceDetection?: boolean;
             stalledSourceDetection?: boolean;
             autoMigrateExactMatch?: boolean;
+            hideAdultSources?: boolean;
         };
     }>('/api/settings', async (request, reply) => {
         const body = request.body;

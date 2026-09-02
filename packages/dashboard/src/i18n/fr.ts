@@ -648,6 +648,12 @@ export const fr: typeof import('./en.js').en = {
     'settings.sourcesAvailable': 'sources disponibles',
     'settings.lastUpdate': 'Dernière mise à jour :',
     'settings.never': 'jamais',
+    'settings.hideAdultSources': 'Masquer les sources pour adultes',
+    'settings.hideAdultSourcesHint':
+        'Retire les sources taguées adultes (hentai, porn…) de la liste des sources, de la recherche globale, du rapprochement d’import et des suggestions de migration',
+    'settings.hideAdultSourcesWarning':
+        'Certaines sources mélangent contenus adultes et non adultes : les masquer retire aussi leurs séries tout public et réduit donc la couverture de recherche. Les séries déjà présentes en librairie continuent d’être suivies.',
+    'settings.hideAdultSourcesConfirm': 'Masquer quand même',
     'settings.updatingSources': 'Mise à jour en cours…',
     'settings.updateSources': 'Mettre à jour les sources',
     'settings.updatedRestarting': 'Sources mises à jour : {n} sources{diff} — redémarrage du serveur…',

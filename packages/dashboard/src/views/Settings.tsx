@@ -55,6 +55,8 @@ export default function Settings() {
     const [detectIncomplete, setDetectIncomplete] = useState(false);
     const [detectStalled, setDetectStalled] = useState(false);
     const [autoMigrateExact, setAutoMigrateExact] = useState(false);
+    const [hideAdult, setHideAdult] = useState(false);
+    const [confirmHideAdult, setConfirmHideAdult] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
     const [updateStatus, setUpdateStatus] = useState<ConnectorsUpdateStatus | null>(null);
@@ -74,6 +76,7 @@ export default function Settings() {
         setDetectIncomplete(data.incompleteSourceDetection ?? false);
         setDetectStalled(data.stalledSourceDetection ?? false);
         setAutoMigrateExact(data.autoMigrateExactMatch ?? false);
+        setHideAdult(data.hideAdultSources ?? false);
         setUpdateStatus(await api.sourcesUpdateStatus());
     }, []);
 
@@ -143,6 +146,26 @@ export default function Settings() {
             await api.updateSettings({ autoMigrateExactMatch: value });
         } catch (error) {
             setAutoMigrateExact(!value);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** Turning the filter on asks for confirmation: mixed sources reduce search coverage. */
+    const requestHideAdult = (value: boolean) => {
+        if (value) {
+            setConfirmHideAdult(true);
+        } else {
+            applyHideAdult(false);
+        }
+    };
+
+    const applyHideAdult = async (value: boolean) => {
+        setConfirmHideAdult(false);
+        setHideAdult(value);
+        try {
+            await api.updateSettings({ hideAdultSources: value });
+        } catch (error) {
+            setHideAdult(!value);
             toast.error((error as Error).message);
         }
     };
@@ -383,24 +406,29 @@ export default function Settings() {
                     )}
 
                     {section === 'sources' && (
-                        <div className="flex items-center justify-between gap-3 py-4">
-                            <div>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-2xl font-bold text-accent-soft">{updateStatus ? updateStatus.activeCount : '…'}</span>
-                                    <span className="text-sm text-faint">{t('settings.sourcesAvailable')}</span>
+                        <>
+                            <SettingRow label={t('settings.hideAdultSources')} hint={t('settings.hideAdultSourcesHint')}>
+                                <Toggle checked={hideAdult} onChange={requestHideAdult} />
+                            </SettingRow>
+                            <div className="flex items-center justify-between gap-3 py-4">
+                                <div>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-2xl font-bold text-accent-soft">{updateStatus ? updateStatus.activeCount : '…'}</span>
+                                        <span className="text-sm text-faint">{t('settings.sourcesAvailable')}</span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-faint">
+                                        {t('settings.lastUpdate')}{' '}
+                                        {updateStatus?.last
+                                            ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}`
+                                            : t('settings.never')}
+                                    </div>
+                                    {updateMessage && <div className="mt-1 text-xs text-sky-300">{updateMessage}</div>}
                                 </div>
-                                <div className="mt-1 text-xs text-faint">
-                                    {t('settings.lastUpdate')}{' '}
-                                    {updateStatus?.last
-                                        ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}`
-                                        : t('settings.never')}
-                                </div>
-                                {updateMessage && <div className="mt-1 text-xs text-sky-300">{updateMessage}</div>}
+                                <Button loading={updating} onClick={updateSources} disabled={updating || !!updateStatus?.running}>
+                                    {updating ? t('settings.updatingSources') : t('settings.updateSources')}
+                                </Button>
                             </div>
-                            <Button loading={updating} onClick={updateSources} disabled={updating || !!updateStatus?.running}>
-                                {updating ? t('settings.updatingSources') : t('settings.updateSources')}
-                            </Button>
-                        </div>
+                        </>
                     )}
                 </div>
             </Card>
@@ -421,6 +449,16 @@ export default function Settings() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                open={confirmHideAdult}
+                title={t('settings.hideAdultSources')}
+                body={t('settings.hideAdultSourcesWarning')}
+                confirmLabel={t('settings.hideAdultSourcesConfirm')}
+                danger={false}
+                onConfirm={() => applyHideAdult(true)}
+                onCancel={() => setConfirmHideAdult(false)}
+            />
 
             <ConfirmDialog
                 open={confirmClear}

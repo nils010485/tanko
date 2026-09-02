@@ -16,6 +16,7 @@ import { loadConfig } from './config.js';
 import { Database } from './db.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
 import { ImportService } from './import/service.js';
+import { adultAllowed } from './languages.js';
 import { CoverService } from './library/covers.js';
 import {
     classifyFailure,
@@ -35,6 +36,7 @@ import { registerImportRoutes } from './routes/import.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import {
     createAutoMigrateExactPref,
+    createHideAdultSourcesPref,
     createIncompleteDetectionPref,
     createLanguagePreference,
     createStalledDetectionPref,
@@ -81,6 +83,7 @@ const queueSettings: QueueSettings = {
     historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? 30
 };
 const preferredLanguages = createLanguagePreference(database);
+const hideAdultSourcesPref = createHideAdultSourcesPref(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });
 // instantiated before the services that report to it (covers, import) — the registry has no dependencies
 const jobs = new JobRunner();
@@ -93,17 +96,21 @@ const healthService = new SourceHealthService({
 });
 const listSourceInfos = async () => {
     const sources = await sourceRegistry.list();
+    const hideAdult = hideAdultSourcesPref();
     const health = healthService.getAll();
     const hidden = healthService.getHiddenSet();
-    return sources.map(source => ({
-        id: source.id,
-        label: source.label,
-        tags: source.tags || [],
-        kind: source.kind,
-        health: health[source.id]?.status,
-        hidden: hidden.has(source.id)
-    }));
+    return sources
+        .filter(source => adultAllowed(source.tags || [], hideAdult))
+        .map(source => ({
+            id: source.id,
+            label: source.label,
+            tags: source.tags || [],
+            kind: source.kind,
+            health: health[source.id]?.status,
+            hidden: hidden.has(source.id)
+        }));
 };
+
 /** Library chapter status for each finished download-job status (absent = handled separately). */
 const CHAPTER_STATUS: Partial<Record<DownloadStatus, 'downloaded' | 'failed'>> = {
     completed: 'downloaded',
@@ -294,8 +301,9 @@ const globalSearch = new GlobalSearchService({
     getPreferredLanguages: preferredLanguages,
     listSources: async () => {
         const hidden = healthService.getHiddenSet();
+        const hideAdult = hideAdultSourcesPref();
         return (await sourceRegistry.list())
-            .filter(source => !hidden.has(source.id))
+            .filter(source => !hidden.has(source.id) && adultAllowed(source.tags || [], hideAdult))
             .map(source => ({ id: source.id, label: source.label, kind: source.kind, tags: source.tags }));
     }
 });
@@ -313,7 +321,7 @@ app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
 registerActivityRoutes(app, activity, { library, sourceHealth: healthService }, jobs);
-registerSourceRoutes(app, sourceRegistry, preferredLanguages);
+registerSourceRoutes(app, sourceRegistry, preferredLanguages, hideAdultSourcesPref);
 registerSourceHealthRoutes(app, healthService);
 registerSourceUpdateRoutes(app, config, database);
 registerDownloadRoutes(app, queue, sourceRegistry, library);
