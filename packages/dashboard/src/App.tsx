@@ -44,10 +44,10 @@ const TAB_ICONS: Record<Tab, ComponentType<IconProps>> = {
     activity: IconActivity,
     settings: IconSettings
 };
-/** Sidebar grouping; `settings` lives in the sidebar footer. */
+/** Sidebar grouping. */
 const NAV_SECTIONS: Array<{ labelKey: 'nav.sectionRead' | 'nav.sectionManage'; tabs: Tab[] }> = [
     { labelKey: 'nav.sectionRead', tabs: ['discover', 'library', 'downloads'] },
-    { labelKey: 'nav.sectionManage', tabs: ['import', 'sources', 'tasks', 'activity'] }
+    { labelKey: 'nav.sectionManage', tabs: ['import', 'sources', 'tasks', 'activity', 'settings'] }
 ];
 
 const TAB_IDS = Object.keys(TAB_ICONS) as Tab[];
@@ -190,8 +190,7 @@ export default function App() {
                     ))}
                 </nav>
                 <div className="border-t border-line px-3 py-3">
-                    {navButton('settings')}
-                    <div className="flex items-center gap-2 px-3 pt-2.5 text-[11px] text-faint">
+                    <div className="flex items-center gap-2 px-3 text-[11px] text-faint">
                         {connectionDot}
                         <span className="truncate">
                             {live.connected ? t('app.connected') : t('app.connecting')} · v{__APP_VERSION__}
