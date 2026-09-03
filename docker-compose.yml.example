@@ -5,32 +5,13 @@ services:
     container_name: tanko
     restart: unless-stopped
     ports:
-      # HOST:CONTAINER — dashboard + API + WebSocket
       - "8080:8080"
     environment:
-      # Chapter format, concurrency, throttle and preferred languages are
-      # configured in the dashboard's Settings tab, not here.
-      # Automatic import at startup: path (inside the container) of an
-      # existing library to scan/match/sync.
       # IMPORT_PATH: /biblio
-      # Auto-confirmation level: 'auto' (default, confident matches only),
-      # 'all' (includes uncertain ones), 'none' (manual validation)
       # IMPORT_AUTO_CONFIRM: auto
-      # "1" = imported series auto-download their future chapters
-      # IMPORT_AUTO_DOWNLOAD: "0"
-      # Source updates: restarts the container after a sync to load new
-      # connectors. Set "0" to disable.
-      # CONNECTORS_AUTO_RESTART: "0"
-      # Uncomment to change the port inside the container
-      # PORT: "8080"
-      # Memory guardrails (recommended on small hosts): set a container limit
-      # and a V8 heap ceiling BELOW it so Node GCs harder instead of hitting
-      # the wall — e.g. mem_limit 3g with --max-old-space-size=2304.
+      # IMPORT_AUTO_DOWNLOAD: "1"
+      # CONNECTORS_AUTO_RESTART: "1"
       # NODE_OPTIONS: --max-old-space-size=2304
-    # mem_limit: 3g
     volumes:
-      # SQLite database, settings and downloaded library
       - ./data:/data
-      # Existing library to import (read-only recommended).
-      # The right-hand path (/biblio) is the one to enter in the Import tab.
-      # - /path/to/your/library:/biblio:ro
+      - /path/to/your/library:/biblio
