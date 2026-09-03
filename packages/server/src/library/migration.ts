@@ -140,12 +140,12 @@ async function rebuildChapters(
 ): Promise<{ kept: number; total: number }> {
     // the validation probe is already bounded — the commit re-fetch must be
     // too, or a hanging connector strands the entry in `probing` forever
+    const preferred = ctx.getPreferredLanguages?.() || [];
     const chapters = await withTimeout(
-        source.getChapters({ id: target.mangaId, title: target.mangaTitle }),
+        source.getChapters({ id: target.mangaId, title: target.mangaTitle }, { languages: preferred }),
         2 * 60 * 1000,
         `getChapters(${target.mangaTitle})`
     );
-    const preferred = ctx.getPreferredLanguages?.() || [];
     const now = new Date().toISOString();
     // the entry's canonical folder is untouched by the migration: downloads
     // and disk checks keep using it under the new source's title

@@ -528,7 +528,8 @@ export class DownloadQueue {
                 updated_at    TEXT NOT NULL,
                 UNIQUE(source_id, manga_id, chapter_id)
             );
-            CREATE INDEX IF NOT EXISTS idx_download_jobs_status ON download_jobs(status);
+            CREATE INDEX IF NOT EXISTS idx_download_jobs_status_source ON download_jobs(status, source_id);
+            DROP INDEX IF EXISTS idx_download_jobs_status; -- old installs: covered by the composite
         `);
         // older installs: add the auto-retry counter
         const columns = this.opts.db.db.prepare('PRAGMA table_info(download_jobs)').all() as Array<{ name: string }>;
@@ -569,9 +570,16 @@ export class DownloadQueue {
         if (this.paused) {
             return;
         }
-        const rows = this.opts.db.db.prepare("SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY id ASC").all() as unknown as JobRow[];
-        for (const row of rows) {
-            const running = this.activePerSource.get(row.source_id) ?? 0;
+        // bounded pass: never materialize the whole queue (a large "download
+        // missing" backlog would be re-read on every tick) — list the sources
+        // having queued jobs (oldest job first), then fetch per source only
+        // the jobs it can start under the caps
+        const db = this.opts.db.db;
+        const sources = db
+            .prepare("SELECT source_id, MIN(id) AS head FROM download_jobs WHERE status = 'queued' GROUP BY source_id ORDER BY head ASC")
+            .all() as Array<{ source_id: string }>;
+        for (const { source_id: sourceId } of sources) {
+            const running = this.activePerSource.get(sourceId) ?? 0;
             // skip while the source already downloads its full share of chapters…
             if (running >= this.opts.settings.concurrencyPerSource) {
                 continue;
@@ -580,31 +588,40 @@ export class DownloadQueue {
             if (running === 0 && this.activePerSource.size >= this.opts.settings.parallelSources) {
                 continue;
             }
-            this.activePerSource.set(row.source_id, running + 1);
-            this._update(row.id, { status: 'downloading' });
-            this._runJob(row)
-                .finally(() => {
-                    const remaining = (this.activePerSource.get(row.source_id) ?? 1) - 1;
-                    if (remaining > 0) {
-                        this.activePerSource.set(row.source_id, remaining);
-                    } else {
-                        this.activePerSource.delete(row.source_id);
-                    }
-                    this._schedule();
-                })
-                .catch(error => {
-                    // _runJob handles download errors internally — a rejection
-                    // here comes from the cleanup path (SQLite write, finish
-                    // hooks). Swallow it into the log: an unhandled rejection
-                    // would take the whole server down.
-                    this.opts.events.publishLog({
-                        level: 'error',
-                        category: 'system',
-                        code: 'downloads.internalError',
-                        message: `Erreur interne après le job #${row.id} : ${String((error as Error)?.message ?? error)}`
-                    });
-                });
+            const rows = db
+                .prepare("SELECT * FROM download_jobs WHERE status = 'queued' AND source_id = ? ORDER BY id ASC LIMIT ?")
+                .all(sourceId, this.opts.settings.concurrencyPerSource - running) as unknown as JobRow[];
+            this.activePerSource.set(sourceId, running + rows.length);
+            for (const row of rows) {
+                this._startJob(row);
+            }
         }
+    }
+
+    private _startJob(row: JobRow): void {
+        this._update(row.id, { status: 'downloading' });
+        this._runJob(row)
+            .finally(() => {
+                const remaining = (this.activePerSource.get(row.source_id) ?? 1) - 1;
+                if (remaining > 0) {
+                    this.activePerSource.set(row.source_id, remaining);
+                } else {
+                    this.activePerSource.delete(row.source_id);
+                }
+                this._schedule();
+            })
+            .catch(error => {
+                // _runJob handles download errors internally — a rejection
+                // here comes from the cleanup path (SQLite write, finish
+                // hooks). Swallow it into the log: an unhandled rejection
+                // would take the whole server down.
+                this.opts.events.publishLog({
+                    level: 'error',
+                    category: 'system',
+                    code: 'downloads.internalError',
+                    message: `Erreur interne après le job #${row.id} : ${String((error as Error)?.message ?? error)}`
+                });
+            });
     }
 
     private async _runJob(row: JobRow): Promise<void> {

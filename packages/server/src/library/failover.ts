@@ -337,7 +337,7 @@ export class FailoverService {
                 return null;
             }
             const chapters = await withTimeout(
-                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }),
+                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }, { languages: preferred }),
                 VALIDATION_TIMEOUT_MS,
                 'chapter list timeout'
             );
@@ -518,7 +518,7 @@ export class FailoverService {
                 return null;
             }
             const chapters = await withTimeout(
-                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }),
+                adapter.getChapters({ id: candidate.mangaId, title: candidate.mangaTitle }, { languages: preferred }),
                 VALIDATION_TIMEOUT_MS,
                 'chapter list timeout'
             );

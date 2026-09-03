@@ -162,7 +162,7 @@ async function sourceChapters(
 }> {
     // the cancel flag is checked between series — a hanging connector would
     // defeat it, so bound the call like the scheduler does
-    const allChapters = await withTimeout(source.getChapters(manga), 2 * 60 * 1000, `getChapters(${manga.title})`);
+    const allChapters = await withTimeout(source.getChapters(manga, { languages: preferred }), 2 * 60 * 1000, `getChapters(${manga.title})`);
     const chapters = allChapters.filter(chapter => chapterAllowed(chapter.language, preferred));
     const byNumber = new Map<number, ChapterInfo>();
     for (const chapter of chapters) {

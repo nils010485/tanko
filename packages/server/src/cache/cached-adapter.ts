@@ -9,7 +9,7 @@
  * Pages are never cached (image URLs are often short-lived).
  */
 import { createHash } from 'node:crypto';
-import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '@tanko/core';
+import type { ChapterInfo, ChapterOptions, HealthResult, MangaInfo, PageList, SourceAdapter } from '@tanko/core';
 import type { CacheStore } from './cache.js';
 
 const MANGA_LIST_TTL_SECONDS = 24 * 3600;
@@ -81,13 +81,15 @@ export class CachedSourceAdapter implements SourceAdapter {
         return list.filter(manga => manga.title.toLowerCase().includes(needle));
     }
 
-    async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const key = `src:chapters:${this.id}:${manga.id}`;
+    async getChapters(manga: MangaInfo, options?: ChapterOptions): Promise<ChapterInfo[]> {
+        // language filtering changes the fetch, so it belongs to the cache key
+        const langKey = options?.languages?.length ? options.languages.join(',') : 'all';
+        const key = `src:chapters:${this.id}:${manga.id}:${langKey}`;
         const cached = await this.cache.get<ChapterInfo[]>(key);
         if (cached) {
             return cached;
         }
-        const chapters = await this.inner.getChapters(manga);
+        const chapters = await this.inner.getChapters(manga, options);
         if (chapters.length > 0) {
             await this.cache.set(key, chapters, CHAPTERS_TTL_SECONDS);
         }

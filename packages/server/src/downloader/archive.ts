@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createComicInfoXML } from '@tanko/core';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
 import type { EventBus } from '../ws.js';
 import type { ChapterPaths } from './paths.js';
 
@@ -38,14 +38,14 @@ export async function finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: s
     fs.mkdirSync(path.dirname(paths.cbzFile), { recursive: true });
     const buffer = await zip.generateAsync({ compression: 'STORE', type: 'nodebuffer' });
     fs.writeFileSync(paths.cbzFile, buffer);
-    // integrity check: the archive must re-open and hold every page. A
-    // corrupt file is removed so a later run retries instead of treating
-    // it as "already downloaded".
+    // integrity check: the archive must hold every page. A corrupt file is
+    // removed so a later run retries instead of treating it as "already
+    // downloaded". Only the zip central directory is read back — re-opening
+    // the whole file would copy it into RAM a third time.
     try {
-        const reread = await JSZip.loadAsync(fs.readFileSync(paths.cbzFile));
-        const entries = Object.values(reread.files).filter(file => !file.dir && file.name !== 'ComicInfo.xml');
-        if (entries.length !== pageCount) {
-            throw new Error(`archive incohérente : ${entries.length}/${pageCount} pages`);
+        const entries = countZipEntries(paths.cbzFile, 'ComicInfo.xml');
+        if (entries !== pageCount) {
+            throw new Error(`archive incohérente : ${entries}/${pageCount} pages`);
         }
     } catch (error) {
         try {
@@ -55,4 +55,61 @@ export async function finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: s
         }
         throw new Error(`CBZ invalide après écriture : ${(error as Error).message}`);
     }
+}
+
+/** Count a zip's file entries by reading its central directory directly
+ *  (EOCD at the tail, then the directory chunk itself): a few KB read
+ *  instead of the whole archive. Any structural surprise throws — the
+ *  caller treats that as a corrupt file. */
+export function countZipEntries(file: string, ...exclude: string[]): number {
+    const fd = fs.openSync(file, 'r');
+    try {
+        const size = fs.fstatSync(fd).size;
+        const { entryCount, directoryOffset, directorySize } = locateZipCentralDirectory(fd, size);
+        if (directoryOffset + directorySize > size) {
+            throw new Error('central directory hors fichier');
+        }
+        const directory = Buffer.alloc(directorySize);
+        fs.readSync(fd, directory, 0, directorySize, directoryOffset);
+        // walk the entry headers: signature, name/extra/comment lengths
+        let count = 0;
+        let seen = 0;
+        let pos = 0;
+        while (pos + 46 <= directorySize) {
+            if (directory.readUInt32LE(pos) !== 0x02014b50) {
+                throw new Error('central directory corrompu');
+            }
+            const nameLength = directory.readUInt16LE(pos + 28);
+            const name = directory.toString('utf8', pos + 46, pos + 46 + nameLength);
+            if (!name.endsWith('/') && !exclude.includes(name)) {
+                count++;
+            }
+            seen++;
+            pos += 46 + nameLength + directory.readUInt16LE(pos + 30) + directory.readUInt16LE(pos + 32);
+        }
+        if (seen !== entryCount) {
+            throw new Error(`central directory incohérent : ${seen}/${entryCount} entrées`);
+        }
+        return count;
+    } finally {
+        fs.closeSync(fd);
+    }
+}
+
+/** Find the End-Of-Central-Directory record in the file's tail: its comment
+ *  length must land exactly on the end of the file. */
+function locateZipCentralDirectory(fd: number, size: number): { entryCount: number; directoryOffset: number; directorySize: number } {
+    const tailLength = Math.min(size, 22 + 0xffff);
+    const tail = Buffer.alloc(tailLength);
+    fs.readSync(fd, tail, 0, tailLength, size - tailLength);
+    for (let pos = tailLength - 22; pos >= 0; pos--) {
+        if (tail.readUInt32LE(pos) === 0x06054b50 && tail.readUInt16LE(pos + 20) === tailLength - pos - 22) {
+            return {
+                entryCount: tail.readUInt16LE(pos + 10),
+                directoryOffset: tail.readUInt32LE(pos + 16),
+                directorySize: tail.readUInt32LE(pos + 12)
+            };
+        }
+    }
+    throw new Error('enregistrement EOCD introuvable');
 }

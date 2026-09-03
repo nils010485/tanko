@@ -48,11 +48,15 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
         throw new Error(`Source "${row.source_id}" not found`);
     }
     // a hanging connector must not stall the scheduler's run forever
-    const chapters = await withTimeout(source.getChapters({ id: row.manga_id, title: row.title }), 2 * 60 * 1000, `getChapters(${row.title})`);
+    const preferred = ctx.getPreferredLanguages?.() || [];
+    const chapters = await withTimeout(
+        source.getChapters({ id: row.manga_id, title: row.title }, { languages: preferred }),
+        2 * 60 * 1000,
+        `getChapters(${row.title})`
+    );
     const now = new Date().toISOString();
     const insert = ctx.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
     const fresh: ChapterRow[] = [];
-    const preferred = ctx.getPreferredLanguages?.() || [];
     // local-only rows (files the source never listed) whose number the
     // source now carries are absorbed into the real chapter: same file,
     // real chapter id, no duplicate row

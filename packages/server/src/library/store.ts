@@ -101,13 +101,13 @@ export class LibraryStore {
         let snapshot = 0;
         try {
             // a hanging connector must not stall the import/add forever
+            const preferred = this.ctx.getPreferredLanguages?.() || [];
             const chaptersFound = await withTimeout(
-                source.getChapters({ id: entry.mangaId, title: entry.title }),
+                source.getChapters({ id: entry.mangaId, title: entry.title }, { languages: preferred }),
                 2 * 60 * 1000,
                 `getChapters(${entry.title})`
             );
             const insert = this.ctx.db.db.prepare(SQL_INSERT_CHAPTER);
-            const preferred = this.ctx.getPreferredLanguages?.() || [];
             for (const chapter of chaptersFound) {
                 if (!chapterAllowed(chapter.language, preferred)) {
                     continue;

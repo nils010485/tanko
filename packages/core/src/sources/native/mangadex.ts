@@ -7,10 +7,20 @@
  */
 
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
-import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
+import type { ChapterInfo, ChapterOptions, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
 const API = 'https://api.mangadex.org';
+
+// MangaDex splits some languages into regional codes, while the server's
+// language preference works on 2-letter codes (es-la counts as es): expand
+// each preferred code so the fetch matches what the downstream filter allows
+const REGIONAL_LANGUAGES: Record<string, string[]> = {
+    es: ['es-la'],
+    pt: ['pt-br'],
+    zh: ['zh-hk']
+};
+
 const UA = randomUserAgent();
 const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
 
@@ -82,7 +92,7 @@ export class MangaDexConnector implements SourceAdapter {
         return results;
     }
 
-    async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
+    async getChapters(manga: MangaInfo, options?: ChapterOptions): Promise<ChapterInfo[]> {
         const chapters: ChapterInfo[] = [];
         const seen = new Set<string>(); // language+chapter duplicates across scanlation groups
         for (let offset = 0; ; offset += 100) {
@@ -92,6 +102,13 @@ export class MangaDexConnector implements SourceAdapter {
             url.searchParams.set('offset', String(offset));
             url.searchParams.set('order[chapter]', 'asc');
             url.searchParams.set('includeFutureUpdates', '0');
+            // server-side language preference: fetching only the wanted
+            // languages divides the page count of multilingual series
+            for (const language of options?.languages ?? []) {
+                for (const code of [language, ...(REGIONAL_LANGUAGES[language] ?? [])]) {
+                    url.searchParams.append('translatedLanguage[]', code);
+                }
+            }
             const json = await this._fetch<MangadexListResponse<MangadexChapterAttributes>>(url);
             const data = json.data || [];
             for (const item of data) {

@@ -391,6 +391,42 @@ describe('DownloadQueue', () => {
         }
     });
 
+    it("a long backlog on one source never hides another source's jobs (bounded scheduling)", async () => {
+        gateOpen = false; // re-close the gate released by the previous test
+        queue.pause();
+        queue.updateSettings({ parallelSources: 2, concurrencyPerSource: 2 });
+        // 40-job wall first, then a lone job on a second source with a higher
+        // id: a scheduler pass that stops early on the wall would starve it
+        queue.enqueue([
+            ...Array.from({ length: 40 }, (_, n) => ({
+                sourceId: 'gated-a',
+                mangaId: 'wall',
+                mangaTitle: 'Wall',
+                chapterId: `wa-${n + 1}`,
+                chapterTitle: `WA ${n + 1}`
+            }))
+        ]);
+        queue.enqueue([{ sourceId: 'gated-b', mangaId: 'wall', mangaTitle: 'Wall', chapterId: 'wb-1', chapterTitle: 'WB 1' }]);
+        queue.resume();
+        await sleep(300);
+
+        const downloading = (source: string) =>
+            (database.db.prepare("SELECT chapter_id FROM download_jobs WHERE source_id = ? AND status = 'downloading' ORDER BY id").all(source) as any[]).map(
+                r => r.chapter_id
+            );
+        // caps hold: 2 of the wall + the lone job, and the wall started FIFO
+        expect(downloading('gated-a')).toEqual(['wa-1', 'wa-2']);
+        expect(downloading('gated-b')).toEqual(['wb-1']);
+        const queued = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE manga_id = 'wall' AND status = 'queued'").get() as any;
+        expect(queued.n).toBe(38);
+
+        openGate();
+        queue.updateSettings({ parallelSources: 1, concurrencyPerSource: 2 });
+        for (const row of database.db.prepare("SELECT id FROM download_jobs WHERE chapter_id LIKE 'w%'").all() as any[]) {
+            await waitForJob(row.id, ['completed']);
+        }
+    });
+
     it('recovers from expired signed page URLs by refreshing the page list', async () => {
         queue.enqueue([
             { sourceId: 'signed-source', mangaId: 'manga-signed', mangaTitle: 'Signed Manga', chapterId: 'chapter-signed', chapterTitle: 'Chapter Signed' }

@@ -215,7 +215,7 @@ export function registerSourceRoutes(
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
             const preferred = getPreferredLanguages();
-            const chapters = await source.getChapters({ id: mangaId, title });
+            const chapters = await source.getChapters({ id: mangaId, title }, { languages: preferred });
             // multi-lingual sources (MangaDex, ...) carry the same chapter in
             // many languages: keep only the preferred ones, like library ingestion
             const filtered = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));

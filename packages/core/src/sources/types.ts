@@ -38,6 +38,12 @@ export interface HealthResult {
     via?: 'http' | 'browser';
 }
 
+/** Options for chapter listings. */
+export interface ChapterOptions {
+    /** Preferred content languages (BCP-47 codes, e.g. `en`, `fr`). */
+    languages?: string[];
+}
+
 export interface SourceAdapter {
     readonly id: string;
     readonly label: string;
@@ -51,8 +57,10 @@ export interface SourceAdapter {
     /** Search mangas by free-text query. */
     searchMangas(query: string): Promise<MangaInfo[]>;
 
-    /** List chapters for a manga. */
-    getChapters(manga: MangaInfo): Promise<ChapterInfo[]>;
+    /** List chapters for a manga. `options.languages` lets sites that can
+     *  filter server-side (MangaDex) fetch only the preferred languages — a
+     *  pure optimization, results stay filtered downstream either way. */
+    getChapters(manga: MangaInfo, options?: ChapterOptions): Promise<ChapterInfo[]>;
 
     /** List page image URLs for a chapter. */
     getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList>;

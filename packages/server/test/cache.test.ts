@@ -133,6 +133,37 @@ describe('CachedSourceAdapter (native)', () => {
         expect(calls.search).toBe(2);
     });
 
+    it('keys chapter-list caching on the requested languages', async () => {
+        const calls = { chapters: 0 };
+        const native: SourceAdapter = {
+            id: 'native-x',
+            label: 'Native X',
+            tags: [],
+            kind: 'native',
+            url: 'https://n.test',
+            initialize: async () => undefined,
+            searchMangas: async () => [],
+            getChapters: async (_manga, options) => {
+                calls.chapters++;
+                return [{ id: 'c1', title: 'Chapter 1', language: options?.languages?.[0] ?? 'all' }];
+            },
+            getPages: async () => [],
+            checkHealth: async () => ({ ok: true, latencyMs: 1 })
+        };
+        const adapter = new CachedSourceAdapter(native, store);
+        const manga = { id: 'm1', title: 'Berserk' };
+
+        await adapter.getChapters(manga, { languages: ['en'] });
+        await adapter.getChapters(manga, { languages: ['en'] }); // same languages: cache hit
+        expect(calls.chapters).toBe(1);
+
+        await adapter.getChapters(manga, { languages: ['fr'] }); // different filter: different key
+        expect(calls.chapters).toBe(2);
+
+        await adapter.getChapters(manga); // unfiltered is its own key too
+        expect(calls.chapters).toBe(3);
+    });
+
     it('does not cache empty native results (likely a failure)', async () => {
         const calls = { search: 0 };
         const native: SourceAdapter = {
