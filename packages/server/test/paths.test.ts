@@ -27,13 +27,31 @@ describe('sanitizeName', () => {
 describe('chapterPaths', () => {
     it('builds the hakuneko-compatible layout', () => {
         const paths = chapterPaths('/base', 'MangaDex', 'One Piece', 'Ch.01');
-        expect(paths.directory).toBe(path.join('/base', 'MangaDex', 'One Piece', 'Chapter 01'));
-        expect(paths.cbzFile).toBe(path.join('/base', 'MangaDex', 'One Piece', 'Chapter 01.cbz'));
+        expect(paths.directory).toBe(path.join('/base', 'MangaDex', 'One Piece', 'Chapter 1'));
+        expect(paths.cbzFile).toBe(path.join('/base', 'MangaDex', 'One Piece', 'Chapter 1.cbz'));
     });
 
     it('builds the flat series layout when requested', () => {
         const paths = chapterPaths('/base', 'MangaDex', 'One Piece', 'Ch.12', 'series');
         expect(paths.cbzFile).toBe(path.join('/base', 'One Piece', 'Chapter 12.cbz'));
+    });
+
+    it('writes the bare chapter number whatever the source suffixes', () => {
+        expect(chapterPaths('/base', 'Asura Scans', 'Murim Login', 'Ch. 179 - Chapter 179').cbzFile).toBe(
+            path.join('/base', 'Asura Scans', 'Murim Login', 'Chapter 179.cbz')
+        );
+        expect(chapterPaths('/base', 'Asura Scans', 'Murim Login', 'Chapter 186 - {S3 START}').cbzFile).toBe(
+            path.join('/base', 'Asura Scans', 'Murim Login', 'Chapter 186.cbz')
+        );
+        expect(chapterPaths('/base', 'MangaDex', 'Series', 'Vol.1 Ch.1.1 - Labyrinth').cbzFile).toBe(
+            path.join('/base', 'MangaDex', 'Series', 'Chapter 1.1.cbz')
+        );
+    });
+
+    it('keeps the full title when no chapter number can be parsed', () => {
+        expect(chapterPaths('/base', 'MangaDex', 'Series', 'Extras - Author Notes').cbzFile).toBe(
+            path.join('/base', 'MangaDex', 'Series', 'Extras - Author Notes.cbz')
+        );
     });
 
     it('accepts a series folder spelled with the other apostrophe', () => {
