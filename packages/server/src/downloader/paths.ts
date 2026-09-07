@@ -138,7 +138,12 @@ export function chapterPaths(
         isOwned
     );
     const names = chapterFileNames(chapterTitle);
-    const chapterName = names[0] ?? sanitizeName(chapterTitle);
+    // write the canonical short spelling whenever the chapter number is
+    // known: sources suffix their titles (« Ch.179 - Chapter 179 », « Vol.1
+    // Ch.1.2 - Labyrinth », « Chapter 186 - {S3 START} ») while the bare
+    // unpadded number is the conventional library file name
+    const wanted = parseChapterNumber(chapterTitle);
+    const chapterName = wanted !== null ? `Chapter ${wanted}` : (names[0] ?? sanitizeName(chapterTitle));
     let existing: string | undefined;
     for (const name of names) {
         if (fs.existsSync(path.join(seriesDir, `${name}.cbz`))) {
