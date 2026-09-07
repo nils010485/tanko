@@ -2,6 +2,7 @@
  * Library schema: tables, indexes and column migrations for older databases.
  * Runs on every store construction (CREATE IF NOT EXISTS + addColumn no-ops).
  */
+import { normalizeAsuraPath } from '@tanko/core';
 import type { Database } from '../db.js';
 
 /** Create the library tables and bring older databases up to date. */
@@ -115,6 +116,14 @@ export function migrateLibrarySchema(db: Database): void {
         DELETE FROM entry_snapshots WHERE entry_id NOT IN (SELECT id FROM library);
         DELETE FROM library_chapters WHERE entry_id NOT IN (SELECT id FROM library);
     `);
+    // one-shot data migration: the Asura Scans build code embedded in every
+    // series/chapter URL rotates on each site redeploy — ids are now stored
+    // normalized (code stripped), rewrite existing rows once so they match
+    // and drop the duplicates the rotations created
+    if (!db.kvGet('schema.asuraIdsNormalized')) {
+        normalizeAsuraIds(db);
+        db.kvSet('schema.asuraIdsNormalized', new Date().toISOString());
+    }
 }
 
 /** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
@@ -122,4 +131,76 @@ function addColumn(db: Database, table: string, columns: Array<{ name: string }>
     if (!columns.some(column => column.name === name)) {
         db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
     }
+}
+
+/** Rewrite stored Asura Scans ids without the volatile build code and merge
+ *  the duplicate chapter rows created by past rotations (the kept row keeps
+ *  its status and inherits the loser's file path when it has none). */
+function normalizeAsuraIds(db: Database): void {
+    const entries = db.db.prepare("SELECT id, manga_id, url FROM library WHERE source_id = 'asurascans'").all() as Array<{
+        id: number;
+        manga_id: string;
+        url: string | null;
+    }>;
+    const updateEntry = db.db.prepare('UPDATE library SET manga_id = ?, url = ? WHERE id = ?');
+    for (const entry of entries) {
+        const mangaId = normalizeAsuraId(entry.manga_id);
+        const url = entry.url ? normalizeAsuraId(entry.url) : null;
+        if (mangaId !== entry.manga_id || url !== entry.url) {
+            updateEntry.run(mangaId, url, entry.id);
+        }
+    }
+    const rows = db.db
+        .prepare(
+            `SELECT lc.id, lc.entry_id, lc.chapter_id, lc.status, lc.path, lc.downloaded_at
+             FROM library_chapters lc JOIN library l ON l.id = lc.entry_id
+             WHERE l.source_id = 'asurascans' AND lc.chapter_id NOT LIKE 'local:%'`
+        )
+        .all() as Array<{ id: number; entry_id: number; chapter_id: string; status: string; path: string | null; downloaded_at: string | null }>;
+    const updateChapter = db.db.prepare(
+        'UPDATE library_chapters SET chapter_id = ?, path = COALESCE(path, ?), downloaded_at = COALESCE(downloaded_at, ?) WHERE id = ?'
+    );
+    const remove = db.db.prepare('DELETE FROM library_chapters WHERE id = ?');
+    const byKey = new Map<string, typeof rows>();
+    for (const row of rows) {
+        const key = `${row.entry_id}\u0000${normalizeAsuraId(row.chapter_id)}`;
+        const group = byKey.get(key);
+        if (group) {
+            group.push(row);
+        } else {
+            byKey.set(key, [row]);
+        }
+    }
+    for (const group of byKey.values()) {
+        if (group.length === 1) {
+            const only = group[0];
+            const normalized = normalizeAsuraId(only.chapter_id);
+            if (normalized !== only.chapter_id) {
+                updateChapter.run(normalized, only.path, only.downloaded_at, only.id);
+            }
+            continue;
+        }
+        // survivor first: downloaded with file, then any row with a file,
+        // then any downloaded row, then the newest
+        const rank = (row: (typeof group)[number]) =>
+            (row.status === 'downloaded' && row.path ? 0 : row.path ? 1 : row.status === 'downloaded' ? 2 : 3) * 1e9 - row.id;
+        group.sort((a, b) => rank(a) - rank(b));
+        const winner = group[0];
+        for (const loser of group.slice(1)) {
+            updateChapter.run(normalizeAsuraId(winner.chapter_id), loser.path, loser.downloaded_at, winner.id);
+            remove.run(loser.id);
+        }
+    }
+}
+
+/** Strip the volatile build code from any stored Asura id (path or absolute URL). */
+function normalizeAsuraId(id: string): string {
+    if (id.startsWith('local:')) {
+        return id;
+    }
+    if (id.startsWith('http')) {
+        const url = new URL(id);
+        return `${url.origin}${normalizeAsuraPath(url.pathname)}`;
+    }
+    return normalizeAsuraPath(id);
 }

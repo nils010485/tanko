@@ -24,6 +24,15 @@ const UA = randomUserAgent();
 const BASE = 'https://asurascans.com';
 const API = 'https://api.asurascans.com/api';
 
+/** The site appends a shared build code to every series path
+ *  ("/comics/<slug>-<hex code>", identical across the whole catalogue and
+ *  rotated on each redeploy). Stripping it keeps manga and chapter ids
+ *  stable across rotations; the site 302-redirects code-less paths back
+ *  to the canonical URL, so fetching still works. */
+export function normalizeAsuraPath(path: string): string {
+    return path.replace(/^(\/comics\/[^/?#]+?)-[0-9a-f]{6,}(?=[/?#]|$)/i, '$1');
+}
+
 /** Item of the /api/search JSON response (only the fields we consume). */
 interface AsuraSearchItem {
     title?: string;
@@ -58,7 +67,7 @@ export class AsuraScansConnector implements SourceAdapter {
         return (json.data ?? [])
             .filter((item): item is AsuraSearchItem & { public_url: string } => !!item.public_url)
             .map(item => ({
-                id: item.public_url,
+                id: normalizeAsuraPath(new URL(item.public_url, BASE).pathname),
                 title: item.title || item.slug || item.public_url,
                 url: new URL(item.public_url, BASE).href,
                 thumbnail: item.cover,
@@ -78,18 +87,20 @@ export class AsuraScansConnector implements SourceAdapter {
             if (!href) {
                 continue;
             }
-            const url = new URL(href, mangaUrl).href;
+            const resolved = new URL(href, mangaUrl);
+            const url = resolved.href;
             // chapter rows: main label in span.font-medium, optional label in span.truncate;
             // "First/Last chapter" nav buttons have neither and fail the filter below
             const label = anchor.querySelector('span.font-medium');
             const text = ((label || anchor).textContent || '').replace(/\s+/g, ' ').trim();
-            if (seen.has(url) || !/^chapter\s/i.test(text)) {
+            const id = `${resolved.origin}${normalizeAsuraPath(resolved.pathname)}`;
+            if (seen.has(id) || !/^chapter\s/i.test(text)) {
                 continue;
             }
-            seen.add(url);
+            seen.add(id);
             const suffix = (anchor.querySelector('span.truncate')?.textContent || '').replace(/\s+/g, ' ').trim();
             chapters.push({
-                id: url,
+                id,
                 title: suffix ? `${text} - ${suffix}` : text,
                 url,
                 language: 'en'
@@ -97,7 +108,7 @@ export class AsuraScansConnector implements SourceAdapter {
         }
 
         // the page lists newest first -> order chronologically by chapter number
-        chapters.sort((a, b) => this._chapterNumber(a.url || a.id) - this._chapterNumber(b.url || a.id) || a.title.localeCompare(b.title));
+        chapters.sort((a, b) => this._chapterNumber(a.url || a.id) - this._chapterNumber(b.url || b.id) || a.title.localeCompare(b.title));
         if (chapters.length === 0) {
             throw new SourceError(`No chapters found for "${manga.title}" on ${this.label}`, this.id);
         }
