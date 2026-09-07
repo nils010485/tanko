@@ -57,19 +57,37 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
     const now = new Date().toISOString();
     const insert = ctx.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
     const fresh: ChapterRow[] = [];
+    const rows = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId);
     // local-only rows (files the source never listed) whose number the
     // source now carries are absorbed into the real chapter: same file,
     // real chapter id, no duplicate row
-    const known = new Set(
-        ctx.q.all<{ chapter_id: string }>('SELECT chapter_id FROM library_chapters WHERE entry_id = ?', entryId).map(item => item.chapter_id)
-    );
-    const ghosts = new Map<number, ChapterRow>();
-    for (const ghost of ctx.q.all<ChapterRow>("SELECT * FROM library_chapters WHERE entry_id = ? AND chapter_id LIKE 'local:%'", entryId)) {
-        const number = parseChapterNumber(ghost.title);
-        if (number !== null && !ghosts.has(number)) {
-            ghosts.set(number, ghost);
+    const known = new Set(rows.map(item => item.chapter_id));
+    // every row by chapter number, local ghosts first so they keep priority
+    const byNumber = new Map<number, ChapterRow>();
+    for (const row of rows) {
+        const number = parseChapterNumber(row.title);
+        if (number === null) {
+            continue;
+        }
+        const current = byNumber.get(number);
+        const rowIsLocal = row.chapter_id.startsWith('local:');
+        if (!current || (rowIsLocal && !current.chapter_id.startsWith('local:'))) {
+            byNumber.set(number, row);
         }
     }
+    // Re-identification guard: when a source rotates the ids of its whole
+    // catalogue (Asura Scans rotates a shared build code embedded in every
+    // URL), the entire listing looks unknown while the chapter numbers still
+    // match the stored rows. An overwhelming mismatch re-ids the existing
+    // rows instead of treating the series as brand new — otherwise each
+    // rotation re-downloads and re-notifies the whole series.
+    const listed = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));
+    const unknown = listed.filter(chapter => !known.has(chapter.id));
+    const matched = unknown.filter(chapter => {
+        const number = parseChapterNumber(chapter.title);
+        return number !== null && byNumber.has(number);
+    }).length;
+    const reidentified = unknown.length >= 6 && matched >= unknown.length * 0.9;
     const absorb = ctx.db.db.prepare('UPDATE library_chapters SET chapter_id = ?, title = ?, language = ? WHERE entry_id = ? AND id = ?');
     let usableSeen = 0;
     for (const chapter of chapters) {
@@ -78,10 +96,10 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
         }
         usableSeen++;
         const number = parseChapterNumber(chapter.title);
-        const ghost = number !== null && !known.has(chapter.id) ? ghosts.get(number) : undefined;
-        if (ghost && number !== null) {
-            absorb.run(chapter.id, chapter.title, chapter.language || null, entryId, ghost.id);
-            ghosts.delete(number);
+        const candidate = number !== null && !known.has(chapter.id) ? byNumber.get(number) : undefined;
+        if (candidate && number !== null && (candidate.chapter_id.startsWith('local:') || reidentified)) {
+            absorb.run(chapter.id, chapter.title, chapter.language || null, entryId, candidate.id);
+            byNumber.delete(number);
             continue;
         }
         const result = insert.run(entryId, chapter.id, chapter.title, chapter.language || null, now);
