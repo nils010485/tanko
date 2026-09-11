@@ -158,8 +158,8 @@ export function registerSourceRoutes(
         const sources = await sourceRegistry.list();
         const hideAdult = getHideAdultSources();
         const visible = sources.filter(source => adultAllowed(source.tags || [], hideAdult));
-        const health = app.healthService ? app.healthService.getAll() : {};
-        const hidden = app.healthService ? app.healthService.getHiddenSet() : new Set<string>();
+        const health = app.healthService.getAll();
+        const hidden = app.healthService.getHiddenSet();
         return visible.map(source => {
             const record = health[source.id];
             return {
@@ -179,7 +179,7 @@ export function registerSourceRoutes(
 
     // Hide every source whose last health check failed (re-surfaced by a full re-check)
     app.post('/api/sources/hide-broken', async () => {
-        const count = app.healthService ? app.healthService.hideBroken() : 0;
+        const count = app.healthService.hideBroken();
         return { hidden: count };
     });
 

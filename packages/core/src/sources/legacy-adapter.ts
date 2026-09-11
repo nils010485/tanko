@@ -124,10 +124,10 @@ export class LegacySourceAdapter implements SourceAdapter {
 
         try {
             const request = new Request(this.connector.url, this.connector.requestOptions);
-            const response: Response = await Promise.race([
-                globalThis.Engine.Request.fetch(request, 20000),
-                new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('timeout 20s')), 20000))
-            ]);
+            // the bridge enforces its own 20s deadline (backoff waits included),
+            // so no outer race is needed — one that is never cleared would
+            // instead stack live timers across a full source sweep
+            const response: Response = await globalThis.Engine.Request.fetch(request, 20000);
             if (response.status >= 500) {
                 return { ok: false, latencyMs: Date.now() - startedAt, error: `HTTP ${response.status}` };
             }

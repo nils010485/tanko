@@ -3,15 +3,16 @@
  * sync). All state lives server-side (SQLite) so the view can be closed and
  * reopened at any time — it simply polls the current job.
  */
+
+import type { SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconAlert, IconCheck, IconFolder, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
 import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle, Toggle } from '../components/ui.js';
 import { type TFunction, useI18n } from '../i18n/index.js';
-import { api, type ImportJobSeries, type ImportJobStatus } from '../lib/api.js';
+import { api, type ImportJobSeries, type ImportJobStatus, type ImportScanResult } from '../lib/api.js';
 
 const ACTIVE_STATUSES = new Set(['scanning', 'matching', 'syncing']);
 
-/** Normalize a server-side path for comparison (collapses '//', '.' and '..'). */
 function normalizeServerPath(input: string): string {
     const segments: string[] = [];
     for (const segment of input.replace(/\/+/g, '/').split('/')) {
@@ -35,6 +36,12 @@ export default function Import({ onImported }: { onImported: () => void }) {
     const [state, setState] = useState<ImportJobStatus | null>(null);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
+    const [scan, setScan] = useState<ImportScanResult | null>(null);
+    /** Source ids the matching phase is restricted to (empty = every usable source). */
+    const [sourceFilter, setSourceFilter] = useState<Set<string>>(new Set());
+    const [sources, setSources] = useState<SourceDto[]>([]);
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [concurrency, setConcurrency] = useState('');
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const refresh = useCallback(async () => {
@@ -53,6 +60,11 @@ export default function Import({ onImported }: { onImported: () => void }) {
         };
     }, [refresh]);
 
+    useEffect(() => {
+        api.sources()
+            .then(setSources)
+            .catch(() => undefined); // the filter simply stays empty (all sources)
+    }, []);
     useEffect(() => {
         void (async () => {
             try {
@@ -87,16 +99,23 @@ export default function Import({ onImported }: { onImported: () => void }) {
         };
 
     const start = run(async () => {
+        const parsedConcurrency = Number.parseInt(concurrency, 10);
         await api.importJobStart({
             path: folderPath.trim(),
             autoConfirm,
-            autoDownload
+            autoDownload,
+            concurrency: Number.isInteger(parsedConcurrency) && parsedConcurrency >= 1 ? parsedConcurrency : undefined,
+            sourceIds: sourceFilter.size > 0 ? [...sourceFilter] : undefined
         });
         // the server adopts a differing folder as the storage folder — resync
         const data = await api.settings();
         setStoragePath(data.queue.dataDirectory);
     }, 'start');
 
+    /** Folder preview: same scanner the job will run, without any mutation. */
+    const preview = run(async () => {
+        setScan(await api.importScan(folderPath.trim()));
+    }, 'preview');
     // every job action is a no-op when there is no job (buttons are hidden then)
     const runJobAction = (action: (jobId: number) => Promise<unknown>) =>
         run(async () => {
@@ -176,16 +195,101 @@ export default function Import({ onImported }: { onImported: () => void }) {
                     <Toggle checked={autoDownload} onChange={setAutoDownload} label={t('import.autoDownloadLabel')} />
                 </div>
 
+                <div className="border-t border-line pt-3.5">
+                    <button
+                        type="button"
+                        className="text-xs font-medium text-accent-soft transition-colors hover:underline"
+                        onClick={() => setShowAdvanced(current => !current)}
+                    >
+                        {t(showAdvanced ? 'import.advancedHide' : 'import.advancedShow')}
+                    </button>
+                    {showAdvanced && (
+                        <div className="mt-3 space-y-3">
+                            <div className="max-w-56">
+                                <label htmlFor="import-concurrency" className="mb-1 block text-xs font-medium text-fg">
+                                    {t('import.concurrencyLabel')}
+                                </label>
+                                <Input
+                                    id="import-concurrency"
+                                    type="number"
+                                    value={concurrency}
+                                    onChange={setConcurrency}
+                                    placeholder={t('import.concurrencyPlaceholder')}
+                                />
+                            </div>
+                            <div>
+                                <p className="mb-1 text-xs font-medium text-fg">{t('import.sourcesFilterLabel')}</p>
+                                <p className="mb-2 text-xs text-faint">{t('import.sourcesFilterHint')}</p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                                    {sources.map(source => (
+                                        <label key={source.id} className="flex items-center gap-1.5 text-xs text-muted">
+                                            <input
+                                                type="checkbox"
+                                                className="accent-accent"
+                                                checked={sourceFilter.has(source.id)}
+                                                onChange={event =>
+                                                    setSourceFilter(current => {
+                                                        const next = new Set(current);
+                                                        if (event.target.checked) {
+                                                            next.add(source.id);
+                                                        } else {
+                                                            next.delete(source.id);
+                                                        }
+                                                        return next;
+                                                    })
+                                                }
+                                            />
+                                            {source.label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3.5">
                     <p className="min-w-0 flex-1 text-xs text-faint sm:flex-none sm:max-w-md">{t('import.startHint')}</p>
-                    <Button onClick={start} disabled={!folderPath.trim() || active || busy !== null} loading={busy === 'start'}>
-                        <IconPlay size={13} /> {t('import.start')}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" onClick={preview} disabled={!folderPath.trim() || active || busy !== null} loading={busy === 'preview'}>
+                            <IconFolder size={13} /> {t('import.preview')}
+                        </Button>
+                        <Button onClick={start} disabled={!folderPath.trim() || active || busy !== null} loading={busy === 'start'}>
+                            <IconPlay size={13} /> {t('import.start')}
+                        </Button>
+                    </div>
                 </div>
 
                 {error && <div className="text-sm text-red-400">{error}</div>}
             </Card>
 
+            {scan && (
+                <Card className="p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0 text-sm">
+                            <span className="font-medium">{t('import.previewTitle')}</span>
+                            <span className="ml-2 break-all text-xs text-faint">
+                                {scan.root} · {t('import.previewCounts', { series: scan.series.length, chapters: scan.totalChapters })}
+                            </span>
+                        </div>
+                        <Button small variant="ghost" onClick={() => setScan(null)}>
+                            <IconX size={13} /> {t('common.cancel')}
+                        </Button>
+                    </div>
+                    {scan.truncated && <p className="mt-2 text-xs text-amber-400">{t('import.previewTruncated')}</p>}
+                    <ul className="mt-3 max-h-64 space-y-1.5 overflow-y-auto">
+                        {scan.series.map(item => (
+                            <li key={item.path} className="flex items-baseline justify-between gap-3 text-xs">
+                                <span className="min-w-0 truncate text-fg" title={item.path}>
+                                    {item.name}
+                                    {item.metaName && item.metaName !== item.name ? <span className="text-faint"> ({item.metaName})</span> : null}
+                                </span>
+                                <span className="flex-none text-faint">{t('import.previewChapters', { n: item.chapterCount })}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </Card>
+            )}
             {job && (
                 <Card className="p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">

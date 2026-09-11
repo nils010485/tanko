@@ -35,7 +35,7 @@ export class KuMangaConnector implements SourceAdapter {
     }
 
     /** Manual redirect walk storing cookies: the ?__r= loop never ends otherwise. */
-    private async _get(url: string, hops = 6): Promise<{ status: number; body: string; location: string | null }> {
+    private async _get(url: string, hops = 6): Promise<{ status: number; body: string; url: string }> {
         let current = url;
         for (let hop = 0; hop <= hops; hop++) {
             const response = await fetch(current, {
@@ -60,9 +60,9 @@ export class KuMangaConnector implements SourceAdapter {
                 current = this._absolute(location) || current;
                 continue;
             }
-            return { status: response.status, body: await response.text().catch(() => ''), location: null };
+            return { status: response.status, body: await response.text().catch(() => ''), url: current };
         }
-        return { status: 0, body: '', location: null };
+        return { status: 0, body: '', url: current };
     }
 
     private async _getText(url: string): Promise<string> {
@@ -76,7 +76,8 @@ export class KuMangaConnector implements SourceAdapter {
                 return rendered.html;
             }
         }
-        throw new SourceError(`Page inaccessible (HTTP ${status}) sur ${new URL(url).hostname}`, this.id);
+        const reason = status === 0 ? 'trop de redirections' : `HTTP ${status}`;
+        throw new SourceError(`Page inaccessible (${reason}) sur ${new URL(url).hostname}`, this.id);
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
@@ -100,7 +101,7 @@ export class KuMangaConnector implements SourceAdapter {
             const image = anchor.querySelector('img');
             results.set(href, {
                 id: `manga/${match[1]}/${match[2]}`,
-                title: title.replace(/\b\w/g, c => c.toUpperCase()),
+                title,
                 url: href,
                 thumbnail: image?.getAttribute('data-src') || image?.getAttribute('src') || undefined
             });
@@ -135,11 +136,9 @@ export class KuMangaConnector implements SourceAdapter {
 
     /** /capitulo/<n> 302s to /manga/c/<chapterId>; the reader is /manga/leer/<id>. */
     private async _resolveReaderUrl(chapterUrl: string): Promise<string> {
-        const { location } = await this._get(chapterUrl);
-        if (location) {
-            return location.replace('/manga/c/', '/manga/leer/');
-        }
-        return chapterUrl;
+        // _get follows redirects internally: its final URL is the /manga/c/ intermediate
+        const { url } = await this._get(chapterUrl);
+        return url.replace('/manga/c/', '/manga/leer/');
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {

@@ -22,6 +22,7 @@ import {
     IconSearch,
     IconUndo
 } from '../components/icons.js';
+import { migrationBanner } from '../components/library/EntryCard.js';
 
 import { PagePreview } from '../components/PagePreview.js';
 import { SourcePickerDialog } from '../components/series/SourcePickerDialog.js';
@@ -145,12 +146,15 @@ export default function Series({
             if (requestSeq.current === seq) {
                 setChapters(list);
             }
-        } catch {
+        } catch (error) {
+            // keep the panel usable but make the failure visible: an empty
+            // series and a failed fetch must not look the same
+            toast.error((error as Error).message);
             if (requestSeq.current === seq) {
                 setChapters([]);
             }
         }
-    }, [entryId]);
+    }, [entryId, toast]);
 
     // switching series restarts from a clean slate
     useEffect(() => {
@@ -526,7 +530,6 @@ export default function Series({
                         {entry.lastChapterAt && <span className="text-faint">{t('library.lastChapterAt', { date: formatDate(entry.lastChapterAt) })}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        {/* suivi + téléchargements */}
                         <Toggle
                             checked={entry.autoDownload}
                             onChange={toggleFollow}
@@ -549,7 +552,6 @@ export default function Series({
                             {entry.paused ? <IconPlay size={13} /> : <IconPause size={13} />}
                             {entry.paused ? t('library.resumeFollow') : t('library.pauseFollow')}
                         </Button>
-                        {/* gestion de la source */}
                         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
                         <Button small variant="ghost" onClick={rematch} loading={busy.rematch} title={t('library.rematchHint')}>
                             <IconSearch size={13} /> {t('library.rematch')}
@@ -568,22 +570,13 @@ export default function Series({
             {/* a paused entry freezes retries — the banner must not promise anything */}
             {failedCount > 0 && !entry.paused && <RecoveryBanner retrying={failedRetrying} exhausted={failedExhausted} />}
 
-            {entry.migrationSuggestion && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs">
-                    <span className="text-fg">
-                        {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
-                        {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
-                        {(entry.migrationSuggestion.chapterCount ?? 0) > 0 && (
-                            <span className="text-emerald-400"> · {t('library.chaptersCount', { n: entry.migrationSuggestion.chapterCount ?? 0 })}</span>
-                        )}
-                    </span>
-                    <Button small onClick={() => confirmMigration(true)}>
-                        {t('library.migrate')}
-                    </Button>
-                    <Button small variant="ghost" onClick={() => confirmMigration(false)}>
-                        {t('common.cancel')}
-                    </Button>
-                </div>
+            {migrationBanner(
+                entry,
+                confirmMigration,
+                t,
+                (entry.migrationSuggestion?.chapterCount ?? 0) > 0 ? (
+                    <span className="text-emerald-400"> · {t('library.chaptersCount', { n: entry.migrationSuggestion?.chapterCount ?? 0 })}</span>
+                ) : undefined
             )}
             <SectionTitle
                 right={

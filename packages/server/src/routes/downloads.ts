@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { DownloadQueue } from '../downloader/queue.js';
 import type { LibraryStore } from '../library/store.js';
 
-export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry, store?: LibraryStore): void {
+export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry, store: LibraryStore): void {
     // List jobs (active first, then recent history) — paginated & filterable
     const KNOWN_STATUSES = new Set(['queued', 'downloading', 'completed', 'failed', 'cancelled']);
     // Requeued jobs must flip their library chapter status back to 'queued'
@@ -16,19 +16,21 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
             byEntry.set(entryId, list);
         }
         for (const [entryId, chapterIds] of byEntry) {
-            store?.markChaptersQueued(entryId, chapterIds);
+            store.markChaptersQueued(entryId, chapterIds);
         }
     };
 
-    app.get<{ Querystring: { limit?: string; offset?: string; status?: string; q?: string } }>('/api/downloads', async request =>
-        queue.list({
-            limit: request.query.limit ? Number(request.query.limit) : undefined,
-            offset: request.query.offset ? Number(request.query.offset) : undefined,
+    app.get<{ Querystring: { limit?: string; offset?: string; status?: string; q?: string } }>('/api/downloads', async request => {
+        const parsedLimit = Number.parseInt(request.query?.limit || '', 10);
+        const parsedOffset = Number.parseInt(request.query?.offset || '', 10);
+        return queue.list({
+            limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined,
+            offset: Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : undefined,
             // ignore unknown status values instead of matching nothing
             status: request.query.status && KNOWN_STATUSES.has(request.query.status) ? request.query.status : undefined,
             query: request.query.q || undefined
-        })
-    );
+        });
+    });
 
     app.get('/api/downloads/status', async () => queue.status());
 
@@ -50,7 +52,7 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         if (!source) {
             return reply.code(404).send({ error: `Source "${body.sourceId}" not found` });
         }
-        const entry = store?.findEntryByManga(body.sourceId, body.mangaId) ?? null;
+        const entry = store.findEntryByManga(body.sourceId, body.mangaId) ?? null;
         const result = queue.enqueue(
             body.chapters.map(chapter => ({
                 sourceId: body.sourceId,

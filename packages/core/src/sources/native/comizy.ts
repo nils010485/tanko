@@ -11,14 +11,6 @@ import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } fr
 import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl } from './http.js';
 
-export interface ComizyOptions {
-    id?: string;
-    label?: string;
-    apiBase?: string;
-    webBase?: string;
-    tags?: string[];
-}
-
 interface ComizySearchItem {
     id?: string;
     name?: string;
@@ -49,22 +41,12 @@ interface ComizyChapterDetail {
 
 export class ComizyConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly apiBase: string;
-    private readonly webBase: string;
-
-    constructor(options: ComizyOptions = {}) {
-        this.id = options.id || 'mangabuddy';
-        this.label = options.label || 'MangaBuddy (comizy)';
-        this.tags = options.tags || ['manga', 'english', 'manhwa'];
-        this.apiBase = (options.apiBase || 'https://api.comizy.io').replace(/\/$/, '');
-        this.webBase = (options.webBase || 'https://comizy.io').replace(/\/$/, '');
-        this.url = this.webBase;
-    }
+    readonly id = 'mangabuddy';
+    readonly label = 'MangaBuddy (comizy)';
+    readonly tags = ['manga', 'english', 'manhwa'];
+    private readonly apiBase = 'https://api.comizy.io';
+    private readonly webBase = 'https://comizy.io';
+    readonly url = this.webBase;
 
     async initialize(): Promise<void> {}
 
@@ -92,8 +74,8 @@ export class ComizyConnector implements SourceAdapter {
         return slug ? `${id}#${slug}` : id;
     }
 
-    private _splitMangaId(manga: MangaInfo): string {
-        return manga.id.split('#')[0];
+    private _splitMangaId(mangaId: string): string {
+        return mangaId.split('#')[0];
     }
     private _absolute(href: string | undefined | null): string | null {
         return absoluteUrl(href, this.webBase);
@@ -112,7 +94,7 @@ export class ComizyConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const id = this._splitMangaId(manga);
+        const id = this._splitMangaId(manga.id);
         const data = await this._getJson<{ chapters?: ComizyChapter[] }>(`${this.apiBase}/titles/${id}/chapters`);
         const chapters = (data.chapters || [])
             .filter((chapter): chapter is ComizyChapter & { id: string } => !!chapter.id)
@@ -126,7 +108,7 @@ export class ComizyConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const data = await this._getJson<{ chapter?: ComizyChapterDetail }>(`${this.apiBase}/titles/${this._splitMangaId(_manga)}/chapters/${chapter.id}`);
+        const data = await this._getJson<{ chapter?: ComizyChapterDetail }>(`${this.apiBase}/titles/${this._splitMangaId(_manga.id)}/chapters/${chapter.id}`);
         const images = data.chapter?.images?.filter(src => typeof src === 'string' && src.startsWith('http')) || [];
         if (images.length === 0) {
             throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
@@ -143,7 +125,7 @@ export class ComizyConnector implements SourceAdapter {
             throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
         }
         const buffer = await response.arrayBuffer();
-        return { mime: response.headers.get('content-type') || 'image/webp', data: new Uint8Array(buffer) };
+        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
     }
 
     async checkHealth(): Promise<HealthResult> {

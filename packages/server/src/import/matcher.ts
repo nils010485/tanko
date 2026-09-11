@@ -91,7 +91,7 @@ export async function matchAll(ctx: MatcherContext, jobId: number, options: Impo
     await Promise.all(Array.from({ length: concurrency }, worker));
 }
 
-export async function matchSeries(ctx: MatcherContext, jobId: number, series: SeriesRow, sources: SourceInfo[]): Promise<void> {
+async function matchSeries(ctx: MatcherContext, jobId: number, series: SeriesRow, sources: SourceInfo[]): Promise<void> {
     const needle = series.needle || series.name;
     // try the raw name, then tag-stripped variants ("Dungeon Reset [Official]" -> "Dungeon Reset")
     const queries = [...new Set([needle, stripTags(needle).trim(), stripTags(series.name).trim()].filter(query => query.length > 2))];

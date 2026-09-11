@@ -30,6 +30,7 @@ import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
+const SERIES_MARKER = 'c-series-items__item';
 const SITE = 'https://pocket.shonenmagazine.com';
 const RSS_CDN = 'https://mgpk-cdn.magazinepocket.com';
 const VIEWER_API = 'https://se-api.pocket.shonenmagazine.com';
@@ -81,11 +82,16 @@ export class MagaPokeConnector implements SourceAdapter {
     async searchMangas(query: string): Promise<MangaInfo[]> {
         let html = await this._getText(`${SITE}/series`);
         // the series grid is hydrated by Nuxt: the static shell carries no items
-        if (!html.includes('c-series-item__ttl') && browserEnabled()) {
+        if (!html.includes(SERIES_MARKER) && browserEnabled()) {
             const rendered = await getPageHTML(`${SITE}/series`, { timeoutMs: 60_000 }).catch(() => undefined);
             if (rendered?.html) {
                 html = rendered.html;
             }
+        }
+        if (!html.includes(SERIES_MARKER)) {
+            // the same unhydrated shell checkHealth flags as broken — it must
+            // not pass for a normal "no hit" here
+            throw new SourceError(`Liste de séries non rendue sur ${this.label} (rendu navigateur requis)`, this.id);
         }
         const document = parseDocument(html);
         const needle = query.trim().toLowerCase();
@@ -175,7 +181,7 @@ export class MagaPokeConnector implements SourceAdapter {
         const startedAt = Date.now();
         try {
             const html = await this._getText(`${SITE}/series`);
-            if (!html.includes('c-series-items__item')) {
+            if (!html.includes(SERIES_MARKER)) {
                 return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de séries vide (site modifié ?)' };
             }
             return { ok: true, latencyMs: Date.now() - startedAt };

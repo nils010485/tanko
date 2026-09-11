@@ -56,7 +56,7 @@ export function parseLanguageList(raw: string | undefined | null): string[] {
 }
 
 /** ISO codes declared by a source via its tags ('multi-lingual' => undefined = unknown). */
-export function sourceLanguages(tags: string[]): string[] | undefined {
+function sourceLanguages(tags: string[]): string[] | undefined {
     const codes = new Set<string>();
     for (const tag of tags) {
         if (tag.toLowerCase() === 'multi-lingual') {

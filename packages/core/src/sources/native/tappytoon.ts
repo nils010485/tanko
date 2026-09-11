@@ -12,15 +12,6 @@ import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
-export interface TappytoonOptions {
-    id?: string;
-    label?: string;
-    webBase?: string;
-    apiBase?: string;
-    locale?: string;
-    tags?: string[];
-}
-
 interface TappytoonHeaders {
     Authorization?: string;
     'X-Device-Uuid'?: string;
@@ -56,26 +47,15 @@ interface TappytoonContent {
 
 export class TappytoonConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly webBase: string;
-    private readonly apiBase: string;
-    private readonly locale: string;
+    readonly id = 'tappytoon-en';
+    readonly label = 'Tappytoon';
+    readonly tags = ['webtoon', 'english', 'manhwa', 'official'];
+    private readonly webBase = 'https://www.tappytoon.com';
+    private readonly apiBase = 'https://api-global.tappytoon.com';
+    private readonly locale = 'en';
+    readonly url = `${this.webBase}/en/comics/discover`;
 
     private headers: TappytoonHeaders | undefined;
-
-    constructor(options: TappytoonOptions = {}) {
-        this.id = options.id || 'tappytoon-en';
-        this.label = options.label || 'Tappytoon';
-        this.tags = options.tags || ['webtoon', 'english', 'manhwa', 'official'];
-        this.webBase = (options.webBase || 'https://www.tappytoon.com').replace(/\/$/, '');
-        this.apiBase = (options.apiBase || 'https://api-global.tappytoon.com').replace(/\/$/, '');
-        this.locale = options.locale || 'en';
-        this.url = `${this.webBase}/en/comics/discover`;
-    }
 
     /** Extract an anonymous Bearer + device UUID from the Next.js payload. */
     private _parseHeaders(html: string): TappytoonHeaders | null {

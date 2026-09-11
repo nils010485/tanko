@@ -10,7 +10,7 @@ const AUTO_CONFIRM_MODES = new Set<AutoConfirmMode>(['auto', 'all', 'none']);
 
 /** Shared body for resume/sync: run the action, 404 with the thrown message
  *  when the job is unknown — 409 when the single crawl slot is busy. */
-async function runJobAction(reply: FastifyReply, _importer: ImportService, id: string, action: (jobId: number) => Promise<void>) {
+async function runJobAction(reply: FastifyReply, id: string, action: (jobId: number) => Promise<void>) {
     try {
         await action(Number(id));
         return { ok: true };
@@ -63,6 +63,12 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
             if (body.autoConfirm !== undefined && !AUTO_CONFIRM_MODES.has(body.autoConfirm)) {
                 return reply.code(400).send({ error: 'autoConfirm doit être "auto", "all" ou "none"' });
             }
+            if (body.concurrency !== undefined && (!Number.isInteger(body.concurrency) || body.concurrency < 1 || body.concurrency > 16)) {
+                return reply.code(400).send({ error: 'concurrency doit être un entier entre 1 et 16' });
+            }
+            if (body.sourceIds !== undefined && (!Array.isArray(body.sourceIds) || body.sourceIds.some(id => typeof id !== 'string'))) {
+                return reply.code(400).send({ error: "sourceIds doit être un tableau d'identifiants de sources" });
+            }
             try {
                 const resolved = assertValidDirectory(body.path);
                 const result = await importer.start(resolved, {
@@ -88,9 +94,7 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
     app.get('/api/import/jobs/current', async () => importer.status());
 
     // Resume an interrupted or ready job (pending series are re-matched, confirmed ones synced)
-    app.post<{ Params: { id: string } }>('/api/import/jobs/:id/resume', (request, reply) =>
-        runJobAction(reply, importer, request.params.id, id => importer.resume(id))
-    );
+    app.post<{ Params: { id: string } }>('/api/import/jobs/:id/resume', (request, reply) => runJobAction(reply, request.params.id, id => importer.resume(id)));
 
     app.post<{ Params: { id: string } }>('/api/import/jobs/:id/cancel', async request => {
         importer.cancel(Number(request.params.id));
@@ -123,7 +127,5 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
     );
 
     // Sync all confirmed series into the library (background)
-    app.post<{ Params: { id: string } }>('/api/import/jobs/:id/sync', (request, reply) =>
-        runJobAction(reply, importer, request.params.id, id => importer.sync(id))
-    );
+    app.post<{ Params: { id: string } }>('/api/import/jobs/:id/sync', (request, reply) => runJobAction(reply, request.params.id, id => importer.sync(id)));
 }

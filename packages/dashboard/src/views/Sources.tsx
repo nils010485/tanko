@@ -13,8 +13,7 @@ import { Badge, Button, Card, EmptyState, ErrorBanner, IconButton, Input, Sectio
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { useUnmounted } from '../lib/hooks.js';
-import { pollUntil } from '../lib/poll.js';
-import { sourceRank, statusLabel, statusTextClass } from '../lib/sources.js';
+import { hideBrokenSources, recheckAllSources, sourceRank, statusLabel, statusTextClass } from '../lib/sources.js';
 
 type KindFilter = 'all' | 'native' | 'legacy';
 type HealthFilter = 'all' | 'ok' | 'error' | 'untested';
@@ -105,15 +104,12 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
     const recheckAll = async () => {
         setRechecking(true);
         try {
-            await api.checkSources();
-            toast.info(t('sources.recheckStarted'));
-            // poll while the background probe refreshes statuses (stop on unmount)
-            await pollUntil(() => refreshSources(), {
+            await recheckAllSources({
+                refreshSources,
                 cancelled: () => unmounted.current,
-                done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
+                onError: message => toast.error(message),
+                onStarted: () => toast.info(t('sources.recheckStarted'))
             });
-        } catch (error) {
-            toast.error((error as Error).message);
         } finally {
             setRechecking(false);
         }
@@ -122,10 +118,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
     const hideBroken = async () => {
         setHidingBroken(true);
         try {
-            await api.hideBroken();
-            await refreshSources();
-        } catch (cause) {
-            toast.error((cause as Error).message);
+            await hideBrokenSources({ refreshSources, onError: message => toast.error(message) });
         } finally {
             setHidingBroken(false);
         }

@@ -2,8 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import type { SourceHealthService } from '../sources/health.js';
 
 export function registerSourceHealthRoutes(app: FastifyInstance, health: SourceHealthService): void {
-    app.get('/api/sources/health', async () => health.getAll());
-
     app.post<{ Body: { sourceIds?: string[] } }>('/api/sources/health/check', async (request, reply) => {
         const sourceIds = request.body?.sourceIds;
         if (sourceIds && (!Array.isArray(sourceIds) || sourceIds.length === 0)) {

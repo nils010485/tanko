@@ -42,10 +42,11 @@ export function getEntryRow(ctx: StoreContext, entryId: number): EntryRow | unde
     return ctx.q.get<EntryRow>('SELECT * FROM library WHERE id = ?', entryId);
 }
 
-/** Directory holding the entry's files: the deepest common ancestor of the
- *  downloaded chapter paths first (strongest signal — absolute paths survive
- *  source migrations and imports from folders outside the data directory),
- *  then the stored canonical folder, falling back to the configured layout. */
+/** Directory holding the entry's files: the most frequent parent directory
+ *  of the downloaded chapter paths first (strongest signal — absolute paths
+ *  survive source migrations and imports from folders outside the data
+ *  directory), then the stored canonical folder, falling back to the
+ *  configured layout. */
 export function seriesDirectory(ctx: StoreContext, entryId: number, row?: EntryRow): string | null {
     const entry = row ?? getEntryRow(ctx, entryId);
     if (!entry) {

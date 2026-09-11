@@ -6,7 +6,7 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl, fetchNativeText } from './http.js';
 
 /** Catalog pages scanned for a local (client-side) title search. */
@@ -121,7 +121,7 @@ export class KomikIndoConnector implements SourceAdapter {
             }
             return { ok: true, latencyMs: Date.now() - startedAt };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: String(error instanceof Error ? error.message : error) };
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
     }
 }

@@ -28,12 +28,10 @@ import type {
     SourceAlternativeDto,
     SourceAlternativesResponseDto,
     SourceDto,
-    SourceHealthDto,
     SourceSearchResponseDto
 } from '@tanko/shared';
+import { TOKEN_HEADER } from '@tanko/shared';
 import type { TFunction } from '../i18n/index.js';
-
-export type { QueueStatusDto };
 
 /** First-chapter cover cache status (GET /api/library/covers/status). */
 export interface CoverStatusDto {
@@ -43,20 +41,6 @@ export interface CoverStatusDto {
     done: number;
     failed: number;
     skipped: number;
-}
-
-/** One row of the server's chapter change history (chapter_history table). */
-export interface ChapterHistoryEntry {
-    id: number;
-    entry_id: number;
-    chapter_id: string;
-    title: string;
-    event: string;
-    old_status: string | null;
-    old_path: string | null;
-    new_status: string | null;
-    new_path: string | null;
-    at: string;
 }
 
 /** One local series of an import job (shared DTO, exposed for the Import view). */
@@ -136,7 +120,7 @@ async function request<T>(url: string, init?: RequestInit, retried = false): Pro
     }
     const token = await getBootToken();
     if (token) {
-        headers.set('x-tanko-token', token);
+        headers.set(TOKEN_HEADER, token);
     }
     const response = await fetch(url, { ...init, headers });
     if (response.status === 403 && !retried) {
@@ -157,7 +141,6 @@ export type SchedulePatch = Partial<Omit<ScheduleSettingsDto, 'notifications'>> 
 export const api = {
     // sources
     sources: () => request<SourceDto[]>('/api/sources'),
-    sourceHealth: () => request<Record<string, SourceHealthDto>>('/api/sources/health'),
     hideBroken: () => request<{ hidden: number }>('/api/sources/hide-broken', { method: 'POST' }),
     checkSources: (sourceIds?: string[]) =>
         request<{ started: boolean; targets: number | 'all' }>('/api/sources/health/check', {
@@ -216,7 +199,6 @@ export const api = {
     downloadNew: (entryId: number) => request<{ queued: number }>(`/api/library/${entryId}/download-new`, { method: 'POST' }),
     downloadAllNew: () => request<{ queued: number; entries: number }>('/api/library/download-new', { method: 'POST' }),
     downloadAllMissing: () => request<{ queued: number; entries: number }>('/api/library/download-missing', { method: 'POST' }),
-    entryHistory: (entryId: number) => request<ChapterHistoryEntry[]>(`/api/library/${entryId}/history`),
     rollbackChapter: (entryId: number, chapterId: string) =>
         request<{ ok: boolean }>(`/api/library/${entryId}/chapters/${encodeURIComponent(chapterId)}/rollback`, { method: 'POST' }),
     rematchFailed: () =>
@@ -295,7 +277,7 @@ export const api = {
     settings: () => request<AppSettingsResponseDto>('/api/settings'),
     updateSettings: (
         patch: Partial<QueueSettingsDto> & {
-            preferredLanguages?: string[] | string;
+            preferredLanguages?: string[];
             uiLanguage?: 'en' | 'fr';
             useFirstChapterCovers?: boolean;
             incompleteSourceDetection?: boolean;
@@ -327,7 +309,7 @@ export const api = {
 
     // import (preview scan + server-side persistent jobs)
     importScan: (path: string) => request<ImportScanResult>('/api/import/scan', { method: 'POST', body: JSON.stringify({ path }) }),
-    importJobStart: (payload: { path: string; autoConfirm?: 'auto' | 'all' | 'none'; autoDownload?: boolean; sourceIds?: string[] }) =>
+    importJobStart: (payload: { path: string; autoConfirm?: 'auto' | 'all' | 'none'; autoDownload?: boolean; concurrency?: number; sourceIds?: string[] }) =>
         request<{ jobId: number }>('/api/import/jobs', { method: 'POST', body: JSON.stringify(payload) }),
     importJobStatus: () => request<ImportJobStatus>('/api/import/jobs/current'),
     importJobResume: (jobId: number) => request<void>(`/api/import/jobs/${jobId}/resume`, { method: 'POST' }),

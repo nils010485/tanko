@@ -116,10 +116,14 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
             if (queue.hasPendingJobs(Number(entryId))) {
                 return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
             }
-            const result = await store.migrateEntry(Number(entryId), entry.migrationSuggestion);
-            store.requeueFailedAfterMigration(Number(entryId), queue);
-            const updated = publishEntry(Number(entryId));
-            return { applied: true, ...result, entry: updated };
+            try {
+                const result = await store.migrateEntry(Number(entryId), entry.migrationSuggestion);
+                store.requeueFailedAfterMigration(Number(entryId), queue);
+                const updated = publishEntry(Number(entryId));
+                return { applied: true, ...result, entry: updated };
+            } catch (error) {
+                return reply.code(502).send({ error: (error as Error).message });
+            }
         }
         // remember the refusal so the background detection does not re-suggest it
         store.dismissMigrationSuggestion(Number(entryId), entry.migrationSuggestion);

@@ -6,6 +6,8 @@ import type { WsEvent } from '@tanko/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/db.js';
 import { DownloadQueue } from '../src/downloader/queue.js';
+import { revertCancelledChapter } from '../src/library/chapters.js';
+import { migrateLibrarySchema } from '../src/library/schema.js';
 import { EventBus } from '../src/ws.js';
 
 // A tiny 1x1 PNG served by a local HTTP server stands in for a real source.
@@ -125,6 +127,7 @@ beforeAll(async () => {
 
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'haku-test-'));
     database = new Database(tmpDir);
+    migrateLibrarySchema(database);
     bus = new EventBus();
     queue = new DownloadQueue({
         db: database,
@@ -136,6 +139,13 @@ beforeAll(async () => {
             parallelSources: 1,
             concurrencyPerSource: 2,
             throttleMs: 10
+        },
+        onJobFinished: job => {
+            // mirrors the production wiring in server/src/index.ts: a cancel
+            // restores the library chapter's pre-queue status
+            if (job.status === 'cancelled' && job.entryId != null) {
+                revertCancelledChapter({ db: database } as never, job.entryId, job.chapterId);
+            }
         }
     });
 });
@@ -235,10 +245,43 @@ describe('DownloadQueue', () => {
         queue.resume();
     });
 
+    it('cancelling a queued job reverts the linked library chapter', async () => {
+        queue.pause();
+        const entry = database.db
+            .prepare(
+                "INSERT INTO library (source_id, source_label, manga_id, title, auto_download, added_at) VALUES ('test-source', 'Test Source', 'manga-1', 'Revert Series', 1, ?)"
+            )
+            .run(new Date().toISOString());
+        const entryId = Number(entry.lastInsertRowid);
+        database.db
+            .prepare(
+                "INSERT INTO library_chapters (entry_id, chapter_id, title, status, prev_status, path, discovered_at, downloaded_at) VALUES (?, 'chapter-revert', 'Chapter Revert', 'queued', 'new', NULL, ?, NULL)"
+            )
+            .run(entryId, new Date().toISOString());
+        queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Revert Series',
+                chapterId: 'chapter-revert',
+                chapterTitle: 'Chapter Revert',
+                entryId
+            }
+        ]);
+        const job = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').get('chapter-revert') as any;
+        expect(queue.cancel(job.id)).toBe(true);
+        await waitForJob(job.id, ['cancelled']);
+        const chapter = database.db.prepare('SELECT status, prev_status FROM library_chapters WHERE chapter_id = ?').get('chapter-revert') as any;
+        expect(chapter.status).toBe('new');
+        expect(chapter.prev_status).toBeNull();
+        queue.resume();
+    });
+
     it('skips chapters whose output already exists', async () => {
         // pre-create the chapter directory with a file -> job completes without downloading
         const directory = path.join(tmpDir, 'downloads', 'Test Source', 'Test Manga', 'Chapter Existing');
         fs.mkdirSync(directory, { recursive: true });
+
         fs.writeFileSync(path.join(directory, '01.png'), PNG);
 
         queue.enqueue([
@@ -453,6 +496,11 @@ describe('DownloadQueue', () => {
 
     it('retryJob requeues a failed job with its entry link', async () => {
         queue.enqueue([{ sourceId: 'unknown-retry', mangaId: 'm-r', mangaTitle: 'R Manga', chapterId: 'c-retry', chapterTitle: 'CR', entryId: 7 }]);
+        database.db
+            .prepare(
+                "INSERT INTO library (id, source_id, source_label, manga_id, title, auto_download, added_at) VALUES (7, 'unknown-retry', 'Retry Source', 'm-r', 'R Manga', 1, ?)"
+            )
+            .run(new Date().toISOString());
         const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('c-retry') as any[];
         await waitForJob(rows[0].id, ['failed']);
         const result = queue.retryJob(rows[0].id);

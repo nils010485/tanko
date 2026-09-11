@@ -8,7 +8,7 @@ import { AzoraFlyConnector } from './azorofly.js';
 import { BilibiliManhuaConnector } from './bilibili.js';
 import { BlackArmyConnector } from './blackarmy.js';
 import { ComiciConnector } from './comici.js';
-import { ComickConnector } from './comick.js';
+import { comick as comickConnector } from './comick.js';
 import { ComizyConnector } from './comizy.js';
 import { DrakeScansConnector } from './drakescans.js';
 import { FlameScansConnector } from './flamescans.js';
@@ -163,7 +163,7 @@ export function createNativeConnectors(): SourceAdapter[] {
         new MangaToonConnector({ id: 'mangatoon-cn', label: 'MangaToon (Chinese)', language: 'cn', tags: ['manga', 'chinese'] }),
         new MangaToonConnector({ id: 'mangatoon-id', label: 'MangaToon (Indonesian)', language: 'id', tags: ['manga', 'indonesian'] }),
         new MangaToonConnector({ id: 'mangatoon-vi', label: 'MangaToon (Vietnamese)', language: 'vi', tags: ['manga', 'vietnamese'] }),
-        new ComickConnector(),
+        comickConnector,
         new ComizyConnector(),
         new HentaiHandConnector(),
         new TappytoonConnector(),

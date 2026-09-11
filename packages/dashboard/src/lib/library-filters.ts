@@ -23,7 +23,7 @@ export const VIEW_KEY = 'tanko.library.view';
 export const PREFS_KEY = 'tanko.library.prefs';
 export const DEFAULT_PREFS: DisplayPrefs = { progress: true, date: true, source: true, missing: true, actions: false };
 
-export function missingCount(entry: LibraryEntryDto): number {
+function missingCount(entry: LibraryEntryDto): number {
     return Math.max(0, entry.chapterCount - entry.downloadedCount);
 }
 
@@ -35,7 +35,7 @@ function checkedAt(entry: LibraryEntryDto): number {
     return entry.lastCheckedAt ? Date.parse(entry.lastCheckedAt) : 0;
 }
 
-export function isStale(entry: LibraryEntryDto): boolean {
+function isStale(entry: LibraryEntryDto): boolean {
     return Date.now() - checkedAt(entry) > STALE_DAYS * 86_400_000;
 }
 

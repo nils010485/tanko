@@ -22,6 +22,8 @@ export interface LiveState {
     unreadErrors: number;
     /** Bumped on every WS sources.updated — Discover refetches source health when it changes. */
     sourcesVersion: number;
+    /** Bumped on every WS job.updated / job.removed — Downloads refetches its page when it changes. */
+    downloadsVersion: number;
     markActivitySeen: () => void;
     refreshLibrary: () => Promise<void>;
 }
@@ -44,8 +46,10 @@ export function useLiveState(): LiveState {
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
     const [queueStatus, setQueueStatus] = useState<QueueStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
-    const [unreadErrors, setUnreadErrors] = useState(0);
     const [sourcesVersion, setSourcesVersion] = useState(0);
+    const [unreadErrors, setUnreadErrors] = useState(0);
+    /** Bumped on every WS job transition — drives the Downloads view's refresh. */
+    const [downloadsVersion, setDownloadsVersion] = useState(0);
     const logSeq = useRef(0);
     /** Row ids already known (REST load or previous frames) — WS replay dedupe. */
     const seenLogIds = useRef<Set<number>>(new Set());
@@ -167,6 +171,10 @@ export function useLiveState(): LiveState {
                         case 'sources.updated':
                             setSourcesVersion(version => version + 1);
                             break;
+                        case 'job.updated':
+                        case 'job.removed':
+                            setDownloadsVersion(version => version + 1);
+                            break;
                         case 'log':
                             // replayed frames (reconnect) carry ids the REST load already
                             // returned — skipping them keeps the unread counter honest
@@ -207,6 +215,7 @@ export function useLiveState(): LiveState {
         logs,
         unreadErrors,
         sourcesVersion,
+        downloadsVersion,
         markActivitySeen,
         refreshLibrary
     };

@@ -8,15 +8,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl, fetchNativeText } from './http.js';
-
-export interface HeavenMangaOptions {
-    id?: string;
-    label?: string;
-    base?: string;
-    tags?: string[];
-}
 
 interface DataTablesRow {
     id?: number | string;
@@ -36,20 +29,11 @@ const CHAPTERS_PAGE_SIZE = 1000;
 
 export class HeavenMangaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly base: string;
-
-    constructor(options: HeavenMangaOptions = {}) {
-        this.id = options.id || 'heavenmanga2';
-        this.label = options.label || 'HeavenManga';
-        this.tags = options.tags || ['manga', 'spanish'];
-        this.base = (options.base || 'https://heavenmanga.com').replace(/\/$/, '');
-        this.url = this.base;
-    }
+    readonly id = 'heavenmanga2';
+    readonly label = 'HeavenManga';
+    readonly tags = ['manga', 'spanish'];
+    private readonly base = 'https://heavenmanga.com';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 
@@ -215,7 +199,7 @@ export class HeavenMangaConnector implements SourceAdapter {
             }
             return { ok: true, latencyMs: Date.now() - startedAt };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: String(error instanceof Error ? error.message : error) };
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
     }
 }

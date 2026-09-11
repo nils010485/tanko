@@ -68,9 +68,6 @@ const AUTO_RETRY_SWEEP_MS = 5 * 60 * 1000;
  *  whole ladder to the fast tier. */
 const REVALIDATE_BASE_MS = 24 * 60 * 60 * 1000;
 const REVALIDATE_CAP_MS = 7 * 24 * 60 * 60 * 1000;
-/** Overall cap for one chapter's page loop (paused time excluded); getPages is
- *  already bounded by its own per-attempt timeout. */
-
 /** Statuses that make an existing job ineligible for requeue. */
 const ACTIVE_STATUSES = new Set<DownloadStatus>(['completed', 'queued', 'downloading']);
 
@@ -225,6 +222,9 @@ export class DownloadQueue {
         }
         if (row.status === 'queued') {
             this._update(jobId, { status: 'cancelled' });
+            // A queued job never enters _runJob, so its finally-block
+            // notification must fire here or the library chapter stays 'queued' forever.
+            this._notifyFinished(jobId);
             return true;
         }
         if (row.status === 'downloading') {

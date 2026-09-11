@@ -185,8 +185,3 @@ export class MangaToonConnector implements SourceAdapter {
         }
     }
 }
-
-export const mangatoonEn = new MangaToonConnector({ id: 'mangatoon-en', label: 'MangaToon (English)', language: 'en' });
-export const mangatoonCn = new MangaToonConnector({ id: 'mangatoon-cn', label: 'MangaToon (Chinese)', language: 'cn', tags: ['manga', 'chinese'] });
-export const mangatoonId = new MangaToonConnector({ id: 'mangatoon-id', label: 'MangaToon (Indonesian)', language: 'id', tags: ['manga', 'indonesian'] });
-export const mangatoonVi = new MangaToonConnector({ id: 'mangatoon-vi', label: 'MangaToon (Vietnamese)', language: 'vi', tags: ['manga', 'vietnamese'] });

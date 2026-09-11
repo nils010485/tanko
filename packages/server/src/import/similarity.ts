@@ -24,7 +24,7 @@ export function stripTags(title: string): string {
 }
 
 /** Bigram Dice coefficient: 1 = identical, 0 = no overlap. */
-export function bigramDice(a: string, b: string): number {
+function bigramDice(a: string, b: string): number {
     if (a === b) {
         return a.length > 0 ? 1 : 0;
     }

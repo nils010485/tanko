@@ -5,8 +5,6 @@
  */
 import { type ComponentType, useEffect, useState } from 'react';
 
-declare const __APP_VERSION__: string;
-
 import {
     IconActivity,
     IconDownload,
@@ -108,7 +106,11 @@ export default function App() {
             return (
                 // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the badge rides the keyboard-accessible tab button; clicking only adds the "new" filter
                 <span
-                    onClick={() => setLibraryFocusFilter('new')}
+                    onClick={event => {
+                        // no bubbling to the tab button: the badge only arms the "new" filter
+                        event.stopPropagation();
+                        setLibraryFocusFilter('new');
+                    }}
                     title={t('app.focusNewChapters')}
                     className="ml-auto rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-bold text-canvas"
                 >
@@ -252,7 +254,14 @@ export default function App() {
                                 refreshLibrary={live.refreshLibrary}
                             />
                         )}
-                        {tab === 'downloads' && <Downloads library={live.library} onOpenSeries={navigateSeries} />}
+                        {tab === 'downloads' && (
+                            <Downloads
+                                library={live.library}
+                                onOpenSeries={navigateSeries}
+                                downloadsVersion={live.downloadsVersion}
+                                queueStatus={live.queueStatus}
+                            />
+                        )}
                         {tab === 'import' && <Import onImported={live.refreshLibrary} />}
                         {tab === 'sources' && <Sources sourcesVersion={live.sourcesVersion} />}
                         {tab === 'tasks' && <Tasks schedule={live.schedule} library={live.library} />}

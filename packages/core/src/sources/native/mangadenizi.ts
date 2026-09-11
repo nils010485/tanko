@@ -77,22 +77,14 @@ export class MangadeniziConnector implements SourceAdapter {
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const needle = query.trim();
         const results: MangaInfo[] = [];
-        if (needle) {
-            const response = await this._getJson<DeniziSearchResponse>(`${API}/api/search?q=${encodeURIComponent(needle)}`);
-            for (const item of response.results || []) {
-                if (!item.slug || !item.title) {
-                    continue;
-                }
-                results.push({ id: item.slug, title: item.title, url: `${API}/manga/${item.slug}`, thumbnail: item.cover_url });
+        const items = needle
+            ? (await this._getJson<DeniziSearchResponse>(`${API}/api/search?q=${encodeURIComponent(needle)}`)).results || []
+            : (await this._getJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`)).data || [];
+        for (const item of items) {
+            if (!item.slug || !item.title) {
+                continue;
             }
-        } else {
-            const response = await this._getJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`);
-            for (const item of response.data || []) {
-                if (!item.slug || !item.title) {
-                    continue;
-                }
-                results.push({ id: item.slug, title: item.title, url: `${API}/manga/${item.slug}`, thumbnail: item.cover_url });
-            }
+            results.push({ id: item.slug, title: item.title, url: `${API}/manga/${item.slug}`, thumbnail: item.cover_url });
         }
         return results;
     }

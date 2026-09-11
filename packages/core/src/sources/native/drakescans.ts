@@ -53,7 +53,6 @@ export class DrakeScansConnector implements SourceAdapter {
         return absoluteUrl(href, this.base);
     }
 
-    /** Fetch HTML with a browser UA; anti-bot shells render in Chromium. */
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, init: { signal: AbortSignal.timeout(30_000) } });
     }

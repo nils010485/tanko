@@ -31,15 +31,11 @@ export function registerImageRoutes(app: FastifyInstance): void {
         return entry;
     };
 
-    // byte-budget LRU: evict oldest (Map order) until under budget; oversized entries are served but not cached
+    // byte-budget LRU: evict oldest (Map order) until under budget
     const cacheSet = (url: string, entry: CacheEntry): void => {
         const previous = cache.get(url);
         if (previous) {
             cacheBytes -= previous.body.length;
-        }
-        if (entry.body.length > MAX_CACHE_BYTES) {
-            cache.delete(url);
-            return;
         }
         cache.set(url, entry);
         cacheBytes += entry.body.length;

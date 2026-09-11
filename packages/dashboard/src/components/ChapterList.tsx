@@ -25,7 +25,7 @@ export interface ChapterListSelection {
 
 const BATCH = 200;
 
-export function chapterTone(status: LibraryChapterDto['status']): BadgeTone {
+function chapterTone(status: LibraryChapterDto['status']): BadgeTone {
     switch (status) {
         case 'downloaded':
             return 'green';

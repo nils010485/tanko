@@ -321,14 +321,6 @@ export function markChapter(
     }
 }
 
-/** Full change history of an entry's chapters (newest first). */
-export function chapterHistory(ctx: StoreContext, entryId: number, chapterId?: string): Array<Record<string, unknown>> {
-    if (chapterId) {
-        return ctx.q.all<Record<string, unknown>>('SELECT * FROM chapter_history WHERE entry_id = ? AND chapter_id = ? ORDER BY id DESC', entryId, chapterId);
-    }
-    return ctx.q.all<Record<string, unknown>>('SELECT * FROM chapter_history WHERE entry_id = ? ORDER BY id DESC LIMIT 200', entryId);
-}
-
 /** Restore a chapter to its previous downloaded file (latest history entry with a previous path). */
 export function rollbackChapter(ctx: StoreContext, entryId: number, chapterId: string): boolean {
     const last = ctx.q.get<{ old_path: string }>(

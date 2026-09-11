@@ -1,11 +1,12 @@
 /**
  * Downloads view: paginated & filterable queue grouped in three sections
  * (active → queued → history), global pause, scoped cleanup menu (failed /
- * completed / whole history) and per-row cancel / retry / dismiss. The list is
- * self-managed (fetch + poll) so pagination survives live WebSocket updates.
+ * completed / whole history) and per-row cancel / retry / dismiss. The list
+ * refreshes on every WS job transition (live.downloadsVersion), with a slow
+ * poll as fallback when the socket is down.
  */
 
-import type { DownloadJobDto, LibraryEntryDto } from '@tanko/shared';
+import type { DownloadJobDto, LibraryEntryDto, QueueStatusDto } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Cover } from '../components/Cover.js';
 import { ConfirmDialog } from '../components/confirm.js';
@@ -50,7 +51,19 @@ type CleanAction = 'queue' | 'failed' | 'completed' | 'all';
 
 const HISTORY_JOB = new Set(['completed', 'failed', 'cancelled']);
 
-export default function Downloads({ library, onOpenSeries }: { library: LibraryEntryDto[]; onOpenSeries?: (id: number) => void }) {
+export default function Downloads({
+    library,
+    onOpenSeries,
+    downloadsVersion,
+    queueStatus
+}: {
+    library: LibraryEntryDto[];
+    onOpenSeries?: (id: number) => void;
+    /** Bumped by the WS job.updated/job.removed events (live.ts). */
+    downloadsVersion: number;
+    /** Authoritative queue counters pushed over WS (live.ts). */
+    queueStatus: QueueStatusDto | null;
+}) {
     const { t, formatDate } = useI18n();
     const [jobs, setJobs] = useState<DownloadJobDto[]>([]);
     const [total, setTotal] = useState(0);
@@ -59,7 +72,6 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
     const [page, setPage] = useState(0);
     const [status, setStatus] = useState('');
     const [query, setQuery] = useState('');
-    const [queueStatus, setQueueStatus] = useState<{ paused: boolean; active: number; queued: number } | null>(null);
     const [sourceLabels, setSourceLabels] = useState<Record<string, string>>({});
     const toast = useToast();
     const [menuOpen, setMenuOpen] = useState(false);
@@ -71,7 +83,7 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
     const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
     const menuRef = useRef<HTMLDivElement>(null);
 
-    /** Ignore responses that resolve after a newer fetch started (filter typing, page change, 4s poll). */
+    /** Ignore responses that resolve after a newer fetch started (filter typing, page change, WS refresh). */
     const requestSeq = useRef(0);
     const load = useCallback(async () => {
         const seq = ++requestSeq.current;
@@ -102,8 +114,15 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
         load();
     }, [load]);
 
+    // WS job transitions drive the refresh; the slow poll only guards
+    // against a dead socket (stale data is surfaced by the banner above)
     useEffect(() => {
-        const timer = setInterval(load, 4000);
+        if (downloadsVersion > 0) {
+            load();
+        }
+    }, [downloadsVersion, load]);
+    useEffect(() => {
+        const timer = setInterval(load, 30_000);
         return () => clearInterval(timer);
     }, [load]);
 
@@ -114,17 +133,6 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
             setPage(last);
         }
     }, [total, page]);
-
-    useEffect(() => {
-        const loadStatus = () =>
-            api
-                .downloadStatus()
-                .then(setQueueStatus)
-                .catch(() => undefined);
-        loadStatus();
-        const timer = setInterval(loadStatus, 4000);
-        return () => clearInterval(timer);
-    }, []);
 
     useEffect(() => {
         api.sources()
@@ -157,12 +165,8 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
 
     const toggleQueue = () => {
         const request = queueStatus?.paused ? api.resumeQueue() : api.pauseQueue();
-        request
-            .then(state => {
-                setQueueStatus(state);
-                load();
-            })
-            .catch((error: Error) => toast.error(error.message));
+        // the WS queue.status push updates the badge; load() refreshes the rows
+        request.then(() => load()).catch((error: Error) => toast.error(error.message));
     };
 
     /** Cancel an active job, or dismiss a finished one from the history. */
@@ -203,9 +207,8 @@ export default function Downloads({ library, onOpenSeries }: { library: LibraryE
         setConfirm(null);
         try {
             if (action === 'queue') {
-                const { cancelled, removed, paused, active, queued } = await api.clearQueue();
+                const { cancelled, removed } = await api.clearQueue();
                 toast.info(t('downloads.clearQueueDone', { n: removed + cancelled }));
-                setQueueStatus({ paused, active, queued });
             } else {
                 const { removed } = await api.clearHistory(action === 'all' ? undefined : action);
                 toast.info(t('downloads.clearHistoryDone', { n: removed }));
