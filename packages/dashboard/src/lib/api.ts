@@ -1,6 +1,7 @@
 /**
  * Minimal REST client for the dashboard.
  */
+
 import type {
     ActivityJobsDto,
     ActivityLogDto,
@@ -19,7 +20,6 @@ import type {
     LibraryBulkSummary,
     LibraryChapterDto,
     LibraryEntryDto,
-    MangaDto,
     NotificationSettingsDto,
     QueueSettingsDto,
     QueueStatusDto,
@@ -28,8 +28,10 @@ import type {
     SourceAlternativeDto,
     SourceAlternativesResponseDto,
     SourceDto,
-    SourceHealthDto
+    SourceHealthDto,
+    SourceSearchResponseDto
 } from '@tanko/shared';
+import type { TFunction } from '../i18n/index.js';
 
 export type { QueueStatusDto };
 
@@ -116,6 +118,15 @@ export class RequestError extends Error {
     }
 }
 
+/** Localized message for coded server errors (source_error…); raw message otherwise. */
+export function apiErrorText(error: unknown, t: TFunction): string {
+    if (error instanceof RequestError && error.body?.code === 'source_error') {
+        const detail = error.body.message || error.body.error;
+        return detail ? `${t('errors.sourceError')} : ${detail}` : t('errors.sourceError');
+    }
+    return error instanceof Error && error.message ? error.message : String(error);
+}
+
 async function request<T>(url: string, init?: RequestInit, retried = false): Promise<T> {
     // only declare JSON when there actually is a body, otherwise Fastify tries to
     // parse an empty payload and answers 400 (e.g. DELETE /api/library/:id)
@@ -153,10 +164,12 @@ export const api = {
             method: 'POST',
             body: JSON.stringify(sourceIds ? { sourceIds } : {})
         }),
-    search: (sourceId: string, query: string) => request<MangaDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`),
+    search: (sourceId: string, query: string, signal?: AbortSignal) =>
+        request<SourceSearchResponseDto>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`, { signal }),
     searchAll: (query: string) =>
         request<{ jobId: number; targets: number }>('/api/sources/search-all', { method: 'POST', body: JSON.stringify({ q: query }) }),
     globalSearch: (jobId: number) => request<GlobalSearchStatusDto>(`/api/sources/search-all/${jobId}`),
+    cancelGlobalSearch: (jobId: number) => request<{ cancelled: boolean }>(`/api/sources/search-all/${jobId}/cancel`, { method: 'POST' }),
     chapters: (sourceId: string, mangaId: string, title: string) =>
         request<ChapterDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/chapters?${qs({ mangaId, title })}`),
     pages: (sourceId: string, mangaId: string, chapterId: string, mangaTitle: string, chapterTitle: string) =>

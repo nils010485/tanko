@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
 function readHash(): string {
-    return window.location.hash.replace(/^#\/?/, '');
+    // query string allowed after the path (#/discover?q=…): never part of the route
+    return window.location.hash.replace(/^#\/?/, '').split('?')[0];
 }
 
 /** State derived from the hash, re-evaluated on every hashchange. */

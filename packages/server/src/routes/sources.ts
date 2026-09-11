@@ -1,16 +1,47 @@
 import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
-import type { ChapterDto, MangaDto, SourceDto } from '@tanko/shared';
+import type { ChapterDto, MangaDto, SourceDto, SourceSearchResponseDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { adultAllowed, chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
 import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
+    // coded error bodies: the dashboard localizes 'source_error' itself
     if (error instanceof SourceError) {
-        return reply.code(502).send({ error: error.message, details: 'source' });
+        return reply.code(502).send({ error: error.message, code: 'source_error', message: error.message, details: 'source' });
     }
     console.error('[sources]', error);
-    const message = error instanceof Error && error.message ? error.message : 'erreur inattendue';
-    return reply.code(502).send({ error: `La source n'a pas répondu correctement : ${message}`, details: 'source' });
+    const message = error instanceof Error && error.message ? error.message : 'unexpected error';
+    return reply.code(502).send({ error: message, code: 'source_error', message, details: 'source' });
+}
+
+/** Wall-clock budget for one direct source search: legacy connectors may crawl
+ *  their whole catalog — the dashboard must get its UI back after this. */
+const SEARCH_TIMEOUT_MS = 30_000;
+/** Display cap for one direct search: the response reports the true total. */
+const SEARCH_RESULTS_CAP = 50;
+
+async function timedSourceSearch(source: SourceAdapter, sourceId: string, query: string): Promise<MangaInfo[]> {
+    try {
+        return await new Promise<MangaInfo[]>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('source search timed out')), SEARCH_TIMEOUT_MS);
+            timer.unref();
+            source.searchMangas(query).then(
+                value => {
+                    clearTimeout(timer);
+                    resolve(value);
+                },
+                error => {
+                    clearTimeout(timer);
+                    reject(error);
+                }
+            );
+        });
+    } catch (error) {
+        if (error instanceof Error && error.message === 'source search timed out') {
+            throw new SourceError(`Search on "${sourceId}" timed out after ${SEARCH_TIMEOUT_MS / 1000}s`, sourceId);
+        }
+        throw error;
+    }
 }
 
 /** Resolve a source or reply 404; null means the reply has already been sent. */
@@ -159,7 +190,7 @@ export function registerSourceRoutes(
             return reply.code(400).send({ error: 'Query parameter "q" is required' });
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
-            const mangas = await source.searchMangas(query);
+            const mangas = await timedSourceSearch(source, sourceId, query);
             // drop titles known (native MangaDex metadata) to lack chapters in
             // the preferred languages — they would list 0 chapters later
             const allowed = mangas.filter(manga => mangaLanguagesAllowed(manga.languages, getPreferredLanguages()));
@@ -171,19 +202,24 @@ export function registerSourceRoutes(
                     unique.set(String(manga.id), manga);
                 }
             }
-            const sliced = [...unique.values()].slice(0, 50);
+            const all = [...unique.values()];
+            const sliced = all.slice(0, SEARCH_RESULTS_CAP);
             if (sourceId === 'mangadex') {
                 await enrichMangaDexCovers(sliced);
             }
-            return sliced.map(
-                (manga): MangaDto => ({
-                    sourceId,
-                    id: manga.id,
-                    title: manga.title,
-                    url: manga.url,
-                    thumbnail: manga.thumbnail
-                })
-            );
+            return {
+                total: all.length,
+                hiddenByLanguage: mangas.length - allowed.length,
+                mangas: sliced.map(
+                    (manga): MangaDto => ({
+                        sourceId,
+                        id: manga.id,
+                        title: manga.title,
+                        url: manga.url,
+                        thumbnail: manga.thumbnail
+                    })
+                )
+            } satisfies SourceSearchResponseDto;
         });
     });
 
@@ -206,6 +242,15 @@ export function registerSourceRoutes(
         return status;
     });
 
+    // Cancel a running global search: in-flight sources finish, the rest is skipped
+    app.post<{ Params: { jobId: string } }>('/api/sources/search-all/:jobId/cancel', async (request, reply) => {
+        const jobId = Number(request.params.jobId);
+        const cancelled = Number.isInteger(jobId) && jobId > 0 ? app.globalSearch.cancel(jobId) : false;
+        if (!cancelled) {
+            return reply.code(404).send({ error: `Search job "${request.params.jobId}" not found` });
+        }
+        return { cancelled: true };
+    });
     app.get<{ Params: { sourceId: string }; Querystring: { mangaId?: string; title?: string } }>('/api/sources/:sourceId/chapters', async (request, reply) => {
         const { sourceId } = request.params;
         const mangaId = request.query.mangaId;

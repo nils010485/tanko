@@ -10,6 +10,7 @@ import { Button, Card } from '../ui.js';
 export function MangaResultCard({
     manga,
     sourceLabel,
+    alsoOn,
     isAdded,
     isAdding,
     followDisabled,
@@ -18,6 +19,8 @@ export function MangaResultCard({
 }: {
     manga: MangaDto;
     sourceLabel: string;
+    /** Other sources carrying the same title (merged global view). */
+    alsoOn?: string[];
     isAdded: boolean;
     isAdding: boolean;
     followDisabled: boolean;
@@ -33,6 +36,11 @@ export function MangaResultCard({
                     {manga.title}
                 </div>
                 <div className="mt-0.5 truncate text-xs text-faint">{sourceLabel}</div>
+                {alsoOn && alsoOn.length > 0 ? (
+                    <div className="mt-0.5 truncate text-[11px] text-faint/80" title={alsoOn.join(', ')}>
+                        {t('discover.alsoOn', { sources: alsoOn.join(', ') })}
+                    </div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                     <Button small variant="ghost" onClick={() => onChapters(manga)}>
                         {t('discover.chapters')}

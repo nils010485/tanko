@@ -1,13 +1,17 @@
 /**
  * Source picker combobox of the Discover view: searchable list with health
- * dots, native-source stars and the hidden-sources toggle.
+ * dots, native-source stars and the hidden-sources toggle. Keyboard-navigable
+ * listbox (arrows + Enter, Escape closes) with proper combobox semantics.
  */
 import type { SourceDto } from '@tanko/shared';
 import type React from 'react';
+import { useEffect, useState } from 'react';
 import type { TFunction } from '../../i18n/index.js';
 import { useI18n } from '../../i18n/index.js';
 import { IconCheck, IconChevronDown, IconEye, IconEyeOff, IconSearch, IconStar } from '../icons.js';
 import { Badge } from '../ui.js';
+
+const LIST_ID = 'source-picker-list';
 
 /** Health status dot shown next to every source label. */
 export function healthDot(health: string | undefined, t: TFunction) {
@@ -26,6 +30,7 @@ export function healthDot(health: string | undefined, t: TFunction) {
 export function SourcePicker({
     sources,
     visibleSources,
+    moreCount,
     currentSource,
     sourceId,
     sourceQuery,
@@ -41,6 +46,8 @@ export function SourcePicker({
 }: {
     sources: SourceDto[];
     visibleSources: SourceDto[];
+    /** Sources matching the filter but hidden by the display cap (> 0 shows a hint). */
+    moreCount: number;
     currentSource: SourceDto | undefined;
     sourceId: string;
     sourceQuery: string;
@@ -56,11 +63,28 @@ export function SourcePicker({
     onToggleShowHidden(): void;
 }) {
     const { t } = useI18n();
+    const [activeIndex, setActiveIndex] = useState(0);
+    // reopen on the current source, reset when the filter narrows the list
+    // biome-ignore lint/correctness/useExhaustiveDependencies: reopen should land on the current selection, not re-run on every list change
+    useEffect(() => {
+        if (comboOpen) {
+            setActiveIndex(
+                Math.max(
+                    0,
+                    visibleSources.findIndex(source => source.id === sourceId)
+                )
+            );
+        }
+    }, [comboOpen]);
+
     return (
         <div className={`relative ${dimmed ? 'opacity-60' : ''}`} ref={comboRef}>
             <button
                 type="button"
                 onClick={onToggle}
+                aria-haspopup="listbox"
+                aria-expanded={comboOpen}
+                aria-controls={comboOpen ? LIST_ID : undefined}
                 className="flex h-10 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm transition-colors hover:border-faint"
             >
                 {currentSource ? (
@@ -82,19 +106,48 @@ export function SourcePicker({
                         <input
                             // biome-ignore lint/a11y/noAutofocus: the combobox search should be focused as soon as it opens
                             autoFocus
+                            role="combobox"
+                            aria-expanded="true"
+                            aria-controls={LIST_ID}
+                            aria-autocomplete="list"
+                            aria-activedescendant={visibleSources[activeIndex] ? `${LIST_ID}-opt-${visibleSources[activeIndex].id}` : undefined}
                             value={sourceQuery}
-                            onChange={event => onQuery(event.target.value)}
+                            onChange={event => {
+                                setActiveIndex(0);
+                                onQuery(event.target.value);
+                            }}
+                            onKeyDown={event => {
+                                if (event.key === 'ArrowDown') {
+                                    event.preventDefault();
+                                    setActiveIndex(index => Math.min(index + 1, visibleSources.length - 1));
+                                } else if (event.key === 'ArrowUp') {
+                                    event.preventDefault();
+                                    setActiveIndex(index => Math.max(index - 1, 0));
+                                } else if (event.key === 'Enter') {
+                                    const source = visibleSources[activeIndex];
+                                    if (source) {
+                                        event.preventDefault();
+                                        onPick(source);
+                                    }
+                                } else if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    onToggle();
+                                }
+                            }}
                             placeholder={t('discover.filterSources')}
                             className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
                         />
                     </div>
-                    <div className="max-h-80 overflow-y-auto">
-                        {visibleSources.map(source => (
+                    <div className="max-h-80 overflow-y-auto" role="listbox" id={LIST_ID} aria-label={t('discover.pickSource')}>
+                        {visibleSources.map((source, index) => (
                             <button
                                 type="button"
                                 key={source.id}
+                                id={`${LIST_ID}-opt-${source.id}`}
+                                role="option"
+                                aria-selected={source.id === sourceId}
                                 onClick={() => onPick(source)}
-                                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-line ${source.id === sourceId ? 'bg-line/70' : ''}`}
+                                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-line ${source.id === sourceId || index === activeIndex ? 'bg-line/70' : ''}`}
                             >
                                 {healthDot(source.health, t)}
                                 <span className="flex-1 truncate">{source.label}</span>
@@ -108,6 +161,7 @@ export function SourcePicker({
                         <span>
                             {showHidden ? t('discover.sourcesCount', { n: sources.length }) : t('discover.sourcesVisible', { n: sources.length - hiddenCount })}
                             {hiddenCount > 0 && ` · ${t('discover.hiddenCount', { n: hiddenCount })}`}
+                            {moreCount > 0 && ` · ${t('discover.sourcePickerMore', { n: moreCount })}`}
                         </span>
                         <button type="button" onClick={onToggleShowHidden} className="flex items-center gap-1.5 text-muted transition-colors hover:text-fg">
                             {showHidden ? (

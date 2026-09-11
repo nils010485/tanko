@@ -48,6 +48,16 @@ export interface MangaDto {
     url?: string;
     thumbnail?: string;
 }
+
+/** Response of GET /api/sources/:sourceId/search: the cards plus the truncation
+ *  signals the UI must be honest about (display cap, preferred-language drops). */
+export interface SourceSearchResponseDto {
+    mangas: MangaDto[];
+    /** Total after dedup, before the display cap (mangas.length < total = truncated). */
+    total: number;
+    /** Titles dropped because they lack a chapter in the preferred languages. */
+    hiddenByLanguage: number;
+}
 export interface ChapterDto {
     sourceId: string;
     mangaId: string;
@@ -77,6 +87,8 @@ export interface GlobalSearchStatusDto {
     total: number;
     completed: number;
     done: boolean;
+    /** True once the dashboard cancelled the job: remaining sources are skipped. */
+    cancelled?: boolean;
     results: GlobalSearchSourceResultDto[];
 }
 
@@ -469,6 +481,10 @@ export type WsEvent =
 
 export interface ApiError {
     error: string;
+    /** Stable machine code (e.g. 'source_error'): the dashboard localizes it. */
+    code?: string;
+    /** Raw technical detail that goes with a code. */
+    message?: string;
     details?: string;
     /** Duplicate-series guard (HTTP 409): the tracked entry this add collided with. */
     existingEntry?: { id: number; title: string; sourceId: string; sourceLabel: string };
