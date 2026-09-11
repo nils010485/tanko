@@ -2,7 +2,7 @@
  * Small shared UI primitives (dark theme, Tailwind).
  * Colors come from the @theme tokens in index.css (accent, surface, line…).
  */
-import { type ButtonHTMLAttributes, type ReactNode, useState } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, type Ref, useState } from 'react';
 import { useI18n } from '../i18n/index.js';
 import { IconChevronDown } from './icons.js';
 
@@ -148,26 +148,33 @@ export function Input({
     value,
     onChange,
     onEnter,
+    onFocus,
     placeholder,
     type = 'text',
     id,
-    className = ''
+    className = '',
+    inputRef
 }: {
     value: string;
     onChange: (value: string) => void;
     onEnter?: () => void;
+    onFocus?: () => void;
     placeholder?: string;
     type?: string;
     id?: string;
     className?: string;
+    /** External focus control (Ctrl+K in Discover). */
+    inputRef?: Ref<HTMLInputElement>;
 }) {
     return (
         <input
             id={id}
+            ref={inputRef}
             type={type}
             value={value}
             placeholder={placeholder}
             onChange={event => onChange(event.target.value)}
+            onFocus={onFocus}
             onKeyDown={event => {
                 if (event.key === 'Enter' && onEnter) {
                     event.preventDefault();

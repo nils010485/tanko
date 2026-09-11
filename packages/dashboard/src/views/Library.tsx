@@ -158,8 +158,9 @@ export default function Library({
 
     const filtered = useMemo(() => {
         const active = FILTER_IDS.filter(id => activeFilters.has(id));
+        const needle = filter.toLowerCase();
         return source
-            .filter(entry => entry.title.toLowerCase().includes(filter.toLowerCase()))
+            .filter(entry => entry.title.toLowerCase().includes(needle) || (entry.aliases ?? []).some(alias => alias.toLowerCase().includes(needle)))
             .filter(entry => active.length === 0 || active.some(id => FILTER_PREDS[id](entry)))
             .sort(SORTERS[sort]);
     }, [source, filter, activeFilters, sort]);

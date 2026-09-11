@@ -109,6 +109,31 @@ describe('GlobalSearchService', () => {
         // the first source consumed the whole deadline: the rest were skipped
         expect(status.results.filter(result => result.status === 'skipped').length).toBeGreaterThanOrEqual(2);
     });
+
+    it('cancel() stops the fan-out and skips the remaining sources', async () => {
+        const targets = ['s1', 's2', 's3', 's4'].map(id => ({ id, label: id, kind: 'legacy' as const }));
+        const adapters = targets.map(target =>
+            fakeAdapter(target.id, async () => {
+                await sleep(80);
+                return [];
+            })
+        );
+        const service = makeService(adapters, targets, { concurrency: 1 });
+        const { jobId } = await service.start('x');
+        expect(service.cancel(jobId)).toBe(true);
+        const status = await waitForDone(service, jobId);
+        expect(status.done).toBe(true);
+        expect(status.cancelled).toBe(true);
+        expect(status.results.filter(result => result.status === 'skipped').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('cancel() on an unknown or finished job returns false', async () => {
+        const service = makeService([fakeAdapter('a', async () => [])], [{ id: 'a', label: 'A', kind: 'legacy' }]);
+        expect(service.cancel(999)).toBe(false);
+        const { jobId } = await service.start('x');
+        await waitForDone(service, jobId);
+        expect(service.cancel(jobId)).toBe(false);
+    });
 });
 
 describe('GlobalSearchService language preference', () => {

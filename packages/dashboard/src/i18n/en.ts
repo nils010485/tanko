@@ -89,10 +89,19 @@ export const en = {
     'discover.statusChecking': 'checking…',
     'discover.statusUntested': 'untested',
     'discover.search': 'Search',
-    'discover.searchPlaceholder': 'Manga or manhwa title…',
+    'discover.searchPlaceholder': 'Manga or manhwa title… (Ctrl+K)',
+    'discover.searchHistory': 'Recent searches',
     'discover.searchButton': 'Search',
+    'discover.searchStop': 'Stop',
+    'discover.resultsTruncated': 'Showing the first {shown} of {total} results',
+    'discover.resultsHiddenByLanguage': '{n} hidden (no chapter in the preferred languages)',
+    'discover.sourcePickerMore': '+{n} more',
+    'discover.viewBySource': 'By source',
+    'discover.viewMerged': 'Merged',
+    'discover.mergedCount': '{n} titles across sources',
+    'discover.alsoOn': 'also on {sources}',
     'discover.scopeSource': 'This source',
-    'discover.scopeGlobal': 'All healthy sources',
+    'discover.scopeGlobal': 'All visible sources',
     'discover.scopeGlobalShort': 'Everywhere',
     'discover.noResults': 'No results',
     'discover.noResultsHint': 'Try another search or another source.',
@@ -132,6 +141,7 @@ export const en = {
     'discover.globalProgress': 'Searching… {done}/{total} sources',
     'discover.globalStop': 'Stop',
     'discover.globalDone': 'Searched {total} source(s)',
+    'discover.globalCancelled': 'Search stopped',
     'discover.globalResultsCount': '{n} result(s)',
     'discover.globalSourceError': 'failed',
     'discover.globalSourceTimeout': 'timed out',
@@ -693,5 +703,8 @@ export const en = {
 
     // shared components
     'ui.retry': 'Retry',
-    'confirm.confirm': 'Confirm'
+    'confirm.confirm': 'Confirm',
+
+    // coded server errors (apiErrorText)
+    'errors.sourceError': 'The source did not respond correctly'
 };

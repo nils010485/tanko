@@ -36,6 +36,8 @@ interface GlobalSearchJob {
     id: number;
     query: string;
     done: boolean;
+    /** Set by cancel(): workers stop pulling targets, remaining ones are skipped. */
+    cancelled?: boolean;
     targets: GlobalSearchTarget[];
     results: GlobalSearchSourceResultDto[];
 }
@@ -81,8 +83,19 @@ export class GlobalSearchService {
             total: job.targets.length,
             completed: job.results.length,
             done: job.done,
+            cancelled: job.cancelled || undefined,
             results: [...job.results]
         };
+    }
+
+    /** Stop a running job: in-flight source searches finish, the rest is skipped. */
+    cancel(jobId: number): boolean {
+        const job = this.jobs.get(jobId);
+        if (!job || job.done) {
+            return false;
+        }
+        job.cancelled = true;
+        return true;
     }
 
     private async _run(job: GlobalSearchJob): Promise<void> {
@@ -93,7 +106,7 @@ export class GlobalSearchService {
         const pending = [...job.targets].sort((a, b) => Number(b.kind === 'native') - Number(a.kind === 'native'));
         const worker = async (): Promise<void> => {
             for (;;) {
-                if (Date.now() >= deadline) {
+                if (Date.now() >= deadline || job.cancelled) {
                     return;
                 }
                 const target = pending.shift();

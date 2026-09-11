@@ -10,9 +10,9 @@ import { ChaptersModal, DuplicateDialog, FollowDialog, GlobalResults, healthDot,
 import { IconAlert, IconEyeOff, IconGitHub, IconGlobe, IconRefresh, IconSearch, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle, Spinner } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
-import { api, RequestError } from '../lib/api.js';
+import { api, apiErrorText, RequestError } from '../lib/api.js';
 import { useEscapeKey, useUnmounted } from '../lib/hooks.js';
 import { pollUntil } from '../lib/poll.js';
 import { sourceRank, statusLabel } from '../lib/sources.js';
@@ -22,6 +22,51 @@ import { sourceRank, statusLabel } from '../lib/sources.js';
 function mangaUrlOf(manga: MangaDto): string | undefined {
     return manga.url || (typeof manga.id === 'string' && manga.id.startsWith('http') ? manga.id : undefined);
 }
+
+/** Remembered "last used source" for the next visit (see the initial pick below). */
+const LAST_SOURCE_KEY = 'tanko.discover.sourceId';
+/** Recent committed searches, shown as suggestions under the query input. */
+const HISTORY_KEY = 'tanko.discover.history';
+
+function rememberSource(id: string) {
+    try {
+        localStorage.setItem(LAST_SOURCE_KEY, id);
+    } catch {
+        // storage unavailable (private mode & co): the pick stays session-only
+    }
+}
+
+function loadHistory(): string[] {
+    try {
+        const raw: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]');
+        return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string').slice(0, 10) : [];
+    } catch {
+        return [];
+    }
+}
+
+function recordHistory(query: string): string[] {
+    const next = [query, ...loadHistory().filter(item => item !== query)].slice(0, 10);
+    try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    } catch {
+        // private mode & co: keep the session list only
+    }
+    return next;
+}
+
+function decodeHashQuery(raw: string): string {
+    try {
+        return decodeURIComponent(raw);
+    } catch {
+        return '';
+    }
+}
+
+/** Keep the query in the hash so a search is shareable (#/discover?q=…) without polluting the history. */
+const syncSearchUrl = (query: string) => {
+    window.history.replaceState(null, '', query ? `#/discover?q=${encodeURIComponent(query)}` : '#/discover');
+};
 
 /** Injected by vite at build time from package.json (see vite.config.ts). */
 declare const __APP_VERSION__: string;
@@ -45,6 +90,8 @@ export default function Discover({
 
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<MangaDto[] | null>(null);
+    /** Truncation signals of the last single-source search (display cap, language drops). */
+    const [resultMeta, setResultMeta] = useState<{ total: number; hiddenByLanguage: number } | null>(null);
     const [searching, setSearching] = useState(false);
     const [searchError, setSearchError] = useState('');
     const [globalStatus, setGlobalStatus] = useState<GlobalSearchStatusDto | null>(null);
@@ -52,7 +99,19 @@ export default function Discover({
     const [globalError, setGlobalError] = useState('');
     // lifted (not inside GlobalResults): the component unmounts between searches and must keep its open/collapsed state
     const [showMisses, setShowMisses] = useState(false);
-    const globalStopped = useRef(false);
+    /** Generation counter for global searches: a run only touches the state while its generation is current (stop, replace, unmount bump it). */
+    const globalSeq = useRef(0);
+    /** Id of the running global-search job (null = none), cancelled on stop/replace/unmount. */
+    const globalJobId = useRef<number | null>(null);
+    /** Ignore single-source responses that resolve after a newer search replaced them. */
+    const searchSeq = useRef(0);
+    /** Aborts the in-flight single-source fetch (stop button, replace, unmount). */
+    const searchAbort = useRef<AbortController | null>(null);
+    /** Recent committed searches (suggestions) and the query-input focus state. */
+    const [history, setHistory] = useState<string[]>(() => loadHistory());
+    const [suggestOpen, setSuggestOpen] = useState(false);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchWrapRef = useRef<HTMLDivElement>(null);
     const [selected, setSelected] = useState<MangaDto | null>(null);
     const [chapters, setChapters] = useState<ChapterDto[] | null>(null);
     const [chaptersError, setChaptersError] = useState('');
@@ -77,27 +136,69 @@ export default function Discover({
         setPreview(null);
     };
 
+    // Ctrl+K / Cmd+K focuses the search input from anywhere in the view
+    useEffect(() => {
+        const onKey = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                searchInputRef.current?.focus();
+                setSuggestOpen(true);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, []);
+
     const refreshSources = useCallback(async () => {
         const list = await api.sources();
         setSources(list);
         return list;
     }, []);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only deep-link run; runSearch would retrigger it
     useEffect(() => {
         refreshSources()
             .then(list => {
                 const visible = list.filter(source => !source.hidden);
+                const lastUsed = localStorage.getItem(LAST_SOURCE_KEY);
                 const preferred =
-                    visible.find(source => source.id === 'toonily') ||
+                    visible.find(source => source.id === lastUsed) ||
                     visible.find(source => source.kind === 'native') ||
                     visible.find(source => source.health === 'ok') ||
                     visible[0];
+                // deep-link #/discover?q=…: prefill and run once a source is picked
+                const hashQuery = /[?&]q=([^&]*)/.exec(window.location.hash);
+                const urlQuery = hashQuery ? decodeHashQuery(hashQuery[1] ?? '').trim() : '';
+                if (urlQuery) {
+                    setQuery(urlQuery);
+                    setHistory(recordHistory(urlQuery));
+                }
                 if (preferred) {
                     setSourceId(preferred.id);
+                    if (urlQuery) {
+                        void runSearch(urlQuery, preferred.id);
+                    }
                 }
             })
             .catch((error: unknown) => toast.error((error as Error).message));
     }, [refreshSources, toast]);
+
+    // pre-mark series already in the library: cards show "In library" right away
+    // instead of the user discovering it through a 409 on follow
+    useEffect(() => {
+        void Promise.all([api.library(), api.library(true)])
+            .then(([visible, hidden]) => {
+                setAdded(current => {
+                    const next = new Map(current);
+                    for (const entry of [...visible, ...hidden]) {
+                        next.set(`${entry.sourceId}:${entry.mangaId}`, entry.id);
+                    }
+                    return next;
+                });
+            })
+            .catch(() => undefined);
+    }, []);
+
     // rolling health re-checks push sources.updated — refresh the statuses live
     const seenSourcesVersion = useRef(sourcesVersion);
     useEffect(() => {
@@ -107,23 +208,32 @@ export default function Discover({
         seenSourcesVersion.current = sourcesVersion;
         void refreshSources().catch(() => undefined);
     }, [sourcesVersion, refreshSources]);
-
-    // close the combobox when clicking outside
+    // close the combobox / the suggestions when clicking outside
     useEffect(() => {
         const onClick = (event: MouseEvent) => {
             if (comboRef.current && !comboRef.current.contains(event.target as Node)) {
                 setComboOpen(false);
+            }
+            if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) {
+                setSuggestOpen(false);
             }
         };
         document.addEventListener('mousedown', onClick);
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
 
-    // stop the global-search polling loop when the view unmounts
+    // stop the global-search polling loop and the server-side fan-out on unmount
+    // biome-ignore lint/correctness/useExhaustiveDependencies: unmount-only cleanup; the helpers read refs
     useEffect(() => {
-        globalStopped.current = false;
         return () => {
-            globalStopped.current = true;
+            ++globalSeq.current;
+            if (globalJobId.current !== null) {
+                cancelGlobalJob();
+            }
+            searchAbort.current?.abort();
+            if (incrementalTimer.current !== null) {
+                clearTimeout(incrementalTimer.current);
+            }
         };
     }, []);
     // close the chapters / page-preview / follow dialogs with Escape
@@ -136,12 +246,13 @@ export default function Discover({
     }, []);
     useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null || duplicate !== null);
 
-    const visibleSources = useMemo(() => {
+    const matchingSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);
         const needle = sourceQuery.trim().toLowerCase();
         const filtered = needle ? base.filter(source => source.label.toLowerCase().includes(needle) || source.id.toLowerCase().includes(needle)) : base;
-        return [...filtered].sort((a, b) => sourceRank(a) - sourceRank(b) || a.label.localeCompare(b.label)).slice(0, 40);
+        return [...filtered].sort((a, b) => sourceRank(a) - sourceRank(b) || a.label.localeCompare(b.label));
     }, [sources, sourceQuery, showHidden]);
+    const visibleSources = useMemo(() => matchingSources.slice(0, 40), [matchingSources]);
 
     const currentSource = sources.find(source => source.id === sourceId);
     const hiddenCount = sources.filter(source => source.hidden).length;
@@ -174,67 +285,205 @@ export default function Discover({
         }
     };
 
-    const runSearch = async () => {
-        if (!sourceId || !query.trim()) return;
-        globalStopped.current = true; // a single-source search replaces the global one
+    /** Cancel the server-side global-search job, if one is running. */
+    const cancelGlobalJob = () => {
+        const jobId = globalJobId.current;
+        if (jobId !== null) {
+            globalJobId.current = null;
+            void api.cancelGlobalSearch(jobId).catch(() => undefined);
+        }
+    };
+
+    const runSearch = async (explicitQuery?: string, explicitSourceId?: string) => {
+        const searched = (explicitQuery ?? query).trim();
+        const searchedSource = explicitSourceId ?? sourceId;
+        if (!searchedSource || !searched) return;
+        ++globalSeq.current; // a single-source search replaces the global one
+        cancelGlobalJob();
+        setGlobalSearching(false);
         setGlobalStatus(null);
         setGlobalError('');
+        searchAbort.current?.abort();
+        const controller = new AbortController();
+        searchAbort.current = controller;
+        const seq = ++searchSeq.current;
         setSearching(true);
         setSearchError('');
         setResults(null);
+        setResultMeta(null);
         setSelected(null);
         setChapters(null);
         try {
-            setResults(await api.search(sourceId, query.trim()));
+            const { mangas, total, hiddenByLanguage } = await api.search(searchedSource, searched, controller.signal);
+            if (seq !== searchSeq.current) return; // a newer search replaced this one
+            setResults(mangas);
+            setResultMeta({ total, hiddenByLanguage });
         } catch (error) {
-            setSearchError((error as Error).message);
+            if (seq !== searchSeq.current) return; // aborted or replaced: not an error to show
+            setSearchError(apiErrorText(error, t));
         } finally {
-            setSearching(false);
+            if (seq === searchSeq.current) {
+                setSearching(false);
+            }
         }
     };
 
     // global (all visible sources) search: start then poll; sources answer as
     // their cache/endpoint allows and groups render progressively
-    const runGlobalSearch = async () => {
-        if (globalSearching || !query.trim()) return;
-        globalStopped.current = false;
+    const runGlobalSearch = async (explicitQuery?: string) => {
+        const searched = (explicitQuery ?? query).trim();
+        if (globalSearching || !searched) return;
+        const run = ++globalSeq.current;
+        searchAbort.current?.abort(); // the global search replaces an in-flight single-source one
+        ++searchSeq.current; // …which must not reset the state when its fetch aborts
+        setSearching(false);
         setGlobalSearching(true);
         setGlobalError('');
         setGlobalStatus(null);
         setSearchError('');
         setResults(null);
+        setResultMeta(null);
         setSelected(null);
         setChapters(null);
         try {
-            const { jobId } = await api.searchAll(query.trim());
+            const { jobId } = await api.searchAll(searched);
+            globalJobId.current = jobId;
+            if (run !== globalSeq.current) {
+                cancelGlobalJob(); // stopped or replaced while starting
+                return;
+            }
+            let pollFailures = 0;
             for (;;) {
                 await new Promise(resolve => setTimeout(resolve, 1200));
-                if (globalStopped.current) {
+                if (run !== globalSeq.current) {
                     return;
                 }
-                // 404 = the server purged the job (restart): keep what we have
-                const status = await api.globalSearch(jobId).catch(() => null);
-                if (!status) {
-                    return;
+                let status: GlobalSearchStatusDto | null = null;
+                try {
+                    status = await api.globalSearch(jobId);
+                    pollFailures = 0;
+                } catch (error) {
+                    // 404 = the server purged the job (restart): keep what we have
+                    if (error instanceof RequestError && error.status === 404) {
+                        return;
+                    }
+                    // network hiccup: tolerate a few, then stop and surface it
+                    if (++pollFailures >= 3) {
+                        setGlobalError(apiErrorText(error, t));
+                        return;
+                    }
                 }
-                setGlobalStatus(status);
-                if (status.done) {
-                    return;
+                if (status) {
+                    setGlobalStatus(status);
+                    if (status.done) {
+                        return;
+                    }
                 }
             }
         } catch (error) {
-            setGlobalError((error as Error).message);
+            if (run === globalSeq.current) {
+                setGlobalError(apiErrorText(error, t));
+            }
         } finally {
-            setGlobalSearching(false);
+            if (run === globalSeq.current) {
+                globalJobId.current = null;
+                setGlobalSearching(false);
+            }
         }
     };
 
     const stopGlobalSearch = () => {
-        globalStopped.current = true;
+        ++globalSeq.current; // the polling loop stops on the next tick without touching the state
+        cancelGlobalJob(); // really stop the server-side fan-out, not just the polling
         setGlobalSearching(false);
+        // no further poll will run: flag the visible snapshot ourselves
+        setGlobalStatus(current => (current ? { ...current, cancelled: true } : current));
+    };
+
+    const stopSourceSearch = () => {
+        ++searchSeq.current; // the aborted runSearch must not touch the state anymore
+        searchAbort.current?.abort();
+        searchAbort.current = null;
+        setSearching(false);
+    };
+
+    // the stop button is shown while either search runs: stop what actually runs,
+    // not what the scope toggle currently points at
+    const stopSearch = () => {
+        if (searching) {
+            stopSourceSearch();
+        }
+        if (globalSearching) {
+            stopGlobalSearch();
+        }
     };
 
     const runScopedSearch = scope === 'global' ? runGlobalSearch : runSearch;
+
+    /** Pending debounced incremental search (see onQueryInput). */
+    const incrementalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cancelIncremental = () => {
+        if (incrementalTimer.current !== null) {
+            clearTimeout(incrementalTimer.current);
+            incrementalTimer.current = null;
+        }
+    };
+    // incremental search: typing in "this source" scope auto-searches after a
+    // short debounce (explicitQuery keeps the freshest value, not the stale
+    // state closure); the global fan-out stays explicit (Enter only)
+    const onQueryInput = (value: string) => {
+        setQuery(value);
+        cancelIncremental();
+        if (!value.trim()) {
+            syncSearchUrl('');
+        }
+        if (scope === 'source' && sourceId && value.trim().length >= 2) {
+            incrementalTimer.current = setTimeout(() => {
+                incrementalTimer.current = null;
+                void runSearch(value);
+            }, 400);
+        }
+    };
+    const runScopedSearchNow = () => {
+        cancelIncremental();
+        const committed = query.trim();
+        if (committed) {
+            setHistory(recordHistory(committed));
+            syncSearchUrl(committed);
+        }
+        runScopedSearch();
+    };
+    const runFromSuggestion = (value: string) => {
+        setSuggestOpen(false);
+        setQuery(value);
+        cancelIncremental();
+        setHistory(recordHistory(value));
+        syncSearchUrl(value);
+        // the explicit value avoids the stale-state closure in both scopes (runGlobalSearch also reads `query`)
+        void (scope === 'global' ? runGlobalSearch(value) : runSearch(value));
+    };
+
+    const suggestions = useMemo(() => {
+        const needle = query.trim().toLowerCase();
+        const list = needle ? history.filter(item => item.toLowerCase().includes(needle) && item.toLowerCase() !== needle) : history;
+        return list.slice(0, 6);
+    }, [history, query]);
+
+    // honesty note above the results grid: display cap + preferred-language drops
+    const truncationNote = useMemo(() => {
+        const total = resultMeta?.total ?? 0;
+        const hidden = resultMeta?.hiddenByLanguage ?? 0;
+        if (!results || results.length === 0 || (total <= results.length && hidden <= 0)) {
+            return null;
+        }
+        return (
+            <p className="mb-3 text-xs text-faint">
+                {total > results.length ? t('discover.resultsTruncated', { shown: results.length, total }) : null}
+                {total > results.length && hidden > 0 ? ' · ' : null}
+                {hidden > 0 ? t('discover.resultsHiddenByLanguage', { n: hidden }) : null}
+            </p>
+        );
+    }, [results, resultMeta, t]);
 
     const openChapters = async (manga: MangaDto) => {
         setSelected(manga);
@@ -244,7 +493,7 @@ export default function Discover({
             setChapters(await api.chapters(manga.sourceId, manga.id, manga.title));
         } catch (error) {
             setChapters([]);
-            setChaptersError((error as Error).message);
+            setChaptersError(apiErrorText(error, t));
         }
     };
 
@@ -414,36 +663,61 @@ export default function Discover({
                     <SourcePicker
                         sources={sources}
                         visibleSources={visibleSources}
+                        moreCount={matchingSources.length - visibleSources.length}
                         currentSource={currentSource}
                         sourceId={sourceId}
                         sourceQuery={sourceQuery}
                         comboOpen={comboOpen}
                         showHidden={showHidden}
                         hiddenCount={hiddenCount}
-                        dimmed={scope === 'global'}
-                        comboRef={comboRef}
                         onToggle={() => {
                             setComboOpen(open => !open);
                             setSourceQuery('');
                         }}
                         onQuery={setSourceQuery}
+                        dimmed={scope === 'global'}
+                        comboRef={comboRef}
                         onPick={source => {
                             setSourceId(source.id);
+                            rememberSource(source.id);
                             setComboOpen(false);
                             setScope('source');
                         }}
                         onToggleShowHidden={() => setShowHidden(value => !value)}
                     />
 
-                    <div className="relative min-w-56 flex-1">
+                    <div className="relative min-w-56 flex-1" ref={searchWrapRef}>
                         <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
                         <Input
                             className="w-full pl-9"
                             value={query}
-                            onChange={setQuery}
-                            onEnter={runScopedSearch}
+                            onChange={onQueryInput}
+                            onEnter={runScopedSearchNow}
                             placeholder={t('discover.searchPlaceholder')}
+                            inputRef={searchInputRef}
+                            onFocus={() => setSuggestOpen(true)}
                         />
+                        {suggestOpen && suggestions.length > 0 && (
+                            <div
+                                role="listbox"
+                                aria-label={t('discover.searchHistory')}
+                                className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-line bg-card shadow-xl shadow-black/40"
+                            >
+                                {suggestions.map(item => (
+                                    <button
+                                        key={item}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={false}
+                                        onClick={() => runFromSuggestion(item)}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-line"
+                                    >
+                                        <IconSearch size={13} className="flex-none text-faint" />
+                                        <span className="truncate">{item}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* scope: this source vs everywhere — compact segmented control */}
@@ -466,16 +740,27 @@ export default function Discover({
                         </button>
                     </div>
 
-                    {/* compact icon button — Enter in the input also runs the search */}
-                    <button
-                        type="button"
-                        onClick={runScopedSearch}
-                        disabled={!query.trim() || (scope === 'source' && !sourceId) || searching || globalSearching}
-                        title={t('discover.searchButton')}
-                        className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent text-canvas transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        {searching || globalSearching ? <Spinner size={15} /> : <IconSearch size={16} />}
-                    </button>
+                    {/* compact icon button — search, or stop while one is running (Enter also runs the search) */}
+                    {searching || globalSearching ? (
+                        <button
+                            type="button"
+                            onClick={stopSearch}
+                            title={t('discover.searchStop')}
+                            className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-red-500/80 text-canvas transition-colors hover:bg-red-500"
+                        >
+                            <IconX size={16} />
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={runScopedSearchNow}
+                            disabled={!query.trim() || (scope === 'source' && !sourceId)}
+                            title={t('discover.searchButton')}
+                            className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent text-canvas transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <IconSearch size={16} />
+                        </button>
+                    )}
                 </div>
 
                 {currentSource && scope === 'source' && (
@@ -511,23 +796,26 @@ export default function Discover({
 
             {results && results.length === 0 && <EmptyState title={t('discover.noResults')} hint={t('discover.noResultsHint')} />}
             {results && results.length > 0 && (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {results.map(manga => {
-                        const key = `${manga.sourceId}:${manga.id}`;
-                        return (
-                            <MangaResultCard
-                                key={key}
-                                manga={manga}
-                                sourceLabel={currentSource?.label ?? manga.sourceId}
-                                isAdded={added.has(key)}
-                                isAdding={addingKey === key}
-                                followDisabled={addingKey !== null}
-                                onChapters={openChapters}
-                                onFollow={openFollowChoice}
-                            />
-                        );
-                    })}
-                </div>
+                <>
+                    {truncationNote}
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {results.map(manga => {
+                            const key = `${manga.sourceId}:${manga.id}`;
+                            return (
+                                <MangaResultCard
+                                    key={key}
+                                    manga={manga}
+                                    sourceLabel={currentSource?.label ?? manga.sourceId}
+                                    isAdded={added.has(key)}
+                                    isAdding={addingKey === key}
+                                    followDisabled={addingKey !== null}
+                                    onChapters={openChapters}
+                                    onFollow={openFollowChoice}
+                                />
+                            );
+                        })}
+                    </div>
+                </>
             )}
 
             {globalError && (

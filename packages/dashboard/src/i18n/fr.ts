@@ -89,10 +89,19 @@ export const fr: typeof import('./en.js').en = {
     'discover.statusChecking': 'vérification…',
     'discover.statusUntested': 'non testée',
     'discover.search': 'Recherche',
-    'discover.searchPlaceholder': 'Titre du manga ou manhwa…',
+    'discover.searchPlaceholder': 'Titre du manga ou manhwa… (Ctrl+K)',
+    'discover.searchHistory': 'Recherches récentes',
     'discover.searchButton': 'Rechercher',
+    'discover.searchStop': 'Arrêter',
+    'discover.resultsTruncated': '{shown} premiers résultats sur {total}',
+    'discover.resultsHiddenByLanguage': '{n} masqué(s) (aucun chapitre dans les langues préférées)',
+    'discover.sourcePickerMore': '+{n} autres',
+    'discover.viewBySource': 'Par source',
+    'discover.viewMerged': 'Fusionnés',
+    'discover.mergedCount': '{n} titres toutes sources confondues',
+    'discover.alsoOn': 'aussi sur {sources}',
     'discover.scopeSource': 'Cette source',
-    'discover.scopeGlobal': 'Toutes les sources saines',
+    'discover.scopeGlobal': 'Toutes les sources visibles',
     'discover.scopeGlobalShort': 'Partout',
     'discover.noResults': 'Aucun résultat',
     'discover.noResultsHint': 'Essayez une autre recherche ou une autre source.',
@@ -132,6 +141,7 @@ export const fr: typeof import('./en.js').en = {
     'discover.globalProgress': 'Recherche… {done}/{total} sources',
     'discover.globalStop': 'Arrêter',
     'discover.globalDone': '{total} source(s) interrogée(s)',
+    'discover.globalCancelled': 'Recherche interrompue',
     'discover.globalResultsCount': '{n} résultat(s)',
     'discover.globalSourceError': 'échec',
     'discover.globalSourceTimeout': 'expirée',
@@ -697,5 +707,8 @@ export const fr: typeof import('./en.js').en = {
 
     // shared components
     'ui.retry': 'Réessayer',
-    'confirm.confirm': 'Confirmer'
+    'confirm.confirm': 'Confirmer',
+
+    // coded server errors (apiErrorText)
+    'errors.sourceError': "La source n'a pas répondu correctement"
 };
