@@ -196,6 +196,10 @@ export interface LibraryChapterDto {
     /** The matching download job exhausted its fast retry ladder: automatic
      *  retries continue on the slow revalidation tier (at most one per week). */
     retryExhausted?: boolean;
+    /** A matching failed download job still exists: either retry tier may
+     *  requeue it automatically. Absent when no job exists (migration
+     *  rollback, cleared history) — nothing retries it on its own. */
+    retryPlanned?: boolean;
 }
 
 export interface DeadSeriesDto {

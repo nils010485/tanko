@@ -304,6 +304,7 @@ export const fr: typeof import('./en.js').en = {
     'library.chapterStatus.lost': 'retiré',
     'library.chapterLostHint': 'Retiré de la source — aucun réessai automatique ; migrez la série ou réessayez manuellement',
     'library.chapterExhaustedHint': 'Réessais automatiques espacés en cours (au plus un par semaine) — le bouton réessaie immédiatement',
+    'library.chapterNoRetryHint': 'Aucun réessai automatique prévu (job supprimé ou migration annulée) — relancez manuellement',
     'library.localOnlyChapter': 'local',
     'library.localOnlyChapterHint': 'Fichier présent sur le disque sans chapitre correspondant sur la source',
 
@@ -349,6 +350,12 @@ export const fr: typeof import('./en.js').en = {
     'series.aliasFetched': '{n} nom(s) trouvés sur AniList',
     'series.aliasFetchEmpty': 'Aucune correspondance sur AniList.',
     'series.incompleteBadge': 'seulement {n} chapitres sur cette source',
+    'series.recoveryActiveTitle': 'Récupération en cours',
+    'series.recoveryActiveBody':
+        '{n} chapitre(s) en échec — Tanko réessaie automatiquement : les sources en panne se rétablissent ou sont remplacées. Aucune action nécessaire.',
+    'series.recoveryScheduledTitle': 'Réessais automatiques espacés',
+    'series.recoveryScheduledBody':
+        '{n} chapitre(s) en échec persistant — réessai automatique au plus une fois par semaine. Le bouton de téléchargement d’un chapitre réessaie immédiatement.',
 
     // downloads
     'downloads.title': 'Téléchargements',

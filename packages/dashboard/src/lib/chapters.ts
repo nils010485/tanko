@@ -32,11 +32,19 @@ export function chapterStatusKey(chapter: LibraryChapterDto): `library.chapterSt
 }
 
 /** Tooltip key explaining a non-obvious chapter state (no tooltip otherwise). */
-export function chapterStatusHint(chapter: LibraryChapterDto): 'library.chapterLostHint' | 'library.chapterExhaustedHint' | undefined {
+export function chapterStatusHint(
+    chapter: LibraryChapterDto
+): 'library.chapterLostHint' | 'library.chapterExhaustedHint' | 'library.chapterNoRetryHint' | undefined {
     if (chapter.status === 'lost') {
         return 'library.chapterLostHint';
     }
-    return chapter.status === 'failed' && chapter.retryExhausted ? 'library.chapterExhaustedHint' : undefined;
+    if (chapter.status !== 'failed') {
+        return undefined;
+    }
+    if (chapter.retryExhausted) {
+        return 'library.chapterExhaustedHint';
+    }
+    return chapter.retryPlanned ? undefined : 'library.chapterNoRetryHint';
 }
 
 /** i18n key describing a re-match outcome (extra interpolation params are ignored). */
