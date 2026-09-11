@@ -14,6 +14,7 @@ import {
     ChevronDown,
     ChevronLeft,
     ChevronRight,
+    Clock,
     Download,
     Ellipsis,
     Eye,
@@ -63,6 +64,7 @@ function filled(Icon: IconComponent) {
 }
 
 export const IconSearch = decorative(Search);
+export const IconClock = decorative(Clock);
 export const IconGlobe = decorative(Globe);
 export const IconSquare = decorative(Square);
 export const IconLibrary = decorative(Book);

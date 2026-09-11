@@ -348,14 +348,22 @@ export function rollbackChapter(ctx: StoreContext, entryId: number, chapterId: s
 export function listChapters(ctx: StoreContext, entryId: number): LibraryChapterDto[] {
     // the download-jobs join is optional: the store can run standalone
     // (tests, queue-less deployments) before the queue creates its table
+    // retry_planned: a matching failed job exists at all, so either sweep
+    // tier may still requeue it. retry_exhausted: that job already sits on
+    // the slow revalidation tier. No job at all (migration rollback, cleared
+    // history) → neither flag: the UI must not promise retries that nothing
+    // will pick up.
     const jobsJoin = jobsTableExists(ctx)
         ? `,
                 EXISTS(SELECT 1 FROM download_jobs j
                        WHERE j.entry_id = c.entry_id AND j.chapter_id = c.chapter_id
                          AND j.status = 'failed' AND j.auto_retries >= ${AUTO_RETRY_MAX}
-                         AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)) AS retry_exhausted`
-        : ', 0 AS retry_exhausted';
-    const rows = ctx.q.all<ChapterRow & { history_count: number; retry_exhausted: number }>(
+                         AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)) AS retry_exhausted,
+                EXISTS(SELECT 1 FROM download_jobs j
+                       WHERE j.entry_id = c.entry_id AND j.chapter_id = c.chapter_id
+                         AND j.status = 'failed') AS retry_planned`
+        : ', 0 AS retry_exhausted, 0 AS retry_planned';
+    const rows = ctx.q.all<ChapterRow & { history_count: number; retry_exhausted: number; retry_planned: number }>(
         `SELECT c.*,
                 (SELECT COUNT(*) FROM chapter_history h WHERE h.entry_id = c.entry_id AND h.chapter_id = c.chapter_id) AS history_count${jobsJoin}
          FROM library_chapters c WHERE entry_id = ? ORDER BY discovered_at DESC, id DESC`,
@@ -373,7 +381,8 @@ export function listChapters(ctx: StoreContext, entryId: number): LibraryChapter
         discoveredAt: row.discovered_at,
         downloadedAt: row.downloaded_at || undefined,
         historyCount: Number(row.history_count || 0),
-        retryExhausted: row.retry_exhausted === 1 || undefined
+        retryExhausted: row.retry_exhausted === 1 || undefined,
+        retryPlanned: row.retry_planned === 1 || undefined
     }));
 }
 

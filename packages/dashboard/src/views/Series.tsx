@@ -11,6 +11,7 @@ import { ConfirmDialog } from '../components/confirm.js';
 import {
     IconArrowLeft,
     IconArrowLeftRight,
+    IconClock,
     IconDownload,
     IconEye,
     IconGlobe,
@@ -47,6 +48,39 @@ const CHAPTERS_SORT_KEY = 'tanko.series.chaptersSort';
 type ChapterSort = 'asc' | 'desc';
 const readChapterSort = (): ChapterSort => (localStorage.getItem(CHAPTERS_SORT_KEY) === 'desc' ? 'desc' : 'asc');
 
+interface RecoveryBannerProps {
+    /** Failed chapters whose fast retry ladder still runs. */
+    retrying: number;
+    /** Failed chapters handed to the weekly revalidation tier. */
+    exhausted: number;
+}
+
+/** Failed-chapter recovery banner: blue "still working" while the fast retry
+ *  ladder runs, a calmer neutral notice once the weekly revalidation tier
+ *  took over (the orange tone stays reserved for actionable banners). */
+function RecoveryBanner({ retrying, exhausted }: RecoveryBannerProps) {
+    const { t } = useI18n();
+    if (retrying > 0) {
+        return (
+            <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs">
+                <IconRefresh size={14} className="mt-0.5 flex-none text-sky-400" />
+                <div>
+                    <div className="font-semibold text-sky-400">{t('series.recoveryActiveTitle')}</div>
+                    <div className="text-muted">{t('series.recoveryActiveBody', { n: retrying + exhausted })}</div>
+                </div>
+            </div>
+        );
+    }
+    return (
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-white/5 px-3 py-2 text-xs">
+            <IconClock size={14} className="mt-0.5 flex-none text-faint" />
+            <div>
+                <div className="font-semibold text-fg">{t('series.recoveryScheduledTitle')}</div>
+                <div className="text-muted">{t('series.recoveryScheduledBody', { n: exhausted })}</div>
+            </div>
+        </div>
+    );
+}
 export default function Series({
     entryId,
     library,
@@ -129,13 +163,17 @@ export default function Series({
         void loadChapters();
     }, [loadChapters]);
 
-    // poll while a chapter of this series is in flight so statuses follow job completions
+    // poll while a chapter is in flight (4 s), or a failed one still has
+    // fast-ladder retries pending (30 s — a requeue can only land at a
+    // backoff slot); a paused entry freezes retries, so no polling either
     const jobsActive = chapters?.some(chapter => chapter.status === 'queued' || chapter.status === 'downloading') ?? false;
+    const failedRetrying = chapters?.filter(chapter => chapter.status === 'failed' && chapter.retryPlanned && !chapter.retryExhausted).length ?? 0;
+    const retriesFrozen = entry?.paused ?? false;
     useEffect(() => {
-        if (!jobsActive) return;
-        const timer = setInterval(() => void loadChapters(), 4000);
+        if (!jobsActive && (retriesFrozen || failedRetrying === 0)) return;
+        const timer = setInterval(() => void loadChapters(), jobsActive ? 4000 : 30000);
         return () => clearInterval(timer);
-    }, [jobsActive, loadChapters]);
+    }, [jobsActive, retriesFrozen, failedRetrying, loadChapters]);
 
     useEscapeKey(closePreview, preview !== null);
     useEscapeKey(() => setPicker(current => ({ ...current, open: false })), picker.open);
@@ -347,6 +385,7 @@ export default function Series({
             await api.setPaused(entryId, !entry?.paused);
             toast.success(t(entry?.paused ? 'library.resumedToast' : 'library.pausedToast', { title: entry?.title ?? '' }));
             await refreshLibrary();
+            await loadChapters(); // unpausing unfreezes retries: re-read the tiers instead of waiting for a poll tick
         } catch (error) {
             toast.error((error as Error).message);
         }
@@ -423,6 +462,7 @@ export default function Series({
 
     const missingOnly = chapters?.filter(chapter => chapter.status === 'missing').length ?? 0;
     const failedCount = chapters?.filter(chapter => chapter.status === 'failed').length ?? 0;
+    const failedExhausted = chapters?.filter(chapter => chapter.status === 'failed' && chapter.retryExhausted).length ?? 0;
     // the single Sonarr-style action grabs everything not on disk yet
     const pendingCount = (chapters?.filter(chapter => chapter.status === 'new').length ?? 0) + missingOnly + failedCount;
 
@@ -525,6 +565,8 @@ export default function Series({
                     </div>
                 </div>
             </Card>
+            {/* a paused entry freezes retries — the banner must not promise anything */}
+            {failedCount > 0 && !entry.paused && <RecoveryBanner retrying={failedRetrying} exhausted={failedExhausted} />}
 
             {entry.migrationSuggestion && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs">

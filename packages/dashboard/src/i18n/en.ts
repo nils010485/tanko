@@ -303,6 +303,7 @@ export const en = {
     'library.chapterStatus.lost': 'removed',
     'library.chapterLostHint': 'No longer listed by the source — no automatic retry; migrate the series or retry manually',
     'library.chapterExhaustedHint': 'Slow automatic retries in progress (at most one per week) — the button retries now',
+    'library.chapterNoRetryHint': 'No automatic retry planned (job removed or migration rolled back) — retry manually',
     'library.localOnlyChapter': 'local',
     'library.localOnlyChapterHint': 'File on disk with no matching chapter on the source',
 
@@ -348,6 +349,11 @@ export const en = {
     'series.aliasFetched': '{n} name(s) found on AniList',
     'series.aliasFetchEmpty': 'No match on AniList.',
     'series.incompleteBadge': 'only {n} chapters on this source',
+    'series.recoveryActiveTitle': 'Recovery in progress',
+    'series.recoveryActiveBody': '{n} failed chapter(s) — Tanko keeps retrying automatically: down sources recover or get replaced. Nothing to do.',
+    'series.recoveryScheduledTitle': 'Sparse automatic retries',
+    'series.recoveryScheduledBody':
+        '{n} chapter(s) in persistent failure — automatic retries continue at most once a week. A chapter’s download button retries immediately.',
 
     // downloads
     'downloads.title': 'Downloads',
