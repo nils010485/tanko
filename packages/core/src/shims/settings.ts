@@ -54,15 +54,25 @@ export class HeadlessSettings extends EventTarget {
     }
 
     load(): void {
+        let raw: string | undefined;
         try {
-            const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-            for (const key of Object.keys(data)) {
-                if (isSettingEntry(this[key])) {
-                    this[key].value = data[key];
-                }
-            }
+            raw = fs.readFileSync(this.file, 'utf8');
         } catch {
-            /* no persisted settings yet */
+            /* no persisted settings yet — defaults apply */
+        }
+        if (raw !== undefined) {
+            try {
+                const data = JSON.parse(raw) as Record<string, unknown>;
+                for (const key of Object.keys(data)) {
+                    if (isSettingEntry(this[key])) {
+                        this[key].value = data[key];
+                    }
+                }
+            } catch (error) {
+                // a corrupt file must not silently pass for "no settings":
+                // keep the defaults but say why
+                console.warn(`[settings] ignoring unreadable ${this.file}:`, error);
+            }
         }
         this.dispatchEvent(new CustomEvent('loaded', { detail: this }));
     }

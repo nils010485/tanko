@@ -66,7 +66,7 @@ export function isPrivateAddress(address: string): boolean {
 
 /** Resolve a hostname and reject when ANY resolved address is private
  *  (a public name with one private A/AAAA record is still a rebinding probe). */
-export async function assertPublicHost(hostname: string): Promise<void> {
+async function assertPublicHost(hostname: string): Promise<void> {
     // URL.hostname keeps IPv6 literals bracketed ([::1]) — net.isIP doesn't parse those
     const host = hostname.replace(/^\[(.+)\]$/, '$1');
     if (net.isIP(host) !== 0) {

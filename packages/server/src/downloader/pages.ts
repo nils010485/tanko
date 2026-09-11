@@ -32,7 +32,7 @@ interface EngineGlobal {
 /** Human-readable page URL for error messages: 'connector://' payloads are
  *  opaque base64 blobs that bury the real (signed) image URL and wreck the
  *  dashboard layout — decode them and strip the query string instead. */
-export function describePageUrl(url: string): string {
+function describePageUrl(url: string): string {
     if (url.startsWith('connector://')) {
         try {
             const decoded = Buffer.from(new URL(url).searchParams.get('payload') ?? '', 'base64').toString('utf8');

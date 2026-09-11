@@ -1,6 +1,6 @@
 import type { ActivityStatsDto } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
-import { JobRunner } from '../activity/jobs.js';
+import type { JobRunner } from '../activity/jobs.js';
 import { ACTIVITY_PAGE_SIZE, type ActivityService } from '../activity/service.js';
 import type { LibraryStore } from '../library/store.js';
 import type { SourceHealthService } from '../sources/health.js';
@@ -10,7 +10,8 @@ export function registerActivityRoutes(
     activity: ActivityService,
     stats: { library: LibraryStore; sourceHealth: SourceHealthService },
     /** Shared with the library routes — index.ts passes the same instance. */
-    jobs: JobRunner = new JobRunner()
+    /** Shared with the library routes — index.ts passes the same instance. */
+    jobs: JobRunner
 ): void {
     // Activity history (checks, notifications, errors) — newest first
     app.get<{ Querystring: { limit?: string; offset?: string } }>('/api/activity', async request => {

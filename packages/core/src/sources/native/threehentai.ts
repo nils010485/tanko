@@ -8,32 +8,16 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl, fetchNativeText } from './http.js';
-
-export interface ThreeHentaiOptions {
-    id?: string;
-    label?: string;
-    base?: string;
-    tags?: string[];
-}
 
 export class ThreeHentaiConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly base: string;
-
-    constructor(options: ThreeHentaiOptions = {}) {
-        this.id = options.id || '3hentai';
-        this.label = options.label || '3Hentai';
-        this.tags = options.tags || ['manga', 'hentai', 'english'];
-        this.base = (options.base || 'https://3hentai.net').replace(/\/$/, '');
-        this.url = this.base;
-    }
+    readonly id = '3hentai';
+    readonly label = '3Hentai';
+    readonly tags = ['manga', 'hentai', 'english'];
+    private readonly base = 'https://3hentai.net';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 
@@ -119,7 +103,7 @@ export class ThreeHentaiConnector implements SourceAdapter {
             }
             return { ok: true, latencyMs: Date.now() - startedAt };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: String(error instanceof Error ? error.message : error) };
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
     }
 }

@@ -12,6 +12,7 @@ import type { SourceAlternativeDto } from '@tanko/shared';
 import type { SourceInfo } from '../import/service.js';
 import { AUTO_THRESHOLD, confidenceFor, REVIEW_THRESHOLD, stripTags, titleSimilarity } from '../import/similarity.js';
 import { chapterAllowed, sourceUsable } from '../languages.js';
+import { withTimeout } from '../util/timeout.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
 
 /** Healthy sources first (natives outrank them anyway — see findAlternative). */
@@ -22,16 +23,6 @@ function byHealth(a: SourceInfo, b: SourceInfo): number {
 /** Native connectors before legacy ones (cheap APIs, highest coverage). */
 function byKind(a: SourceInfo, b: SourceInfo): number {
     return (a.kind === 'native' ? -1 : 1) - (b.kind === 'native' ? -1 : 1);
-}
-
-/** Reject after `ms`, whatever settles the race first — the loser's timer is
- * cleared so a crawl of hundreds of searches leaks nothing. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** Validation budget for one candidate's chapter list. */
@@ -86,7 +77,7 @@ export const DOWNLOAD_FAILOVER_FAILURES = 1;
 /** Min delay between two migration probes for the same entry: a batch
  *  download on a dead source fails once per chapter and must not crawl the
  *  alternative sources for every single chapter. */
-export const PROBE_COOLDOWN_MS = 15 * 60 * 1000;
+const PROBE_COOLDOWN_MS = 15 * 60 * 1000;
 /** Distinct entries of one source failing inside this window means a
  *  source-wide outage: migration is suspended and the failed jobs
  *  auto-retry instead — until the outage is escalated (below), the source

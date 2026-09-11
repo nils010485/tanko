@@ -8,32 +8,16 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl, fetchNativeText } from './http.js';
-
-export interface ZeurelScanOptions {
-    id?: string;
-    label?: string;
-    base?: string;
-    tags?: string[];
-}
 
 export class ZeurelScanConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly base: string;
-
-    constructor(options: ZeurelScanOptions = {}) {
-        this.id = options.id || 'zeurelscan';
-        this.label = options.label || 'ZeurelScan';
-        this.tags = options.tags || ['manga', 'italian'];
-        this.base = (options.base || 'https://www.zeurelscan.com').replace(/\/$/, '');
-        this.url = this.base;
-    }
+    readonly id = 'zeurelscan';
+    readonly label = 'ZeurelScan';
+    readonly tags = ['manga', 'italian'];
+    private readonly base = 'https://www.zeurelscan.com';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 
@@ -146,7 +130,7 @@ export class ZeurelScanConnector implements SourceAdapter {
             }
             return { ok: true, latencyMs: Date.now() - startedAt };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: String(error instanceof Error ? error.message : error) };
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
     }
 }

@@ -139,7 +139,8 @@ export function getUpdateStatus(db: Database): ConnectorsUpdateStatus {
     try {
         const raw = db.kvGet(CONNECTORS_UPDATE_KEY);
         last = raw ? JSON.parse(raw) : null;
-    } catch {
+    } catch (error) {
+        console.warn('[updater] ignoring corrupt update status:', error);
         last = null;
     }
     return {

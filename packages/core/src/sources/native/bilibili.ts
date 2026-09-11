@@ -23,12 +23,12 @@ export class BilibiliManhuaConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private async _getText(url: string, timeoutMs = 45_000): Promise<string> {
+    private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, {
             id: this.id,
             headers: { accept: 'text/html', 'accept-language': 'zh-CN,zh;q=0.9' },
             minBytes: 20_000,
-            timeoutMs,
+            timeoutMs: 45_000,
             init: { signal: AbortSignal.timeout(30_000) },
             renderError: 'Page Bilibili non rendue (rendu navigateur requis)'
         });

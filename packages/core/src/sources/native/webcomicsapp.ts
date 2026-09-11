@@ -127,7 +127,7 @@ export class WebComicsAppConnector implements SourceAdapter {
         if (!response.ok) {
             throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
         }
-        return { mime: response.headers.get('content-type') || 'image/webp', data: new Uint8Array(await response.arrayBuffer()) };
+        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(await response.arrayBuffer()) };
     }
 
     async checkHealth(): Promise<HealthResult> {

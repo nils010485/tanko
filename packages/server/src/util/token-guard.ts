@@ -5,9 +5,8 @@
  * dashboard gets the token by design.
  */
 import crypto from 'node:crypto';
+import { TOKEN_HEADER } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
-
-export const TOKEN_HEADER = 'x-tanko-token';
 
 export const apiToken = crypto.randomUUID();
 

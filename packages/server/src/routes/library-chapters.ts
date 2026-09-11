@@ -59,13 +59,15 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
     });
 
     // Enqueue every already-detected new or failed chapter across all visible
-    // (no source re-check, no auto-download flag required)
-    app.post('/api/library/download-new', async () => {
+    // entries (no source re-check, no auto-download flag required); the
+    // "missing" variant also includes the pre-follow backlog ('missing' + 'failed')
+    // for the Tasks-page bulk "download missing".
+    const enqueueVisible = async (includeBacklog: boolean) => {
         const entries = await store.listEntries('visible');
         let queued = 0;
         let affected = 0;
         for (const entry of entries) {
-            const count = store.enqueueNewChapters(entry.id, queue);
+            const count = store.enqueueNewChapters(entry.id, queue, includeBacklog);
             if (count > 0) {
                 queued += count;
                 affected += 1;
@@ -73,29 +75,9 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
             }
         }
         return { queued, entries: affected };
-    });
-
-    // Same sweep including the pre-follow backlog ('new' + 'missing' + 'failed')
-    // across all visible entries — the Tasks-page bulk "download missing".
-    app.post('/api/library/download-missing', async () => {
-        const entries = await store.listEntries('visible');
-        let queued = 0;
-        let affected = 0;
-        for (const entry of entries) {
-            const count = store.enqueueNewChapters(entry.id, queue, true);
-            if (count > 0) {
-                queued += count;
-                affected += 1;
-                publishEntry(entry.id);
-            }
-        }
-        return { queued, entries: affected };
-    });
-
-    app.get<{ Params: { entryId: string } }>('/api/library/:entryId/history', async request => {
-        const { entryId } = request.params;
-        return store.chapterHistory(Number(entryId));
-    });
+    };
+    app.post('/api/library/download-new', () => enqueueVisible(false));
+    app.post('/api/library/download-missing', () => enqueueVisible(true));
 
     app.post<{ Params: { entryId: string; chapterId: string } }>('/api/library/:entryId/chapters/:chapterId/rollback', async (request, reply) => {
         const { entryId, chapterId } = request.params;

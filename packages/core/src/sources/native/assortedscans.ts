@@ -86,9 +86,6 @@ export class AssortedScansConnector implements SourceAdapter {
                 }
             }
         }
-        if (results.length === 0 && needle) {
-            return [];
-        }
         return results
             .filter(series => !!series.slug && !!series.title)
             .map(series => ({

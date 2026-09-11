@@ -1,6 +1,7 @@
+import { TOKEN_HEADER } from '@tanko/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { apiToken, registerTokenGuard, TOKEN_HEADER } from '../src/util/token-guard.js';
+import { apiToken, registerTokenGuard } from '../src/util/token-guard.js';
 
 let app: FastifyInstance;
 

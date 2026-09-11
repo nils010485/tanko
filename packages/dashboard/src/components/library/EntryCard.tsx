@@ -212,18 +212,25 @@ function secondaryActions(entry: LibraryEntryDto, state: EntryCardState, handler
     );
 }
 
-function migrationBanner(entry: LibraryEntryDto, handlers: EntryCardHandlers, t: ReturnType<typeof useI18n>['t'], className = '') {
+export function migrationBanner(
+    entry: LibraryEntryDto,
+    onConfirm: (accept: boolean) => void,
+    t: ReturnType<typeof useI18n>['t'],
+    detail?: React.ReactNode,
+    className = ''
+) {
     return (
         entry.migrationSuggestion && (
             <div className={`flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs ${className}`}>
                 <span className="text-fg">
                     {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
                     {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
+                    {detail}
                 </span>
-                <Button small onClick={() => handlers.onConfirmMigration(entry, true)}>
+                <Button small onClick={() => onConfirm(true)}>
                     {t('library.migrate')}
                 </Button>
-                <Button small variant="ghost" onClick={() => handlers.onConfirmMigration(entry, false)}>
+                <Button small variant="ghost" title={t('common.cancel')} onClick={() => onConfirm(false)}>
                     <IconX size={12} />
                 </Button>
             </div>
@@ -363,7 +370,7 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                         ))}
                     <div className="ml-auto flex flex-none items-center">{actionMenu(entry, state, handlers, menuRef, t, state.view === 'grid-compact')}</div>
                 </div>
-                {migrationBanner(entry, handlers, t)}
+                {migrationBanner(entry, accept => handlers.onConfirmMigration(entry, accept), t)}
                 {chaptersPanel(entry, state, handlers, t)}
             </div>
         </article>
@@ -442,7 +449,7 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
                     {secondaryActions(entry, state, handlers, t)}
                 </div>
             </div>
-            {migrationBanner(entry, handlers, t, 'mt-2')}
+            {migrationBanner(entry, accept => handlers.onConfirmMigration(entry, accept), t, undefined, 'mt-2')}
             {chaptersPanel(entry, state, handlers, t, 'mt-2')}
         </article>
     );

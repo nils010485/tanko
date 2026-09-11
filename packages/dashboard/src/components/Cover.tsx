@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 
-export function proxiedImage(url: string): string {
+function proxiedImage(url: string): string {
     return `/api/image?url=${encodeURIComponent(url)}`;
 }
 

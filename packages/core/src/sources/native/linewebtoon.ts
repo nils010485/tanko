@@ -9,40 +9,19 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { SourceError } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 import { absoluteUrl, fetchNativeText } from './http.js';
-
-export interface LineWebtoonOptions {
-    id?: string;
-    label?: string;
-    base?: string;
-    tags?: string[];
-    /** Language path segment (default th). */
-    language?: string;
-    /** Base for the CDN Referer check (images are served by webtoon-phinf.pstatic.net). */
-    refererBase?: string;
-}
 
 export class LineWebtoonConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly base: string;
-    private readonly language: string;
-    private readonly refererBase: string;
-
-    constructor(options: LineWebtoonOptions = {}) {
-        this.id = options.id || 'linewebtoon-th';
-        this.label = options.label || 'WEBTOON (Thai)';
-        this.tags = options.tags || ['manga', 'webtoon', 'thai'];
-        this.language = options.language || 'th';
-        this.base = `${(options.base || `https://www.webtoons.com/${this.language}/`).replace(/\/$/, '')}/`;
-        this.refererBase = options.refererBase || 'https://www.webtoons.com/';
-        this.url = this.base;
-    }
+    readonly id = 'linewebtoon-th';
+    readonly label = 'WEBTOON (Thai)';
+    readonly tags = ['manga', 'webtoon', 'thai'];
+    private readonly language = 'th';
+    private readonly base = `https://www.webtoons.com/${this.language}/`;
+    /** Images are served by webtoon-phinf.pstatic.net; the CDN checks the site Referer. */
+    private readonly refererBase = 'https://www.webtoons.com/';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 
@@ -159,7 +138,7 @@ export class LineWebtoonConnector implements SourceAdapter {
             throw new SourceError(`HTTP ${response.status} sur l'image CDN ${new URL(url).hostname}`, this.id);
         }
         const buffer = await response.arrayBuffer();
-        return { mime: response.headers.get('content-type') || 'image/jpeg', data: new Uint8Array(buffer) };
+        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
     }
 
     async checkHealth(): Promise<HealthResult> {
@@ -171,7 +150,7 @@ export class LineWebtoonConnector implements SourceAdapter {
             }
             return { ok: true, latencyMs: Date.now() - startedAt };
         } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: String(error instanceof Error ? error.message : error) };
+            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
     }
 }

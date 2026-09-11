@@ -18,10 +18,6 @@ export interface EngineContext {
     Storage: HeadlessStorage;
     Request: HeadlessRequest;
     Blacklist: { patterns: string[] };
-    Enums: {
-        mediaType: { manga: string; anime: string };
-        websiteState: { offline: string; available: string };
-    };
     ComicInfoGenerator: { createComicInfoXML: () => string };
 }
 
@@ -55,6 +51,8 @@ let activeRequest: HeadlessRequest | undefined;
 /** Active vendor directory: synced copy in the data directory if present, else the built-in one. */
 let activeVendorPath = VENDOR_PATH;
 
+/** Failure count of the first load, reported by repeat calls. */
+let lastFailures: number | undefined;
 /** Best-effort URL extraction from any fetch() input shape. */
 function requestUrl(input: unknown): string {
     if (typeof input === 'string') {
@@ -124,7 +122,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             // transformation happens headless — otherwise CDNs receive literal x-*
             // headers and serve hotlink-protection HTML instead of the image.
             if (input instanceof Request && [...input.headers.keys()].some(name => name.toLowerCase().startsWith('x-'))) {
-                const bridge = activeRequest ?? request;
+                const bridge = activeRequest as HeadlessRequest;
                 // the legacy bridge cannot take a signal: race it so an aborted
                 // crawl stops waiting (the bridge's own deadline reclaims the
                 // socket) — mirrors the signal merge of the native branch below
@@ -154,10 +152,6 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
         Storage: storage,
         Request: request,
         Blacklist: { patterns: [] },
-        Enums: {
-            mediaType: { manga: 'manga', anime: 'anime' },
-            websiteState: { offline: 'offline', available: 'available' }
-        },
         ComicInfoGenerator: {
             createComicInfoXML: () => '' // ComicInfo.xml is generated inside HeadlessStorage
         }
@@ -196,9 +190,8 @@ function manifestMatches(manifest: Record<string, string>, directory: string, fi
  * Failed imports are counted and skipped.
  */
 export async function loadConnectors(): Promise<LoadResult> {
-    if (connectorRegistry.size > 0) {
-        const connectors = [...connectorRegistry.values()].sort(byLabel);
-        return { connectors, failures: 0 };
+    if (lastFailures !== undefined) {
+        return { connectors: [...connectorRegistry.values()].sort(byLabel), failures: lastFailures };
     }
 
     const directory = path.join(getVendorDirectory(), 'connectors');
@@ -220,19 +213,17 @@ export async function loadConnectors(): Promise<LoadResult> {
                 connectorRegistry.set(connector.id, connector);
                 connectors.push(connector);
             }
-        } catch {
+        } catch (error) {
             failures++;
+            console.warn(`[engine] connector "${file}" failed to load:`, error);
         }
     }
     connectors.sort(byLabel);
+    lastFailures = failures;
     return { connectors, failures };
 }
 
 /** Case-insensitive connector label ordering. */
 function byLabel(a: { label: string }, b: { label: string }): number {
     return a.label.toLowerCase() < b.label.toLowerCase() ? -1 : 1;
-}
-
-export function getConnector(id: string): LegacyConnector | undefined {
-    return connectorRegistry.get(id);
 }

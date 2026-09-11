@@ -40,7 +40,7 @@ export type DirectoryLayout = 'source' | 'series';
  * Normalize a source chapter title to the conventional file name:
  * ' Ch.107' / 'Ch 12' -> 'Chapter 107' / 'Chapter 12' ('Chapter 12' unchanged).
  */
-export function normalizeChapterTitle(title: string): string {
+function normalizeChapterTitle(title: string): string {
     return title.trim().replace(/^ch[\s.]*(?=\d)/i, 'Chapter ');
 }
 
@@ -159,7 +159,6 @@ export function chapterPaths(
     // number equals the wanted one (« <manga> - Ch.161 », « Ch.0161 », « 0,5 »…).
     // A « v2 » suffix replaces the original chapter, so the highest version wins.
     if (!existing) {
-        const wanted = parseChapterNumber(chapterTitle);
         if (wanted !== null) {
             let best: { entry: string; version: number } | undefined;
             for (const entry of listChapterEntries(seriesDir)) {

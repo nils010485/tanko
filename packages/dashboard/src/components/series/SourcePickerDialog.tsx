@@ -43,21 +43,12 @@ export function SourcePickerDialog({
     onFetchAliases
 }: SourcePickerDialogProps) {
     const { t } = useI18n();
-    // local names mirror the view's callbacks so the extracted JSX stays verbatim
-    const closePicker = onClose;
-    const migrateTo = onMigrate;
-    const unlink = onUnlink;
-    const saveAliases = onSaveAliases;
-    const addAlias = onAddAlias;
-    const fetchAliasesFromAniList = onFetchAliases;
-    const busy = { aliasFetch: aliasFetchBusy };
-    const setAliasInput = onAliasInput;
     return (
         // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the dialog also closes with Escape (useEscapeKey in the view)
         <div
             className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
             onClick={event => {
-                if (event.target === event.currentTarget) closePicker();
+                if (event.target === event.currentTarget) onClose();
             }}
         >
             <div
@@ -68,7 +59,7 @@ export function SourcePickerDialog({
             >
                 <div className="flex items-center justify-between gap-2">
                     <div className="break-words text-sm font-semibold text-fg">{t('series.changeSource')}</div>
-                    <IconButton title={t('common.close')} onClick={closePicker}>
+                    <IconButton title={t('common.close')} onClick={onClose}>
                         <IconX size={14} />
                     </IconButton>
                 </div>
@@ -97,7 +88,7 @@ export function SourcePickerDialog({
                                     <Button
                                         small
                                         onClick={() =>
-                                            void migrateTo({
+                                            void onMigrate({
                                                 sourceId: alternative.sourceId,
                                                 sourceLabel: alternative.sourceLabel,
                                                 mangaId: alternative.mangaId,
@@ -112,7 +103,7 @@ export function SourcePickerDialog({
                                     </Button>
                                     <IconButton
                                         title={t('series.linkedRemove')}
-                                        onClick={() => void unlink(alternative.id)}
+                                        onClick={() => void onUnlink(alternative.id)}
                                         disabled={unlinking === alternative.id}
                                     >
                                         <IconX size={14} />
@@ -131,14 +122,14 @@ export function SourcePickerDialog({
                             <button
                                 key={alias}
                                 type="button"
-                                onClick={() => void saveAliases((entry.aliases ?? []).filter(item => item !== alias))}
+                                onClick={() => void onSaveAliases((entry.aliases ?? []).filter(item => item !== alias))}
                                 title={t('series.aliasRemoveHint')}
                                 className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-fg transition-colors hover:border-red-500/50 hover:text-red-400"
                             >
                                 {alias} <IconX size={10} />
                             </button>
                         ))}
-                        <Button small variant="ghost" onClick={fetchAliasesFromAniList} loading={busy.aliasFetch} title={t('series.aliasFetchHint')}>
+                        <Button small variant="ghost" onClick={onFetchAliases} loading={aliasFetchBusy} title={t('series.aliasFetchHint')}>
                             {t('series.aliasFetch')}
                         </Button>
                     </div>
@@ -146,12 +137,12 @@ export function SourcePickerDialog({
                         className="mt-2 flex gap-2"
                         onSubmit={event => {
                             event.preventDefault();
-                            void addAlias();
+                            void onAddAlias();
                         }}
                     >
                         <input
                             value={aliasInput}
-                            onChange={event => setAliasInput(event.target.value)}
+                            onChange={event => onAliasInput(event.target.value)}
                             placeholder={t('series.aliasPlaceholder')}
                             className="min-w-0 flex-1 rounded-lg border border-line bg-surface/60 px-2.5 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent/60 focus:outline-none"
                         />
@@ -196,7 +187,7 @@ export function SourcePickerDialog({
                                         <span>{t('series.changeSourceMatch', { n: Math.round((alternative.score ?? 0) * 100) })}</span>
                                     </div>
                                 </div>
-                                <Button small onClick={() => migrateTo(alternative)} loading={migratingTo === alternative.sourceId}>
+                                <Button small onClick={() => onMigrate(alternative)} loading={migratingTo === alternative.sourceId}>
                                     {t('library.migrate')}
                                 </Button>
                             </div>

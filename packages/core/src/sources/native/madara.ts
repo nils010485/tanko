@@ -155,9 +155,9 @@ export class MadaraConnector implements SourceAdapter {
                 if (!errored && (json.success !== true || !Array.isArray(json.data) || json.data.length === 0)) {
                     return [];
                 }
-                if (errored) {
-                    // ajax locked down ("forbidden") -> HTML search page below
-                } else {
+                // ajax locked down ("forbidden" error payload) -> fall
+                // through to the HTML search page below
+                if (!errored) {
                     return (json.data as MadaraAjaxItem[])
                         .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
                         .map(item => ({

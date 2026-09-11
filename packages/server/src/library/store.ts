@@ -218,8 +218,8 @@ export class LibraryStore {
         this.ctx.db.db.prepare('DELETE FROM chapter_history WHERE entry_id = ?').run(entryId);
         this.ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE entry_id = ?').run(entryId);
     }
-    /** Directory holding the entry's files: deepest common ancestor of the
-     *  downloaded chapter paths, falling back to the configured layout. */
+    /** Directory holding the entry's files: most frequent parent directory of
+     *  the downloaded chapter paths, falling back to the configured layout. */
     seriesDirectory(entryId: number, row?: EntryRow): string | null {
         return seriesDirectory(this.ctx, entryId, row);
     }
@@ -427,12 +427,6 @@ export class LibraryStore {
         return Number(result.changes) > 0;
     }
 
-    /** The entry tracking this exact provenance, when any (duplicate add of
-     *  the same source+manga: an upsert, never a second entry). */
-    getEntryByProvenance(sourceId: string, mangaId: string): EntryRow | null {
-        return this.ctx.q.get('SELECT * FROM library WHERE source_id = ? AND manga_id = ?', sourceId, mangaId) ?? null;
-    }
-
     /** Point the entry at an existing folder (import adoption): the scanned
      *  path becomes its canonical directory when it lies inside the data
      *  directory — downloads then complete the imported folder in place.
@@ -565,11 +559,6 @@ export class LibraryStore {
         chapters.markChapter(this.ctx, entryId, chapterId, status, filePath, origin);
     }
 
-    /** Full change history of an entry's chapters (newest first). */
-    chapterHistory(entryId: number, chapterId?: string): Array<Record<string, unknown>> {
-        return chapters.chapterHistory(this.ctx, entryId, chapterId);
-    }
-
     /** Restore a chapter to its previous downloaded file. */
     rollbackChapter(entryId: number, chapterId: string): boolean {
         return chapters.rollbackChapter(this.ctx, entryId, chapterId);
@@ -612,8 +601,8 @@ export class LibraryStore {
                         SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing
                  FROM library_chapters WHERE entry_id = ?`,
             row.id
-        ) ?? { total: null, downloaded: null, fresh: null, failed: null, missing: null };
-        const snapshot = this.ctx.q.get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) ?? { n: 0 };
+        ) as { total: number | null; downloaded: number | null; fresh: number | null; failed: number | null; missing: number | null }; // aggregate without GROUP BY always returns a row
+        const snapshot = this.ctx.q.get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) as { n: number }; // aggregate without GROUP BY always returns a row
         let suggestion: LibraryEntryDto['migrationSuggestion'];
         try {
             suggestion = row.migration_suggestion ? JSON.parse(row.migration_suggestion) : undefined;

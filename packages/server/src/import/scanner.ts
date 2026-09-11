@@ -123,7 +123,7 @@ export function scanLibrary(rootPath: string, options: ScanOptions = {}): ScanRe
     };
 
     /** Returns true when the directory looks like a chapter folder (mostly images). */
-    const isImageChapterFolder = (entries: fs.Dirent[], _dir: string): boolean => {
+    const isImageChapterFolder = (entries: fs.Dirent[]): boolean => {
         const isImage = (file: string) => IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase());
         const files = entries.filter(entry => entry.isFile());
         if (files.length === 0) {
@@ -152,7 +152,7 @@ export function scanLibrary(rootPath: string, options: ScanOptions = {}): ScanRe
         const cbzFiles = visible.filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.cbz'));
 
         // a folder of images is itself a chapter -> the parent directory is the series
-        if (cbzFiles.length === 0 && depth > 0 && isImageChapterFolder(visible, dir)) {
+        if (cbzFiles.length === 0 && depth > 0 && isImageChapterFolder(visible)) {
             addChapter(path.dirname(dir), path.basename(dir));
             return; // do not recurse into chapter folders
         }

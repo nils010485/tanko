@@ -48,7 +48,7 @@ export class VComicsConnector implements SourceAdapter {
     readonly tags: string[];
     readonly url: string;
 
-    private readonly base: string;
+    protected readonly base: string;
     private readonly language: string;
 
     constructor(options: VComicsOptions) {
@@ -235,11 +235,11 @@ export class VComicsConnector implements SourceAdapter {
         return fetchWithRetries(url, { id: this.id, headers: this._headers() });
     }
 
-    private async _getText(url: string): Promise<string> {
+    protected async _getText(url: string): Promise<string> {
         return (await this._request(url)).text();
     }
 
-    private async _getJson(url: string): Promise<unknown> {
+    protected async _getJson(url: string): Promise<unknown> {
         return (await this._request(url)).json().catch(() => null);
     }
 

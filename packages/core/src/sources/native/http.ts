@@ -33,9 +33,9 @@ export interface RetryingFetchOptions {
 /**
  * Plain GET with the shared retry ladder: 60s timeout, network failures and
  * transient statuses (403/429/5xx, honoring Retry-After) retried with
- * 2500ms×n backoff, permanent client errors failing fast. Single copy —
- * connector-specific behavior (browser escalation, JSON shells) lives in
- * the connectors themselves.
+ * 2500ms×n backoff, permanent client errors failing fast. Madara, MangaDex
+ * and Comick deliberately carry their own ladders (escalation, JSON-shell
+ * detection, throttling) instead of growing options into this one.
  */
 export async function fetchWithRetries(url: string, options: RetryingFetchOptions, attempt = 0): Promise<Response> {
     let response: Response;

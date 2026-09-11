@@ -489,3 +489,6 @@ export interface ApiError {
     /** Duplicate-series guard (HTTP 409): the tracked entry this add collided with. */
     existingEntry?: { id: number; title: string; sourceId: string; sourceLabel: string };
 }
+
+/** Header carrying the same-origin API token guarding all mutations. */
+export const TOKEN_HEADER = 'x-tanko-token';

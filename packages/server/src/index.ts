@@ -55,7 +55,7 @@ import { EventBus } from './ws.js';
 
 const config = loadConfig();
 
-const engine = await createEngine({ dataDirectory: config.dataDirectory });
+await createEngine({ dataDirectory: config.dataDirectory });
 const { connectors, failures } = await loadConnectors();
 console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed)`);
 
@@ -339,10 +339,6 @@ await app.register(fastifyWebsocket);
 
 registerTokenGuard(app);
 
-app.decorate('config', config);
-app.decorate('database', database);
-app.decorate('events', events);
-app.decorate('engine', engine);
 app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
 registerHealthRoutes(app);
@@ -428,10 +424,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 declare module 'fastify' {
     interface FastifyInstance {
-        config: typeof config;
-        database: Database;
-        events: EventBus;
-        engine: Awaited<ReturnType<typeof createEngine>>;
         healthService: SourceHealthService;
         globalSearch: GlobalSearchService;
     }

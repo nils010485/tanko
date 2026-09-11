@@ -5,6 +5,8 @@
 
 import type { SourceDto } from '@tanko/shared';
 import type { TFunction } from '../i18n/index.js';
+import { api } from './api.js';
+import { pollUntil } from './poll.js';
 
 /** Sort rank: natives first, then working, untested/checking, broken. */
 export function sourceRank(source: SourceDto): number {
@@ -44,5 +46,36 @@ export function statusTextClass(health: string | undefined): string {
             return 'text-emerald-400';
         default:
             return 'text-muted';
+    }
+}
+
+/** Re-check every source's health, polling until the background probe
+ *  settles — shared by the Sources admin view and Discover's picker so the
+ *  two cannot drift apart. */
+export async function recheckAllSources(options: {
+    refreshSources: () => Promise<SourceDto[]>;
+    cancelled: () => boolean;
+    onError: (message: string) => void;
+    onStarted?: () => void;
+}): Promise<void> {
+    try {
+        await api.checkSources();
+        options.onStarted?.();
+        await pollUntil(() => options.refreshSources(), {
+            cancelled: options.cancelled,
+            done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
+        });
+    } catch (error) {
+        options.onError((error as Error).message);
+    }
+}
+
+/** Hide every source whose last health check failed (both source views). */
+export async function hideBrokenSources(options: { refreshSources: () => Promise<SourceDto[]>; onError: (message: string) => void }): Promise<void> {
+    try {
+        await api.hideBroken();
+        await options.refreshSources();
+    } catch (error) {
+        options.onError((error as Error).message);
     }
 }

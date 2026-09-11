@@ -14,8 +14,7 @@ import { Badge, Button, Card, EmptyState, ErrorDetail, Input, SectionTitle } fro
 import { useI18n } from '../i18n/index.js';
 import { api, apiErrorText, RequestError } from '../lib/api.js';
 import { useEscapeKey, useUnmounted } from '../lib/hooks.js';
-import { pollUntil } from '../lib/poll.js';
-import { sourceRank, statusLabel } from '../lib/sources.js';
+import { hideBrokenSources, recheckAllSources, sourceRank, statusLabel } from '../lib/sources.js';
 
 /** Canonical URL of a search result, when the connector exposes one (some use
  *  the manga id itself as a link). */
@@ -69,7 +68,6 @@ const syncSearchUrl = (query: string) => {
 };
 
 /** Injected by vite at build time from package.json (see vite.config.ts). */
-declare const __APP_VERSION__: string;
 export default function Discover({
     onAddedToLibrary,
     onOpenSeries,
@@ -261,10 +259,7 @@ export default function Discover({
     const hideBroken = async () => {
         setHidingBroken(true);
         try {
-            await api.hideBroken();
-            await refreshSources();
-        } catch (error) {
-            toast.error((error as Error).message);
+            await hideBrokenSources({ refreshSources, onError: message => toast.error(message) });
         } finally {
             setHidingBroken(false);
         }
@@ -272,14 +267,7 @@ export default function Discover({
     const recheckAll = async () => {
         setRechecking(true);
         try {
-            await api.checkSources();
-            // poll while the background probe refreshes statuses (stop on unmount)
-            await pollUntil(() => refreshSources(), {
-                cancelled: () => unmounted.current,
-                done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
-            });
-        } catch (error) {
-            toast.error((error as Error).message);
+            await recheckAllSources({ refreshSources, cancelled: () => unmounted.current, onError: message => toast.error(message) });
         } finally {
             setRechecking(false);
         }

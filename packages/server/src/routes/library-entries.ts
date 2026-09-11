@@ -89,7 +89,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         // the exact provenance is already tracked: forcing would hit the
         // (source, manga) upsert and silently change nothing — there is no
         // "separate series" to create for one provenance
-        const sameProvenance = store.getEntryByProvenance(body.sourceId, body.mangaId);
+        const sameProvenance = store.findEntryByManga(body.sourceId, body.mangaId);
         if (sameProvenance) {
             return reply.code(409).send({
                 error: `Cette série est déjà suivie via cette même source (#${sameProvenance.id})`,
@@ -197,28 +197,28 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         '/api/library/:entryId',
         async (request, reply) => {
             const { entryId } = request.params;
-            if (typeof request.body?.autoDownload === 'boolean') {
-                const ok = store.setAutoDownload(Number(entryId), request.body.autoDownload);
-                if (!ok) {
+            const body = request.body;
+            // every recognized boolean is applied (PATCH semantics: no field
+            // is silently dropped when several ride along)
+            if (typeof body?.autoDownload === 'boolean') {
+                if (!store.setAutoDownload(Number(entryId), body.autoDownload)) {
                     return reply.code(404).send({ error: 'Entry not found' });
                 }
-                return publishEntry(Number(entryId));
             }
-            if (typeof request.body?.hidden === 'boolean') {
-                const ok = store.setHidden(Number(entryId), request.body.hidden);
-                if (!ok) {
+            if (typeof body?.hidden === 'boolean') {
+                if (!store.setHidden(Number(entryId), body.hidden)) {
                     return reply.code(404).send({ error: 'Entry not found' });
                 }
-                return publishEntry(Number(entryId));
             }
-            if (typeof request.body?.paused === 'boolean') {
-                const ok = store.setPaused(Number(entryId), request.body.paused);
-                if (!ok) {
+            if (typeof body?.paused === 'boolean') {
+                if (!store.setPaused(Number(entryId), body.paused)) {
                     return reply.code(404).send({ error: 'Entry not found' });
                 }
-                return publishEntry(Number(entryId));
             }
-            return reply.code(400).send({ error: 'Body must contain boolean "autoDownload", "hidden" or "paused"' });
+            if (typeof body?.autoDownload !== 'boolean' && typeof body?.hidden !== 'boolean' && typeof body?.paused !== 'boolean') {
+                return reply.code(400).send({ error: 'Body must contain boolean "autoDownload", "hidden" or "paused"' });
+            }
+            return publishEntry(Number(entryId));
         }
     );
 
@@ -302,7 +302,8 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
                         break;
                     }
                 }
-            } catch {
+            } catch (error) {
+                console.warn(`[library] bulk ${action} on entry ${id} failed:`, (error as Error).message);
                 outcome = 'fail';
             }
             if (outcome === 'ok') {

@@ -9,13 +9,6 @@ import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
 
-export interface HentaiHandOptions {
-    id?: string;
-    label?: string;
-    base?: string;
-    tags?: string[];
-}
-
 interface HentaiHandComic {
     id?: number;
     slug?: string;
@@ -33,20 +26,11 @@ interface HentaiHandImage {
 
 export class HentaiHandConnector implements SourceAdapter {
     readonly kind = 'native' as const;
-    readonly id: string;
-    readonly label: string;
-    readonly tags: string[];
-    readonly url: string;
-
-    private readonly base: string;
-
-    constructor(options: HentaiHandOptions = {}) {
-        this.id = options.id || 'hentaihand';
-        this.label = options.label || 'HentaiHand';
-        this.tags = options.tags || ['hentai', 'adult', 'english'];
-        this.base = (options.base || 'https://hentaihand.com').replace(/\/$/, '');
-        this.url = this.base;
-    }
+    readonly id = 'hentaihand';
+    readonly label = 'HentaiHand';
+    readonly tags = ['hentai', 'adult', 'english'];
+    private readonly base = 'https://hentaihand.com';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 

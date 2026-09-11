@@ -57,8 +57,4 @@ export class EventBus {
         socket.on('close', () => this.clients.delete(socket));
         socket.on('error', () => this.clients.delete(socket));
     }
-
-    get clientCount(): number {
-        return this.clients.size;
-    }
 }
