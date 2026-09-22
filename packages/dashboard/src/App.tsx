@@ -165,7 +165,7 @@ export default function App() {
             </div>
             <div className="min-w-0">
                 <div className="font-display text-base font-bold leading-tight tracking-tight">Tanko</div>
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-faint">manga downloader</div>
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-faint">{t('app.tagline')}</div>
             </div>
         </div>
     );

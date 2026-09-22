@@ -14,6 +14,7 @@ export const fr: typeof import('./en.js').en = {
     'common.errorDetail': 'Détails techniques',
 
     // navigation + shell
+    'app.tagline': 'téléchargeur de mangas',
     'nav.sectionRead': 'Lire',
     'nav.sectionManage': 'Gérer',
     'nav.discover': 'Découvrir',
@@ -570,6 +571,7 @@ export const fr: typeof import('./en.js').en = {
     'import.phaseSyncing': 'Synchronisation en cours…',
     'import.phaseDone': 'Import terminé',
     'import.phaseError': 'Erreur',
+    'import.jobRef': '· tâche n°{id}',
     'import.folderLabel': 'Dossier à analyser (bibliothèque existante)',
     'import.folderHint': 'Chemin tel que le serveur le voit — en Docker, le volume monté, pas le chemin de l’hôte.',
     'import.storageAdoptTitle': 'Ce dossier remplacera le dossier de stockage',
