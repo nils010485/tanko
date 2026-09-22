@@ -14,6 +14,7 @@ export const en = {
     'common.errorDetail': 'Technical details',
 
     // navigation + shell
+    'app.tagline': 'manga downloader',
     'nav.sectionRead': 'Read',
     'nav.sectionManage': 'Manage',
     'nav.discover': 'Discover',
@@ -567,6 +568,7 @@ export const en = {
     'import.phaseSyncing': 'Syncing…',
     'import.phaseDone': 'Import finished',
     'import.phaseError': 'Error',
+    'import.jobRef': '· job #{id}',
     'import.folderLabel': 'Folder to scan (existing library)',
     'import.folderHint': 'Path as seen by the server — in Docker, the mounted volume, not the host path.',
     'import.storageAdoptTitle': 'This folder will replace the storage folder',

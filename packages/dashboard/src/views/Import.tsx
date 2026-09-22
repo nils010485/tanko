@@ -296,7 +296,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                         <div className="min-w-0 text-sm">
                             <span className="font-medium">{t(phaseLabel[job.status])}</span>
                             <span className="ml-2 break-all text-xs text-faint">
-                                {job.root} · job #{job.id}
+                                {job.root} {t('import.jobRef', { id: job.id })}
                             </span>
                         </div>
                         {active && (

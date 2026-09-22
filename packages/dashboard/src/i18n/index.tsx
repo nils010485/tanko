@@ -65,6 +65,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         api.updateSettings({ uiLanguage: next }).catch(() => undefined);
     };
 
+    useEffect(() => {
+        document.documentElement.lang = language;
+    }, [language]);
+
     const t = useMemo<TFunction>(
         () => (key, params) => {
             let text: string = dictionaries[language][key] ?? en[key] ?? String(key);
