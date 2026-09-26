@@ -207,7 +207,7 @@ export class DownloadQueue {
         const total = Number((this.opts.db.db.prepare(`SELECT COUNT(*) AS n FROM download_jobs${clause}`).get(...params) as { n: number }).n);
         const rows = this.opts.db.db
             .prepare(
-                `SELECT * FROM download_jobs${clause} ORDER BY CASE status WHEN 'downloading' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC LIMIT ? OFFSET ?`
+                `SELECT * FROM download_jobs${clause} ORDER BY CASE status WHEN 'downloading' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, CASE WHEN status = 'downloading' THEN -id ELSE updated_at END DESC, id DESC LIMIT ? OFFSET ?`
             )
             .all(...params, limit, offset) as unknown as JobRow[];
         return { jobs: rows.map(row => this._toDto(row)), total, counts };
