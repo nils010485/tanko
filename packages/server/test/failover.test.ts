@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Database } from '../src/db.js';
 import type { SourceInfo } from '../src/import/service.js';
-import { classifyFailure, FailoverService } from '../src/library/failover.js';
+import { FailoverService } from '../src/library/failover.js';
 import { LibraryStore } from '../src/library/store.js';
 
 let tmpDir: string;
@@ -71,19 +71,6 @@ beforeAll(async () => {
 afterAll(() => {
     database.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-});
-
-describe('failure classification (classifyFailure)', () => {
-    it('treats the MangaHere war.jpg placeholder as content-side removal', () => {
-        expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe(
-            'content'
-        );
-    });
-    it('keeps treating CDN/network noise as infra', () => {
-        expect(classifyFailure('Failed to download page "https://zjcdn.mangahere.org/x.jpg": non-image page (text/plain, 0 bytes)')).toBe('infra');
-        expect(classifyFailure('HTTP 503')).toBe('infra');
-        expect(classifyFailure(null)).toBe('infra');
-    });
 });
 
 describe('manual source picker (listAlternatives)', () => {

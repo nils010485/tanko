@@ -23,30 +23,19 @@ afterEach(() => {
 });
 
 describe('SqliteCacheStore', () => {
-    it('stores and returns values', async () => {
+    it('stores, overwrites and deletes values', async () => {
+        expect(await store.get('missing')).toBeUndefined();
         await store.set('k1', { a: 1 }, 60);
         expect(await store.get('k1')).toEqual({ a: 1 });
-    });
-
-    it('returns undefined for missing keys', async () => {
-        expect(await store.get('nope')).toBeUndefined();
+        await store.set('k1', 2, 60);
+        expect(await store.get('k1')).toBe(2);
+        await store.delete('k1');
+        expect(await store.get('k1')).toBeUndefined();
     });
 
     it('expires entries after the TTL', async () => {
         await store.set('k2', 'value', -1); // already expired
         expect(await store.get('k2')).toBeUndefined();
-    });
-
-    it('overwrites existing keys', async () => {
-        await store.set('k3', 1, 60);
-        await store.set('k3', 2, 60);
-        expect(await store.get('k3')).toBe(2);
-    });
-
-    it('deletes keys', async () => {
-        await store.set('k4', 'x', 60);
-        await store.delete('k4');
-        expect(await store.get('k4')).toBeUndefined();
     });
 
     it('clears every entry and returns the removed count', async () => {
