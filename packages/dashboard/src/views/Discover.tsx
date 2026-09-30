@@ -62,12 +62,23 @@ function decodeHashQuery(raw: string): string {
     }
 }
 
+function ErrorCard({ error, onDismiss }: { error: string; onDismiss: () => void }) {
+    return (
+        <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
+            <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
+            <ErrorDetail error={error} className="min-w-0 flex-1" />
+            <button type="button" onClick={onDismiss} className="ml-auto text-red-400/70 hover:text-red-300">
+                <IconX size={14} />
+            </button>
+        </Card>
+    );
+}
+
 /** Keep the query in the hash so a search is shareable (#/discover?q=…) without polluting the history. */
 const syncSearchUrl = (query: string) => {
     window.history.replaceState(null, '', query ? `#/discover?q=${encodeURIComponent(query)}` : '#/discover');
 };
 
-/** Injected by vite at build time from package.json (see vite.config.ts). */
 export default function Discover({
     onAddedToLibrary,
     onOpenSeries,
@@ -769,15 +780,7 @@ export default function Discover({
                 )}
             </Card>
 
-            {searchError && (
-                <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
-                    <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
-                    <ErrorDetail error={searchError} className="min-w-0 flex-1" />
-                    <button type="button" onClick={() => setSearchError('')} className="ml-auto text-red-400/70 hover:text-red-300">
-                        <IconX size={14} />
-                    </button>
-                </Card>
-            )}
+            {searchError && <ErrorCard error={searchError} onDismiss={() => setSearchError('')} />}
             {results === null && !globalStatus && !searching && !globalSearching && !searchError && !globalError && (
                 <EmptyState title={t('discover.startTitle')} hint={t('discover.startHint')} icon={<IconSearch size={28} />} />
             )}
@@ -806,15 +809,7 @@ export default function Discover({
                 </>
             )}
 
-            {globalError && (
-                <Card className="flex items-start gap-3 border-red-500/40 bg-red-500/5 p-3 text-sm text-red-300">
-                    <IconAlert size={16} className="mt-0.5 flex-none text-red-400" />
-                    <ErrorDetail error={globalError} className="min-w-0 flex-1" />
-                    <button type="button" onClick={() => setGlobalError('')} className="ml-auto text-red-400/70 hover:text-red-300">
-                        <IconX size={14} />
-                    </button>
-                </Card>
-            )}
+            {globalError && <ErrorCard error={globalError} onDismiss={() => setGlobalError('')} />}
 
             {globalStatus && (
                 <GlobalResults

@@ -71,7 +71,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
     const t = useMemo<TFunction>(
         () => (key, params) => {
-            let text: string = dictionaries[language][key] ?? en[key] ?? String(key);
+            let text: string = dictionaries[language][key] ?? String(key);
             if (params) {
                 for (const [name, value] of Object.entries(params)) {
                     text = text.split(`{${name}}`).join(String(value));

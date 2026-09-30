@@ -27,10 +27,11 @@ import { migrationBanner } from '../components/library/EntryCard.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { SourcePickerDialog } from '../components/series/SourcePickerDialog.js';
 import { useToast } from '../components/toast.js';
-import { Badge, Button, Card, EmptyState, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
+import { Badge, Button, Card, EmptyState, ErrorBanner, IconButton, Input, SectionTitle, Spinner, Toggle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
-import { chapterDownloadable, enqueueEntryChapters, rematchOutcomeKey, toQueueChapters } from '../lib/chapters.js';
+import { chapterDownloadable, enqueueEntryChapters, toQueueChapters } from '../lib/chapters.js';
+import { createEntryActions } from '../lib/entry-actions.js';
 import { useEscapeKey } from '../lib/hooks.js';
 
 interface PreviewState {
@@ -86,12 +87,14 @@ export default function Series({
     entryId,
     library,
     libraryLoaded,
+    libraryError,
     onBack,
     refreshLibrary
 }: {
     entryId: number;
     library: LibraryEntryDto[];
     libraryLoaded: boolean;
+    libraryError: string;
     onBack: () => void;
     refreshLibrary: () => Promise<void>;
 }) {
@@ -184,34 +187,19 @@ export default function Series({
 
     const setBusyFlag = (key: string, value: boolean) => setBusy(current => ({ ...current, [key]: value }));
 
-    const checkNow = async () => {
-        setBusyFlag('check', true);
-        try {
-            const result = await api.checkEntry(entryId);
-            const title = entry?.title ?? '';
-            toast.info(result.newChapters > 0 ? t('library.newChapters', { n: result.newChapters, title }) : t('library.upToDate', { title }));
-            await refreshLibrary();
-            await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag('check', false);
-        }
-    };
+    const entryTarget = () => ({ id: entryId, title: entry?.title ?? '' });
+    const actions = createEntryActions({
+        t,
+        toast,
+        refreshLibrary,
+        setBusy: setBusyFlag,
+        reloadChapters: () => loadChapters(),
+        notifyDownloadNew: queued => toast.success(t('series.chaptersQueued', { n: queued }))
+    });
 
-    const downloadNewChapters = async () => {
-        setBusyFlag('dlNew', true);
-        try {
-            const result = await api.downloadNew(entryId);
-            toast.success(t('series.chaptersQueued', { n: result.queued }));
-            await refreshLibrary();
-            await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag('dlNew', false);
-        }
-    };
+    const checkNow = () => actions.checkEntry(entryTarget(), 'check');
+
+    const downloadNewChapters = () => actions.downloadNew(entryTarget(), 'dlNew');
 
     /** Sonarr-style single action: grab everything not on disk yet ('new' +
      *  'missing' + 'failed'). Chapters that predate the follow ('missing')
@@ -230,13 +218,11 @@ export default function Series({
      *  enqueue endpoint (the scheduler's fresh-only semantics stay untouched). */
     const downloadEverything = async () => {
         if (!entry) return;
-        const pending = toQueueChapters(
-            (chapters ?? []).filter(chapter => chapter.status === 'new' || chapter.status === 'missing' || chapter.status === 'failed')
-        );
-        if (pending.length === 0) return;
+        const pending = (chapters ?? []).filter(chapter => chapter.status === 'new' || chapter.status === 'missing' || chapter.status === 'failed');
+        if (toQueueChapters(pending).length === 0) return;
         setBusyFlag('dlMissing', true);
         try {
-            const result = await api.enqueue({ sourceId: entry.sourceId, mangaId: entry.mangaId, mangaTitle: entry.title, chapters: pending });
+            const result = await enqueueEntryChapters(entry, pending);
             toast.success(t('series.chaptersQueued', { n: result.added + result.retried }));
             await refreshLibrary();
             await loadChapters();
@@ -247,19 +233,7 @@ export default function Series({
         }
     };
 
-    const rematch = async () => {
-        if (!entry) return;
-        setBusyFlag('rematch', true);
-        try {
-            const result = await api.rematchEntry(entryId);
-            toast.info(t(rematchOutcomeKey(result.outcome), { title: entry.title, source: result.entry?.sourceLabel ?? '' }));
-            await refreshLibrary();
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag('rematch', false);
-        }
-    };
+    const rematch = () => actions.rematch(entryTarget(), 'rematch');
 
     /** Open the manual source picker: same series on the other sources, with
      *  chapter counts so a starved current source is obvious. */
@@ -353,26 +327,14 @@ export default function Series({
 
     /** Apply or dismiss the pending migration suggestion (banner). */
     const confirmMigration = async (apply: boolean) => {
-        try {
-            const result = await api.confirmRematch(entryId, apply);
-            if (apply) {
-                toast.success(t('library.migratedKept', { title: entry?.title ?? '', kept: result.kept ?? 0, total: result.total ?? 0 }));
-            }
-            await refreshLibrary();
+        if (await actions.confirmMigration(entryTarget(), apply)) {
             await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
         }
     };
 
     const undoMigration = async () => {
-        try {
-            await api.rollbackMigration(entryId);
-            toast.success(t('library.rollbackMigrationDone'));
-            await refreshLibrary();
+        if (await actions.undoMigration(entryTarget())) {
             await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
         }
     };
     const toggleFollow = async (value: boolean) => {
@@ -385,25 +347,14 @@ export default function Series({
     };
 
     const togglePaused = async () => {
-        try {
-            await api.setPaused(entryId, !entry?.paused);
-            toast.success(t(entry?.paused ? 'library.resumedToast' : 'library.pausedToast', { title: entry?.title ?? '' }));
-            await refreshLibrary();
+        if (await actions.togglePaused({ ...entryTarget(), paused: entry?.paused ?? false })) {
             await loadChapters(); // unpausing unfreezes retries: re-read the tiers instead of waiting for a poll tick
-        } catch (error) {
-            toast.error((error as Error).message);
         }
     };
 
     const downloadChapter = async (chapter: LibraryChapterDto) => {
         if (!entry) return;
-        try {
-            await enqueueEntryChapters(entry, [chapter]);
-            toast.success(t('library.chapterQueued', { chapter: chapter.title }));
-            await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
+        await actions.downloadChapter(entry, chapter);
     };
 
     /** Queue every selected chapter (checkbox / shift-range selection). */
@@ -421,15 +372,7 @@ export default function Series({
         }
     };
 
-    const rollbackChapter = async (chapter: LibraryChapterDto) => {
-        try {
-            await api.rollbackChapter(entryId, chapter.chapterId);
-            toast.success(t('library.chapterRestored', { chapter: chapter.title }));
-            await loadChapters();
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const rollbackChapter = (chapter: LibraryChapterDto) => actions.rollbackChapter(entryTarget(), chapter);
 
     const openPreview = async (chapter: LibraryChapterDto) => {
         if (!entry) return;
@@ -453,7 +396,9 @@ export default function Series({
                         <IconArrowLeft size={14} /> {t('series.back')}
                     </Button>
                 </div>
-                {libraryLoaded ? (
+                {libraryError ? (
+                    <ErrorBanner message={libraryError} onRetry={refreshLibrary} />
+                ) : libraryLoaded ? (
                     <EmptyState title={t('series.notFound')} hint={t('series.notFoundHint')} icon={<IconLibrary size={28} />} />
                 ) : (
                     <Card className="flex items-center gap-2 p-4 text-sm text-faint">
@@ -633,7 +578,7 @@ export default function Series({
                     unlinking={unlinking}
                     aliasInput={aliasInput}
                     onAliasInput={setAliasInput}
-                    aliasFetchBusy={busy.aliasFetch ?? false}
+                    aliasFetchBusy={busy.aliasFetch}
                     onClose={closePicker}
                     onMigrate={target => void migrateTo(target)}
                     onUnlink={alternativeId => void unlink(alternativeId)}

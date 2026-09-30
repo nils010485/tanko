@@ -5,7 +5,7 @@
  */
 
 import type { SourceDto } from '@tanko/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { IconAlert, IconCheck, IconFolder, IconImport, IconPlay, IconRefresh, IconX } from '../components/icons.js';
 import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle, Toggle } from '../components/ui.js';
 import { type TFunction, useI18n } from '../i18n/index.js';
@@ -42,7 +42,6 @@ export default function Import({ onImported }: { onImported: () => void }) {
     const [sources, setSources] = useState<SourceDto[]>([]);
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [concurrency, setConcurrency] = useState('');
-    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const refresh = useCallback(async () => {
         try {
@@ -54,10 +53,8 @@ export default function Import({ onImported }: { onImported: () => void }) {
 
     useEffect(() => {
         void refresh();
-        pollRef.current = setInterval(refresh, 2000);
-        return () => {
-            if (pollRef.current) clearInterval(pollRef.current);
-        };
+        const timer = setInterval(refresh, 2000);
+        return () => clearInterval(timer);
     }, [refresh]);
 
     useEffect(() => {

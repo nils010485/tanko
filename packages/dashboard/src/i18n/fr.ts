@@ -256,7 +256,6 @@ export const fr: typeof import('./en.js').en = {
     'library.moreActions': 'Plus d’actions',
     'library.rollbackMigrationHint': 'Revenir à la source précédente',
     'library.rollbackMigration': 'Annuler la migration',
-    'library.rollbackMigrationDone': 'Source précédente restaurée',
     'library.reestablish': 'Rétablir',
     'library.remove': 'Retirer',
     'library.restoreFileHint': 'Restaurer le fichier précédent',

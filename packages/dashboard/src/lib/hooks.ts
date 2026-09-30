@@ -22,6 +22,34 @@ export function useEscapeKey(onEscape: () => void, active = true): void {
         return () => document.removeEventListener('keydown', onKey);
     }, [onEscape, active]);
 }
+
+export function usePoll(fetch: () => Promise<void>, intervalMs = 3000, onError?: (message: string) => void): void {
+    const fetchRef = useRef(fetch);
+    fetchRef.current = fetch;
+    const onErrorRef = useRef(onError);
+    onErrorRef.current = onError;
+    useEffect(() => {
+        let alive = true;
+        let failing = false;
+        const poll = async () => {
+            try {
+                await fetchRef.current();
+                failing = false;
+            } catch (error) {
+                if (alive && !failing) {
+                    onErrorRef.current?.((error as Error).message);
+                }
+                failing = true;
+            }
+        };
+        void poll();
+        const timer = setInterval(poll, intervalMs);
+        return () => {
+            alive = false;
+            clearInterval(timer);
+        };
+    }, [intervalMs]);
+}
 /**
  * A ref flipped to true on unmount — long loops started from onClick
  * handlers (polling, batch actions) check it to stop early.
