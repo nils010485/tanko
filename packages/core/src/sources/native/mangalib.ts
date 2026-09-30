@@ -19,8 +19,6 @@ import { config } from './config.js';
 import { checkHealthViaProbe, fetchJson, fetchRefererImage, noPagesError } from './http.js';
 
 const API = 'https://api.cdnlibs.org/api';
-const IMAGE_SERVER = 'https://img2.imglib.info';
-const REFERER = 'https://mangalib.org/';
 
 interface LibCover {
     thumbnail?: string;
@@ -72,19 +70,14 @@ export class MangalibConnector implements SourceAdapter {
 
     private readonly cfg = config('mangalib', {
         api: API,
-        imageServer: IMAGE_SERVER,
-        referer: REFERER,
+        imageServer: 'https://img2.imglib.info',
+        referer: 'https://mangalib.org/',
         origin: 'https://mangalib.org'
     });
 
     private api<T>(url: URL): Promise<T> {
         url.searchParams.append('site_id[]', '1');
-        return fetchJson<T>(url, {
-            id: this.id,
-            hostname: new URL(url).hostname,
-            label: this.label,
-            headers: { origin: this.cfg.origin, referer: this.cfg.referer }
-        });
+        return fetchJson<T>(url, { id: this.id, hostname: url.hostname, label: this.label, headers: { origin: this.cfg.origin, referer: this.cfg.referer } });
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {

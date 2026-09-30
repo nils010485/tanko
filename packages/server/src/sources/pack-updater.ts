@@ -8,7 +8,7 @@ const DEFAULT_PACK_URL = 'https://raw.githubusercontent.com/nils010485/tanko/mai
 const PACK_URL = process.env.SOURCES_PACK_URL || DEFAULT_PACK_URL;
 const POLL_KICKOFF_MS = 60_000;
 const POLL_MS = 24 * 60 * 60 * 1000;
-const URL_KEYS = /^(base|api|url|referer|origin|imageServer|cdn)$/;
+const URL_KEYS = /^(base|api|url|referer|origin|imageServer)$/;
 
 export const SOURCES_PACK_KEY = 'sources-pack-update';
 
