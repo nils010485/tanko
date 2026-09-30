@@ -65,33 +65,28 @@ export function createLanguagePreference(db: Database): () => string[] {
     return () => readJsonSetting<string[]>(db, LANGUAGES_KEY, ['en']);
 }
 
+function boolPref(db: Database, key: string): () => boolean {
+    return () => readJsonSetting<boolean>(db, key, false);
+}
+
 /** Opt-in starved-source detection: after a check, entries carrying very few
  *  chapters get searched on the other sources and a migration suggestion is
- *  stored when one of them offers far more chapters. Persisted in the KV store. */
-export function createIncompleteDetectionPref(db: Database): () => boolean {
-    return () => readJsonSetting<boolean>(db, INCOMPLETE_DETECTION_KEY, false);
-}
+ *  stored when one of them offers far more chapters. */
+export const createIncompleteDetectionPref = (db: Database): (() => boolean) => boolPref(db, INCOMPLETE_DETECTION_KEY);
 
 /** Opt-in stalled-source detection: series with no new chapter for
  *  abnormally long given their own release rhythm get searched on the other
  *  sources; a migration suggestion is stored when one of them carries more
- *  chapters. Persisted in the KV store. */
-export function createStalledDetectionPref(db: Database): () => boolean {
-    return () => readJsonSetting<boolean>(db, STALLED_DETECTION_KEY, false);
-}
+ *  chapters. */
+export const createStalledDetectionPref = (db: Database): (() => boolean) => boolPref(db, STALLED_DETECTION_KEY);
 
 /** Opt-in auto-migration: migration suggestions whose title match is exact
- *  (score ~1) are applied immediately without user confirmation. Persisted in
- *  the KV store. */
-export function createAutoMigrateExactPref(db: Database): () => boolean {
-    return () => readJsonSetting<boolean>(db, AUTO_MIGRATE_EXACT_KEY, false);
-}
+ *  (score ~1) are applied immediately without user confirmation. */
+export const createAutoMigrateExactPref = (db: Database): (() => boolean) => boolPref(db, AUTO_MIGRATE_EXACT_KEY);
 
 /** Opt-in: hide adult sources (tags 'hentai'/'porn'/'adult') from the source
- *  list, global search, failover and import matching. Persisted in the KV store. */
-export function createHideAdultSourcesPref(db: Database): () => boolean {
-    return () => readJsonSetting<boolean>(db, HIDE_ADULT_SOURCES_KEY, false);
-}
+ *  list, global search, failover and import matching. */
+export const createHideAdultSourcesPref = (db: Database): (() => boolean) => boolPref(db, HIDE_ADULT_SOURCES_KEY);
 
 /** Dashboard interface language; English until the user picks otherwise. */
 export function readUiLanguage(db: Database): UiLanguage {

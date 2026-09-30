@@ -72,8 +72,5 @@ export function registerLibraryRoutes(
         }
     });
 
-    app.post('/api/schedule/run', async () => {
-        const result = await scheduler.runNow();
-        return result;
-    });
+    app.post('/api/schedule/run', async () => scheduler.runNow());
 }

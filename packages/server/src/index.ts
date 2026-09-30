@@ -47,6 +47,7 @@ import {
 import { registerSourceHealthRoutes } from './routes/source-health.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { registerSourceUpdateRoutes } from './routes/sources-update.js';
+import { failoverDownloadMessage } from './scheduler/notify.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { GlobalSearchService } from './sources/global-search.js';
 import { SourceHealthService } from './sources/health.js';
@@ -286,12 +287,7 @@ function handleDownloadFailure(job: DownloadJobDto): void {
                 params: { title: entry.title, failures },
                 entryId: entry.id,
                 sourceId: entry.sourceId,
-                message:
-                    outcome === 'migrated'
-                        ? `"${entry.title}" : ${failures} téléchargements en échec — migré vers une autre source, reprise du téléchargement`
-                        : outcome === 'suggested'
-                          ? `"${entry.title}" : ${failures} téléchargements en échec — migration de source suggérée (à confirmer)`
-                          : `"${entry.title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`
+                message: failoverDownloadMessage(entry.title, failures, outcome)
             });
             if (outcome === 'migrated') {
                 library.requeueFailedAfterMigration(entryId, queue);

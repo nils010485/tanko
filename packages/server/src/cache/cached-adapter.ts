@@ -43,7 +43,7 @@ export class CachedSourceAdapter implements SourceAdapter {
     }
 
     initialize(): Promise<void> {
-        return this.inner.initialize();
+        return this.inner.initialize?.() ?? Promise.resolve();
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {

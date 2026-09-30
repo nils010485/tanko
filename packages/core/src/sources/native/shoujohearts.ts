@@ -37,8 +37,6 @@ export class ShoujoHeartsConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     /** Resolve against base and force http (https serves a broken vhost). */
     private _absolute(href: string | undefined | null): string | null {
         const url = absoluteUrl(href, this.base);

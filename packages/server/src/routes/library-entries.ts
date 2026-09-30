@@ -34,6 +34,16 @@ export function requireEntry(reply: FastifyReply, store: LibraryStore, entryId: 
     return entry;
 }
 
+export function requireFailover(reply: FastifyReply): FastifyReply {
+    return reply.code(501).send({ error: 'Failover non disponible' });
+}
+
+/** Migrating under running downloads would orphan their files and
+ *  double-queue the requeued chapters — let the jobs settle first. */
+export function assertNoRunningDownloads(reply: FastifyReply): FastifyReply {
+    return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+}
+
 /** Cooldown between two automatic AniList lookups for the same entry (the
  *  manual fetch button is never throttled). */
 const ANILIST_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -45,6 +55,13 @@ const BULK_ACTIONS: readonly LibraryBulkAction[] = ['pause', 'resume', 'hide', '
 export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: LibraryRouteDeps): void {
     const { store, queue, events, failover, covers, jobs } = deps;
     const publishEntry = deps.publishEntry;
+
+    /** Merge fetched alias names into the stored list (re-read first: a
+     *  concurrent edit may have landed during the fetch). */
+    const mergeAliases = (entryId: number, names: string[]): { fresh: string[]; merged: string[] } => {
+        const fresh = store.getEntry(entryId)?.aliases ?? [];
+        return { fresh, merged: store.setAliases(entryId, [...fresh, ...names]) };
+    };
 
     /** Entries with their cached cover URL when the first-chapter cover cache is enabled. */
     const listDecorated = async (hidden?: boolean): Promise<LibraryEntryDto[]> => {
@@ -236,7 +253,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
             return reply.code(400).send({ error: 'ids must be a non-empty array of integers' });
         }
         if (action === 'rematch' && !failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
+            return requireFailover(reply);
         }
         const summary = { processed: 0, failed: 0, skipped: 0, newChapters: 0, queued: 0, deleted: 0 };
         for (const id of ids) {
@@ -280,9 +297,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
                         if (!entry || !failover) {
                             break; // vanished or failover unavailable — failed
                         }
-                        // migrating under running downloads would orphan their
-                        // files and double-queue the requeued chapters — skip:
-                        // the next rematch run picks the entry up again
+                        // skip: the next rematch run picks the entry up again
                         if (queue.hasPendingJobs(id)) {
                             outcome = 'skip';
                             break;
@@ -327,7 +342,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
     // Manual source picker: same series on other sources with their chapter counts
     app.get<{ Params: { entryId: string } }>('/api/library/:entryId/alternatives', async (request, reply) => {
         if (!failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
+            return requireFailover(reply);
         }
         const entry = requireEntry(reply, store, Number(request.params.entryId));
         if (!entry) {
@@ -343,9 +358,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
                 try {
                     const names = await fetchTitleAliases(entry.title);
                     anilistTriedAt.set(entry.id, Date.now());
-                    // re-read: a concurrent edit may have landed during the fetch
-                    const fresh = store.getEntry(entry.id)?.aliases ?? [];
-                    const merged = store.setAliases(entry.id, [...fresh, ...names]);
+                    const { fresh, merged } = mergeAliases(entry.id, names);
                     if (merged.length > fresh.length) {
                         autoAliases = merged;
                         publishEntry(entry.id);
@@ -428,10 +441,8 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         }
         try {
             const names = await fetchTitleAliases(entry.title);
-            // re-read: a concurrent edit may have landed during the fetch
-            const fresh = store.getEntry(entry.id)?.aliases ?? [];
-            const kept = store.setAliases(entry.id, [...fresh, ...names]);
-            const fetched = kept.filter(name => !fresh.includes(name));
+            const { fresh, merged } = mergeAliases(entry.id, names);
+            const fetched = merged.filter(name => !fresh.includes(name));
             return { entry: publishEntry(entry.id), fetched };
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });

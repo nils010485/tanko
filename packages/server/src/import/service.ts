@@ -422,16 +422,12 @@ export class ImportService {
         return this.sql.prepare('SELECT * FROM import_jobs WHERE id = ?').get(jobId) as unknown as JobRow | undefined;
     }
 
-    /** Shared guard for resume/sync: throws on unknown job, returns null when already running. */
-    private _resumableJob(jobId: number): JobRow | null {
-        const job = this._job(jobId);
-        if (!job) {
+    /** Shared guard for resume/sync: throws on unknown job, false when already running. */
+    private _resumableJob(jobId: number): boolean {
+        if (!this._job(jobId)) {
             throw new Error(`Job ${jobId} introuvable`);
         }
-        if (this.running.has(jobId)) {
-            return null;
-        }
-        return job;
+        return !this.running.has(jobId);
     }
 
     private _setStatus(jobId: number, status: JobStatus): void {

@@ -24,7 +24,7 @@ import * as directories from './directories.js';
 import * as migration from './migration.js';
 import * as outages from './outages.js';
 import type { AlternativeRow, ChapterRow, EntryRow, MigrationTarget, SourceOutage, StalledCandidate } from './rows.js';
-import { normalizeAliases, normalizeTitle, SQL_INSERT_CHAPTER } from './rows.js';
+import { normalizeAliases, normalizeTitleKey, SQL_INSERT_CHAPTER } from './rows.js';
 import { migrateLibrarySchema } from './schema.js';
 
 export type { AlternativeRow, ChapterRow, MigrationTarget, SourceOutage, StalledCandidate };
@@ -325,13 +325,13 @@ export class LibraryStore {
     async listEntries(filter: 'visible' | 'hidden' | 'all' = 'visible'): Promise<LibraryEntryDto[]> {
         const where = filter === 'visible' ? 'WHERE hidden = 0' : filter === 'hidden' ? 'WHERE hidden = 1' : '';
         const rows = this.ctx.q.all<EntryRow>(`SELECT * FROM library ${where} ORDER BY title COLLATE NOCASE ASC`);
-        return Promise.all(rows.map(row => this._entryToDto(row)));
+        return rows.map(row => this._entryToDto(row));
     }
 
     /** Monitored entries (scheduler checks, detection passes): visible and not paused. */
     async listFollowedEntries(): Promise<LibraryEntryDto[]> {
         const rows = this.ctx.q.all<EntryRow>('SELECT * FROM library WHERE hidden = 0 AND paused = 0 ORDER BY title COLLATE NOCASE ASC');
-        return Promise.all(rows.map(row => this._entryToDto(row)));
+        return rows.map(row => this._entryToDto(row));
     }
 
     /** Hide (or restore) an entry without touching its files: a hidden entry
@@ -382,11 +382,11 @@ export class LibraryStore {
      *  entry for a series already tracked under a slightly different title
      *  on another source (re-import matching drift). Null when untracked. */
     findEntryByTitle(title: string): EntryRow | null {
-        const needle = normalizeTitle(title);
+        const needle = normalizeTitleKey(title);
         if (!needle) {
             return null;
         }
-        return this.ctx.q.all<EntryRow>('SELECT * FROM library').find(row => normalizeTitle(row.title) === needle) ?? null;
+        return this.ctx.q.all<EntryRow>('SELECT * FROM library').find(row => normalizeTitleKey(row.title) === needle) ?? null;
     }
 
     /** Record an alternative provenance for the entry's work — the same

@@ -45,8 +45,6 @@ export class MangaHantaConnector implements SourceAdapter {
         this.url = `${this.base}/${this.lang}/`;
     }
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': `${this.lang},*;q=0.5` } });
     }

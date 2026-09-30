@@ -19,8 +19,6 @@ export class MangaPillConnector implements SourceAdapter {
     private readonly base = 'https://mangapill.com';
     readonly url = this.base;
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
     }

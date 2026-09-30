@@ -275,93 +275,76 @@ export class Scheduler {
      *  as a migration suggestion. Bounded to DETECTION_PROBES entries per
      *  run (shared budget) to keep the source load sane. */
     private _detectIncompleteSources(): void {
-        if ((!this.opts.failover?.suggestIfIncomplete && !this.opts.failover?.suggestIfStalled) || this.detectPassRunning) {
+        const failover = this.opts.failover;
+        if (!failover || (!failover.suggestIfIncomplete && !failover.suggestIfStalled) || this.detectPassRunning) {
             return;
         }
         this.detectPassRunning = true;
-        let probes = 0;
         void (async () => {
+            let probes = 0;
             try {
-                for (const entry of await this.opts.store.listFollowedEntries()) {
-                    if (probes >= DETECTION_PROBES) {
-                        break;
-                    }
-                    if (entry.migrationSuggestion || entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS) {
-                        continue;
-                    }
-                    let outcome: 'suggested' | 'miss' | 'skipped' | undefined;
-                    try {
-                        // member call on purpose: suggestIfIncomplete relies on `this`
-                        outcome = await this.opts.failover?.suggestIfIncomplete?.(
-                            { id: entry.id, sourceId: entry.sourceId, title: entry.title },
-                            entry.chapterCount
-                        );
-                    } catch {
-                        probes++; // the crawl ran before throwing: it still cost a probe
-                        continue;
-                    }
-                    if (outcome === undefined) {
-                        break; // no starved probe wired
-                    }
-                    if (outcome === 'skipped') {
-                        continue; // nothing crawled: the budget stays untouched
-                    }
-                    probes++;
-                    if (outcome === 'suggested') {
-                        const updated = this.opts.store.getEntry(entry.id);
-                        if (updated) {
-                            this.opts.events.publish({ type: 'library.updated', entry: updated });
-                        }
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                }
+                const followed = await this.opts.store.listFollowedEntries();
+                // bound on purpose: the probes rely on `this`
+                probes = await this._runProbePass(
+                    followed.filter(entry => !entry.migrationSuggestion && !(entry.chapterCount > INCOMPLETE_SOURCE_CHAPTERS)),
+                    failover.suggestIfIncomplete?.bind(failover),
+                    probes
+                );
                 // stalled regime: candidates and back-off state live in the
                 // store. A miss (probable hiatus) spaces the next probe out
                 // exponentially, so the same entries don't crawl every run;
                 // 'skipped' (detection disabled, probe already running…)
                 // moves nothing and consumes no budget.
-                for (const entry of this.opts.store.listStalledCandidates()) {
-                    if (probes >= DETECTION_PROBES) {
-                        break;
-                    }
-                    let outcome: 'suggested' | 'miss' | 'skipped' | undefined;
-                    try {
-                        // member call on purpose: suggestIfStalled relies on `this`
-                        outcome = await this.opts.failover?.suggestIfStalled?.(
-                            { id: entry.id, sourceId: entry.sourceId, title: entry.title },
-                            entry.chapterCount
-                        );
-                    } catch {
-                        // an errored probe cannot distinguish hiatus from a
-                        // broken crawl: back off (bounded) rather than
-                        // re-crawl on the next run
-                        this.opts.store.recordStalenessProbe(entry.id, false);
-                        probes++;
-                        continue;
-                    }
-                    if (outcome === undefined) {
-                        break; // no stalled probe wired
-                    }
-                    if (outcome === 'skipped') {
-                        continue;
-                    }
-                    probes++;
-                    // hit or miss, the outcome drives the back-off
-                    this.opts.store.recordStalenessProbe(entry.id, outcome === 'suggested');
-                    if (outcome === 'suggested') {
-                        const updated = this.opts.store.getEntry(entry.id);
-                        if (updated) {
-                            this.opts.events.publish({ type: 'library.updated', entry: updated });
-                        }
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                }
+                await this._runProbePass(this.opts.store.listStalledCandidates(), failover.suggestIfStalled?.bind(failover), probes, (entry, suggested) =>
+                    this.opts.store.recordStalenessProbe(entry.id, suggested)
+                );
             } catch {
                 /* the pass is best-effort background work */
             } finally {
                 this.detectPassRunning = false;
             }
         })();
+    }
+
+    private async _runProbePass(
+        entries: { id: number; sourceId: string; title: string; chapterCount: number }[],
+        probe: ((entry: { id: number; sourceId: string; title: string }, chapterCount: number) => Promise<'suggested' | 'miss' | 'skipped'>) | undefined,
+        probes: number,
+        onOutcome?: (entry: { id: number }, suggested: boolean) => void
+    ): Promise<number> {
+        for (const entry of entries) {
+            if (probes >= DETECTION_PROBES) {
+                break;
+            }
+            let outcome: 'suggested' | 'miss' | 'skipped' | undefined;
+            try {
+                outcome = await probe?.({ id: entry.id, sourceId: entry.sourceId, title: entry.title }, entry.chapterCount);
+            } catch {
+                // an errored probe cannot distinguish hiatus from a broken
+                // crawl: back off (bounded) rather than re-crawl on the next
+                // run — and the crawl ran before throwing: it still cost a probe
+                onOutcome?.(entry, false);
+                probes++;
+                continue;
+            }
+            if (outcome === undefined) {
+                break; // probe not wired for this regime
+            }
+            if (outcome === 'skipped') {
+                continue; // nothing crawled: the budget stays untouched
+            }
+            probes++;
+            // hit or miss, the outcome drives the back-off
+            onOutcome?.(entry, outcome === 'suggested');
+            if (outcome === 'suggested') {
+                const updated = this.opts.store.getEntry(entry.id);
+                if (updated) {
+                    this.opts.events.publish({ type: 'library.updated', entry: updated });
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        return probes;
     }
 
     status(): ScheduleStatusDto {

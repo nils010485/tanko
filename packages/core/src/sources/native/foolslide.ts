@@ -35,8 +35,6 @@ export class FoolSlideConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     /** POST adult=true (FoolSlide adult gate); anti-bot shells render in Chromium. */
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, {

@@ -22,8 +22,6 @@ export class LineWebtoonConnector implements SourceAdapter {
     private readonly refererBase = 'https://www.webtoons.com/';
     readonly url = this.base;
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'th,*;q=0.5' } });
     }

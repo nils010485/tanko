@@ -6,8 +6,9 @@
 import type { SourceAlternativeDto } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
 import { INCOMPLETE_SOURCE_CHAPTERS } from '../library/failover.js';
+import { failoverDetail } from '../scheduler/notify.js';
 import type { LibraryRouteDeps } from './library.js';
-import { requireEntry } from './library-entries.js';
+import { assertNoRunningDownloads, requireEntry, requireFailover } from './library-entries.js';
 
 export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: LibraryRouteDeps): void {
     const { store, queue, events, failover, jobs, scheduler } = deps;
@@ -16,7 +17,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
     // Re-match every entry whose source keeps failing (bulk failover, cached catalogs)
     app.post('/api/library/rematch-failed', async (_request, reply) => {
         if (!failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
+            return requireFailover(reply);
         }
         const entries = (await store.listEntries()).filter(entry => (entry.checkFailures ?? 0) > 0);
         return jobs.runBulk(events, {
@@ -26,9 +27,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
             prefix: 'failover.rematch',
             entries,
             action: async entry => {
-                // migrating under running downloads would orphan their files
-                // and double-queue the requeued chapters — leave the entry
-                // failed so the next bulk run picks it up again
+                // leave the entry failed so the next bulk run picks it up again
                 if (queue.hasPendingJobs(entry.id)) {
                     return { outcome: 'skipped', detail: 'ignorée (téléchargements en cours)' };
                 }
@@ -38,12 +37,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
                 }
                 return {
                     outcome,
-                    detail:
-                        outcome === 'migrated'
-                            ? 'migré vers une nouvelle source'
-                            : outcome === 'suggested'
-                              ? 'migration suggérée (à confirmer)'
-                              : 'aucune source de rechange',
+                    detail: failoverDetail(outcome),
                     hit: outcome === 'migrated',
                     level: outcome === 'migrated' ? 'info' : 'warn'
                 };
@@ -56,7 +50,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
     // migration suggestions awaiting confirmation — nothing is applied here.
     app.post<{ Body: { maxChapters?: number } }>('/api/library/rematch-incomplete', async (request, reply) => {
         if (!failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
+            return requireFailover(reply);
         }
         const maxChapters = Number(request.body?.maxChapters ?? INCOMPLETE_SOURCE_CHAPTERS);
         if (!Number.isInteger(maxChapters) || maxChapters < 1 || maxChapters > 50) {
@@ -89,7 +83,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
     // Force a source re-match: auto-applies a confident match, otherwise stores a suggestion
     app.post<{ Params: { entryId: string } }>('/api/library/:entryId/rematch', async (request, reply) => {
         if (!failover) {
-            return reply.code(501).send({ error: 'Failover non disponible' });
+            return requireFailover(reply);
         }
         const entry = requireEntry(reply, store, Number(request.params.entryId));
         if (!entry) {
@@ -111,10 +105,8 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
             return reply.code(404).send({ error: 'Aucune suggestion en attente' });
         }
         if (request.body?.apply) {
-            // migrating under running downloads would orphan their files and
-            // double-queue the requeued chapters — let the jobs settle first
             if (queue.hasPendingJobs(Number(entryId))) {
-                return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+                return assertNoRunningDownloads(reply);
             }
             try {
                 const result = await store.migrateEntry(Number(entryId), entry.migrationSuggestion);
@@ -152,10 +144,8 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         if (target.sourceId === entry.sourceId && target.mangaId === entry.mangaId) {
             return reply.code(400).send({ error: 'Entry already on this source' });
         }
-        // same guard as /rematch/confirm: migrating under running downloads would
-        // orphan their files and double-queue the requeued chapters
         if (queue.hasPendingJobs(entry.id)) {
-            return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+            return assertNoRunningDownloads(reply);
         }
         try {
             const result = await store.migrateEntry(entry.id, {

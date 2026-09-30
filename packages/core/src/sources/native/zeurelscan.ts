@@ -19,8 +19,6 @@ export class ZeurelScanConnector implements SourceAdapter {
     private readonly base = 'https://www.zeurelscan.com';
     readonly url = this.base;
 
-    async initialize(): Promise<void> {}
-
     /** The reader serves valid HTML with a fake HTTP 400 status: keep the body. */
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, {

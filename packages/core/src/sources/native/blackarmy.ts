@@ -43,8 +43,6 @@ export class BlackArmyConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'fr,*;q=0.5' } });
     }

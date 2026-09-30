@@ -52,7 +52,7 @@ export interface SourceAdapter {
     readonly url?: string;
 
     /** Warm up the source (session/cookies). Must be idempotent. */
-    initialize(): Promise<void>;
+    initialize?(): Promise<void>;
 
     /** Search mangas by free-text query. */
     searchMangas(query: string): Promise<MangaInfo[]>;

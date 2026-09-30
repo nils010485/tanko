@@ -64,7 +64,7 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
             }))
         );
         if (entry) {
-            store?.markChaptersQueued(
+            store.markChaptersQueued(
                 entry.id,
                 body.chapters.map(chapter => chapter.id)
             );
