@@ -89,6 +89,12 @@ describe('classifyFailure', () => {
         expect(classifyFailure('Failed to get page list: Page list is empty')).toBe('content');
         expect(classifyFailure('Source "x" not found')).toBe('content');
     });
+
+    it('treats the MangaHere war.jpg placeholder as content-side removal', () => {
+        expect(classifyFailure('MangaHere: page list failed (source serves no images for this title (removed or licensed on MangaHere/MangaFox))')).toBe(
+            'content'
+        );
+    });
 });
 
 describe('LibraryStore source outages', () => {
