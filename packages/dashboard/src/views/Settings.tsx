@@ -163,7 +163,7 @@ export default function Settings() {
         setUpdateMessage('');
         setUpdating(true);
         try {
-            const { info, pack, restart } = await api.updateSources();
+            const { info, pack, changed, restart } = await api.updateSources();
             const diff = info.connectorCount - info.previousCount;
             let diffText = '';
             if (diff > 0) {
@@ -177,10 +177,14 @@ export default function Settings() {
                 location.reload();
                 return;
             }
-            if (pack.applied) {
+            if (pack.error) {
+                setUpdateMessage(t('settings.errorPrefix', { msg: pack.error }));
+            } else if (pack.applied) {
                 setUpdateMessage(t('settings.packApplied', { v: pack.version }));
-            } else {
+            } else if (changed) {
                 setUpdateMessage(t('settings.updatedManual', { n: info.connectorCount, diff: diffText }));
+            } else {
+                setUpdateMessage(t('settings.upToDate'));
             }
             setUpdateStatus(await api.sourcesUpdateStatus());
         } catch (error) {

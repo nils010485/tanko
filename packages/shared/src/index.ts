@@ -46,6 +46,19 @@ export interface SourcesPackInfo {
     date: string;
     version: string;
     applied: boolean;
+    error?: string;
+}
+
+export type OverrideValue = string | boolean | number | string[] | Record<string, string>;
+
+export function isOverrideValue(value: unknown): value is OverrideValue {
+    if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+        return true;
+    }
+    if (Array.isArray(value)) {
+        return value.every(item => typeof item === 'string');
+    }
+    return typeof value === 'object' && value !== null && Object.values(value).every(item => typeof item === 'string');
 }
 
 export interface SourcesPackStatus {

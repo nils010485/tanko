@@ -30,6 +30,7 @@ function sameSite(a: string, b: string): boolean {
 export class SourceRegistry {
     private readonly adapters = new Map<string, SourceAdapter>();
     private readonly nativeIds = new Set<string>();
+    private shadowed: Array<{ id: string; adapter: SourceAdapter; host: string | undefined }> = [];
     private loading?: Promise<void>;
 
     /** Native connectors registered up-front (no network needed). */
@@ -44,6 +45,25 @@ export class SourceRegistry {
         }
         this.nativeIds.clear();
         this.registerNatives();
+        const nativeHosts = [...this.adapters.values()].map(adapter => hostOf(adapter.url)).filter((host): host is string => !!host);
+        const stillShadowed = (host: string | undefined) => host !== undefined && nativeHosts.some(native => sameSite(native, host));
+        for (const [id, adapter] of [...this.adapters]) {
+            if (this.nativeIds.has(id)) {
+                continue;
+            }
+            const host = hostOf(adapter.url);
+            if (stillShadowed(host)) {
+                this.adapters.delete(id);
+                this.shadowed.push({ id, adapter, host });
+            }
+        }
+        this.shadowed = this.shadowed.filter(entry => {
+            if (stillShadowed(entry.host) || this.adapters.has(entry.id)) {
+                return true;
+            }
+            this.adapters.set(entry.id, entry.adapter);
+            return false;
+        });
     }
 
     private registerNatives(): void {
@@ -69,11 +89,14 @@ export class SourceRegistry {
         for (const connector of connectors) {
             const id = String(connector.id);
             const host = hostOf(connector.url);
+            const adapter = new LegacySourceAdapter(connector);
             // same id as a native connector -> theirs loses
             // same site as a native connector (any id) -> theirs loses too
             const shadowed = this.adapters.has(id) || (host !== undefined && nativeHosts.some(native => sameSite(native, host)));
-            if (!shadowed) {
-                this.adapters.set(id, new LegacySourceAdapter(connector));
+            if (shadowed) {
+                this.shadowed.push({ id, adapter, host });
+            } else {
+                this.adapters.set(id, adapter);
             }
         }
         if (failures > 0) {

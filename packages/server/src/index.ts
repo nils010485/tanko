@@ -401,7 +401,14 @@ healthService.probeNative().catch(error => console.warn('[health] native probe f
 // rolling re-check: probes due/dead sources in the background (backoff ladder)
 healthService.start();
 // daily sources-pack poll: hot-applies remote overrides (domain fixes)
-startPackPolling({ dataDirectory: config.dataDirectory, db: database, onApplied: () => sourceRegistry.reloadNatives() });
+startPackPolling({
+    dataDirectory: config.dataDirectory,
+    db: database,
+    onApplied: () => {
+        sourceRegistry.reloadNatives();
+        events.publish({ type: 'sources.updated' });
+    }
+});
 
 await app.listen({ host: config.host, port: config.port });
 console.log(`[server] listening on http://${config.host}:${config.port} (data: ${config.dataDirectory})`);

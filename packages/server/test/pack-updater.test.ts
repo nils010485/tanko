@@ -8,7 +8,7 @@ import { getPackStatus, SOURCES_PACK_KEY, syncSourcesPack, validatePack } from '
 
 let dataDir: string;
 let database: Database;
-let server: http.Server | undefined;
+const servers: http.Server[] = [];
 let baseUrl: string;
 
 beforeEach(() => {
@@ -18,19 +18,20 @@ beforeEach(() => {
 
 afterEach(async () => {
     database.close();
-    await new Promise<void>(resolve => (server ? server.close(() => resolve()) : resolve()));
+    await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))));
     fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 function servePack(...packs: unknown[]): Promise<void> {
     let index = 0;
     return new Promise(resolve => {
-        server = http.createServer((_request, response) => {
+        const server = http.createServer((_request, response) => {
             response.setHeader('content-type', 'application/json');
             response.end(JSON.stringify(packs[Math.min(index++, packs.length - 1)]));
         });
+        servers.push(server);
         server.listen(0, '127.0.0.1', () => {
-            baseUrl = `http://127.0.0.1:${(server!.address() as { port: number }).port}`;
+            baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
             resolve();
         });
     });
@@ -45,9 +46,10 @@ describe('validatePack', () => {
         expect(pack.version).toBe('2026-09-30');
     });
 
-    it('rejects bad shapes and non-https url keys', () => {
+    it('rejects bad shapes, id overrides and non-https url keys', () => {
         expect(() => validatePack({ version: '', sources: {} })).toThrow();
         expect(() => validatePack({ version: 'v1', sources: [] })).toThrow();
+        expect(() => validatePack({ version: 'v1', sources: { a: { id: 'other' } } })).toThrow(/id/);
         expect(() => validatePack({ version: 'v1', sources: { a: { base: 'http://insecure.example' } } })).toThrow();
         expect(() => validatePack({ version: 'v1', sources: { a: { deep: { nope: { x: 1 } } } } })).toThrow();
     });
@@ -78,6 +80,19 @@ describe('syncSourcesPack', () => {
         expect(second.applied).toBe(true);
         expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'sources-overrides.json'), 'utf8')).sources.toonily.base).toBe('https://v2.example');
         expect(getPackStatus(database).last?.version).toBe('v2');
+    });
+
+    it('re-applies the same version when the local overrides file is gone', async () => {
+        await servePack({ version: 'v1', sources: { toonily: { base: 'https://example.org' } } });
+        await syncSourcesPack({ dataDirectory: dataDir, db: database, url: baseUrl });
+        const second = await syncSourcesPack({ dataDirectory: dataDir, db: database, url: baseUrl });
+        expect(second.applied).toBe(false);
+        fs.rmSync(path.join(dataDir, 'sources-overrides.json'));
+        const third = await syncSourcesPack({ dataDirectory: dataDir, db: database, url: baseUrl });
+        expect(third.applied).toBe(true);
+        expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'sources-overrides.json'), 'utf8'))).toEqual({
+            sources: { toonily: { base: 'https://example.org' } }
+        });
     });
 
     it('keeps the current file when the fetched pack is invalid', async () => {
