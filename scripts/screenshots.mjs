@@ -174,7 +174,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && /^\/api\/sources\/[^/]+\/search$/.test(path)) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(SEARCH));
+        res.end(JSON.stringify({ mangas: SEARCH, total: SEARCH.length, hiddenByLanguage: 0 }));
         return;
     }
 
