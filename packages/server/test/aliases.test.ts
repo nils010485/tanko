@@ -106,7 +106,7 @@ describe('AniList client (fetchTitleAliases)', () => {
     });
 
     it('returns every known title of the best-matching media', async () => {
-        const fetchMock = vi.fn(async () =>
+        const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
             jsonResponse({
                 data: {
                     Page: {
@@ -118,7 +118,7 @@ describe('AniList client (fetchTitleAliases)', () => {
         vi.stubGlobal('fetch', fetchMock);
         expect(await fetchTitleAliases('Solo Leveling')).toEqual(['Solo Leveling', 'Na Honjaman Level Up', 'I Level Up Alone']);
         // GraphQL POST against the documented endpoint
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe('https://graphql.anilist.co');
         expect(init.method).toBe('POST');
     });

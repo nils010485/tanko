@@ -18,7 +18,7 @@ let events: EventBus;
 let published: WsEvent[];
 
 /** Fake adapter factory: scripted results (value or thunk) + per-source call counter. */
-function makeService(scripted: Record<string, HealthResult | (() => HealthResult)>) {
+function makeService(scripted: Record<string, HealthResult | (() => HealthResult | Promise<HealthResult>)>) {
     const calls = new Map<string, number>();
     const adapters = new Map<string, SourceAdapter>();
     for (const [id, script] of Object.entries(scripted)) {

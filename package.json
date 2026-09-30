@@ -18,6 +18,7 @@
     "dev": "npm run dev -w @tanko/server",
     "start": "node packages/server/dist/index.js",
     "test": "npm run test -ws --if-present",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "screenshots": "node scripts/screenshots.mjs"

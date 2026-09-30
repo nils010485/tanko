@@ -6,7 +6,7 @@
  * connectors opting out with 'not in browser mode' fall back to raw fetch.
  */
 
-import { NOT_IN_BROWSER_MODE, SourceError } from '@tanko/core';
+import { NOT_IN_BROWSER_MODE, type SourceAdapter, SourceError } from '@tanko/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchPageWithRetries } from '../src/downloader/pages.js';
 import { DomainGate } from '../src/downloader/rate-limiter.js';
@@ -32,21 +32,22 @@ describe('fetchPageWithRetries fallback contract', () => {
         vi.useFakeTimers();
         const rawFetch = vi.fn();
         vi.stubGlobal('fetch', rawFetch);
+        const fetchPageImage = vi.fn(async () => {
+            throw new SourceError('HTTP 429 fetching page image on ComicK (comick)', 'comick');
+        });
         const source = {
             id: 'comick',
             label: 'ComicK',
             kind: 'native',
-            fetchPageImage: vi.fn(async () => {
-                throw new SourceError('HTTP 429 fetching page image on ComicK (comick)', 'comick');
-            })
-        } as never;
+            fetchPageImage
+        } as unknown as SourceAdapter;
         let error: unknown;
         await drain(fetchPageWithRetries('https://cdn1.comicknew.pictures/a/17.webp', source, new DomainGate(0)).catch(e => (error = e)));
         expect((error as Error).message).toContain('HTTP 429');
         // the doomed Referer-less raw fetch must never run
         expect(rawFetch).not.toHaveBeenCalled();
         // 3 outer attempts, each routed to the connector
-        expect(source.fetchPageImage).toHaveBeenCalledTimes(3);
+        expect(fetchPageImage).toHaveBeenCalledTimes(3);
     });
 
     it('falls back to the raw fetch for browser-session opt-outs', async () => {

@@ -51,7 +51,7 @@ let events: EventBus;
 function makeService(scripted: Record<string, HealthResult>): SourceHealthService {
     const adapters = new Map<string, SourceAdapter>();
     for (const [id, result] of Object.entries(scripted)) {
-        adapters.set(id, { id, label: id, tags: [], kind: 'native', checkHealth: async () => result } as SourceAdapter);
+        adapters.set(id, { id, label: id, tags: [], kind: 'native', checkHealth: async () => result } as unknown as SourceAdapter);
     }
     return new SourceHealthService({
         db: database,

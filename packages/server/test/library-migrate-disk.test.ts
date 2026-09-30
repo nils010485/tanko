@@ -83,7 +83,7 @@ describe('migrateEntry', () => {
         store.markChapter(entry.id, 'only', 'downloaded', path.join(importDir, 'Chapter 1.cbz'), 'import');
         expect(chapterRow(entry.id, 'only')?.status).toBe('downloaded');
 
-        const result = await store.migrateEntry(entry.id, { sourceId: 'rich', mangaId: 'm2', mangaTitle: 'Series X' });
+        const result = await store.migrateEntry(entry.id, { sourceId: 'rich', sourceLabel: 'Rich', mangaId: 'm2', mangaTitle: 'Series X' });
 
         expect(result.total).toBe(50);
         expect(result.kept).toBe(31);
@@ -123,7 +123,7 @@ describe('migrateEntry', () => {
         fs.mkdirSync(folder, { recursive: true });
         fs.writeFileSync(path.join(folder, 'Chapter 1.cbz'), 'x');
         store.markChapter(entry.id, 'r1', 'downloaded', path.join(folder, 'Chapter 1.cbz'), 'test');
-        await store.migrateEntry(entry.id, { sourceId: 'starved', mangaId: 'm10', mangaTitle: 'One Punch-Man' });
+        await store.migrateEntry(entry.id, { sourceId: 'starved', sourceLabel: 'Starved', mangaId: 'm10', mangaTitle: 'One Punch-Man' });
         const after = (database.db.prepare('SELECT directory FROM library WHERE id = ?').get(entry.id) as { directory: string | null }).directory;
         expect(after).toBe('Rich/One Punch Man'); // untouched by the migration
         expect(store.seriesDirectory(entry.id)).toBe(folder); // files still resolve there

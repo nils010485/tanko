@@ -135,6 +135,7 @@ beforeAll(async () => {
         events: bus,
         settings: {
             dataDirectory: path.join(tmpDir, 'downloads'),
+            directoryLayout: 'source',
             chapterFormat: 'img',
             parallelSources: 1,
             concurrencyPerSource: 2,

@@ -1,0 +1,17 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "composite": false,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
+        "types": ["node"],
+        "baseUrl": ".",
+        "paths": {
+            "@tanko/shared": ["packages/shared/src/index.ts"],
+            "@tanko/core": ["packages/core/src/index.ts"]
+        }
+    },
+    "include": ["packages/shared/src/**/*", "packages/core/src/**/*", "packages/core/test/**/*", "packages/server/src/**/*", "packages/server/test/**/*"]
+}

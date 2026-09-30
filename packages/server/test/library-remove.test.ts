@@ -15,7 +15,7 @@ let keptFolder: string;
 let entryCased: number;
 let entryKept: number;
 
-const storeOptions = () => ({
+const storeOptions = (): ConstructorParameters<typeof LibraryStore>[0] => ({
     db: database,
     registry: { get: async () => undefined, list: async () => [] } as never,
     queueSettings: {
