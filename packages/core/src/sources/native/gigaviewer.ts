@@ -9,10 +9,10 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText } from './http.js';
 
-export interface GigaViewerOptions {
+interface GigaViewerOptions {
     id: string;
     label: string;
     base: string;
@@ -52,10 +52,6 @@ export class GigaViewerConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
-
     /** Fetch HTML with a browser UA; anti-bot shells render in Chromium. */
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'ja,en,*;q=0.5' } });
@@ -69,7 +65,7 @@ export class GigaViewerConnector implements SourceAdapter {
             const document = parseDocument(html);
             for (const item of [...document.querySelectorAll('li[class^="SeriesListItem_item__"], ul.series-table-list > li.subpage-table-list-item')]) {
                 const anchor = item.querySelector('a[href*="/episode/"]');
-                const href = this._absolute(anchor?.getAttribute('href'));
+                const href = absoluteUrl(anchor?.getAttribute('href'), this.base);
                 if (!href || results.has(href)) {
                     continue;
                 }
@@ -106,7 +102,7 @@ export class GigaViewerConnector implements SourceAdapter {
         const feed = parseDocument(await this._getText(atomUrl.href));
         const chapters: ChapterInfo[] = [];
         for (const entry of [...feed.querySelectorAll('entry')]) {
-            const href = this._absolute(entry.querySelector('link')?.getAttribute('href'));
+            const href = absoluteUrl(entry.querySelector('link')?.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -136,7 +132,7 @@ export class GigaViewerConnector implements SourceAdapter {
         }
         const images = (product?.pageStructure?.pages || [])
             .filter(page => page.type === 'main')
-            .map(page => this._absolute(page.src))
+            .map(page => absoluteUrl(page.src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
             throw new SourceError(`Aucune page pour "${chapter.title}" sur ${this.label}`, this.id);
@@ -145,15 +141,6 @@ export class GigaViewerConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de mangas vide (site modifié ?)');
     }
 }

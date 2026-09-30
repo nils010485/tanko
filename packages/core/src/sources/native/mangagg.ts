@@ -25,6 +25,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { checkHealthViaProbe } from './http.js';
 
 const BASE = 'https://mangagg.com';
 
@@ -192,15 +193,9 @@ export class MangaGGConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const html = await this._getText(`${BASE}/comic/`);
-            if (!html.includes('page-item-detail')) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: html.includes('page-item-detail'), error: 'Catalogue vide (site modifié ?)' };
+        });
     }
 }

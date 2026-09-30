@@ -14,8 +14,8 @@
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../../shims/browser.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { pinToOrigin } from './http.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, createThrottle, noPagesError, pinToOrigin } from './http.js';
 
 const API = 'https://api.comick.dev';
 const SITE = 'https://comick.dev';
@@ -39,7 +39,6 @@ interface DevChapter {
     group_name?: string[];
 }
 interface DevChaptersResponse {
-    total?: number;
     limit?: number;
     chapters?: DevChapter[];
 }
@@ -66,7 +65,6 @@ export class ComickConnector implements SourceAdapter {
     readonly tags = ['manga', 'multi-lingual'];
     readonly url = MIRROR;
 
-    private lastRequestAt = 0;
     private readonly artComicCache = new Map<string, ArtComic>();
 
     async initialize(): Promise<void> {
@@ -118,7 +116,7 @@ export class ComickConnector implements SourceAdapter {
         }
         const pages = (images || []).map(image => image.url).filter((url): url is string => !!url);
         if (pages.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return pages;
     }
@@ -127,7 +125,11 @@ export class ComickConnector implements SourceAdapter {
      *  and rate-limits in short bursts (429, no Retry-After header; the
      *  bucket refills in seconds but parallel chapters + auto-retries can
      *  drain it for longer): exponential backoff. */
-    async fetchPageImage(url: string, attempt = 0): Promise<{ mime: string; data: Uint8Array }> {
+    async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
+        return this._fetchPageImage(url, 0);
+    }
+
+    private async _fetchPageImage(url: string, attempt: number): Promise<{ mime: string; data: Uint8Array }> {
         const response = await fetch(url, {
             headers: { 'user-agent': UA, referer: `${MIRROR}/`, accept: 'image/*,*/*' },
             signal: AbortSignal.timeout(60000)
@@ -135,7 +137,7 @@ export class ComickConnector implements SourceAdapter {
         if (!response.ok) {
             if (attempt < 3 && (response.status === 429 || response.status === 403 || response.status >= 500)) {
                 await new Promise(resolve => setTimeout(resolve, 2000 * 2 ** attempt));
-                return this.fetchPageImage(url, attempt + 1);
+                return this._fetchPageImage(url, attempt + 1);
             }
             throw new SourceError(`HTTP ${response.status} fetching page image on ${this.label}`, this.id);
         }
@@ -146,19 +148,13 @@ export class ComickConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const url = new URL('/v1.0/search', API);
             url.searchParams.set('q', 'a');
             url.searchParams.set('limit', '1');
             const items = await this._fetchJson<DevSearchItem[]>(url);
-            if ((items || []).length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Réponse vide (API modifiée ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: (items || []).length > 0, error: 'Réponse vide (API modifiée ?)' };
+        });
     }
 
     /** Resolve the diverging art catalog entry (slug/hid differ from dev). */
@@ -312,13 +308,7 @@ export class ComickConnector implements SourceAdapter {
     }
 
     /** ~3 req/s to stay under the dev API rate limit (200/min). */
-    private async _throttle(): Promise<void> {
-        const wait = this.lastRequestAt + 350 - Date.now();
-        if (wait > 0) {
-            await new Promise(resolve => setTimeout(resolve, wait));
-        }
-        this.lastRequestAt = Date.now();
-    }
+    private readonly _throttle = createThrottle(350);
 
     /** JSON GET with retries: api.comick.dev intermittently answers a 403
      *  Cloudflare shell which clears by itself after a short backoff. */

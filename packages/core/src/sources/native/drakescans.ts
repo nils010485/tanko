@@ -12,14 +12,13 @@
 
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaProbe, fetchNativeText, noPagesError } from './http.js';
 
 interface DrakeSeries {
     slug: string;
     title: string;
     coverImage?: string;
-    type?: string;
 }
 
 interface DrakeSeriesResponse {
@@ -43,15 +42,10 @@ export class DrakeScansConnector implements SourceAdapter {
     readonly id = 'drakescans';
     readonly label = 'DrakeScans';
     readonly tags = ['manga', 'manhua', 'english'];
-    readonly url = 'https://drakecomic.net';
-
     private readonly base = 'https://drakecomic.net';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, init: { signal: AbortSignal.timeout(30_000) } });
@@ -146,7 +140,7 @@ export class DrakeScansConnector implements SourceAdapter {
                     id: href,
                     title: entry.title,
                     url: href,
-                    thumbnail: this._absolute(entry.coverImage) || undefined,
+                    thumbnail: absoluteUrl(entry.coverImage, this.base) || undefined,
                     languages: ['en']
                 };
             });
@@ -191,26 +185,22 @@ export class DrakeScansConnector implements SourceAdapter {
         const html = await this._getText(chapterUrl);
         const blob = this._flightData(html);
         const pages = (this._arrayAfter(blob, '"pages":') || []) as DrakePage[];
-        let images = pages.map(page => this._absolute(page?.imageUrl)).filter((src): src is string => !!src);
+        let images = pages.map(page => absoluteUrl(page?.imageUrl, this.base)).filter((src): src is string => !!src);
         if (images.length === 0) {
             images = [...blob.matchAll(/"imageUrl":"((?:[^"\\]|\\.)*)"/g)]
-                .map(match => this._absolute(match[1].replace(/\\\//g, '/')))
+                .map(match => absoluteUrl(match[1].replace(/\\\//g, '/'), this.base))
                 .filter((src): src is string => !!src);
         }
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const json = (await this._getJson(`${this.base}/api/series?limit=1`)) as DrakeSeriesResponse | null;
-            const ok = Array.isArray(json?.data);
-            return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : 'Réponse API invalide' };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: Array.isArray(json?.data), error: 'Réponse API invalide' };
+        });
     }
 }

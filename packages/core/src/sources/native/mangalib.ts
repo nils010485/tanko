@@ -11,9 +11,9 @@
  * image server https://img2.imglib.info + page.url.
  */
 
-import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, fetchJson, fetchRefererImage, noPagesError } from './http.js';
 
 const API = 'https://api.cdnlibs.org/api';
 const IMAGE_SERVER = 'https://img2.imglib.info';
@@ -69,27 +69,12 @@ export class MangalibConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private async _getJson<T>(url: URL | string): Promise<T> {
-        const response = await fetch(String(url), {
-            headers: { 'user-agent': randomUserAgent(), accept: 'application/json', 'Site-Id': '1' },
-            redirect: 'follow'
-        });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} sur api.cdnlibs.org`, this.id);
-        }
-        try {
-            return (await response.json()) as T;
-        } catch (error) {
-            throw new SourceError(`Réponse JSON invalide sur ${this.label}: ${errorMessage(error)}`, this.id);
-        }
-    }
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const url = new URL(`${API}/manga`);
         url.searchParams.set('limit', '20');
         url.searchParams.set('offset', '0');
         url.searchParams.set('q', query.trim());
-        const response = await this._getJson<LibListResponse>(url);
+        const response = await fetchJson<LibListResponse>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: { 'Site-Id': '1' } });
         const results: MangaInfo[] = [];
         for (const item of response.data || []) {
             if (!item.slug) {
@@ -108,7 +93,12 @@ export class MangalibConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const slug = manga.id.replace(/^.*\/manga\//, '');
-        const response = await this._getJson<LibChaptersResponse>(`${API}/manga/${slug}/chapters`);
+        const response = await fetchJson<LibChaptersResponse>(`${API}/manga/${slug}/chapters`, {
+            id: this.id,
+            hostname: 'api.cdnlibs.org',
+            label: this.label,
+            headers: { 'Site-Id': '1' }
+        });
         const chapters: ChapterInfo[] = [];
         for (const chapter of response.data || []) {
             if (!chapter.volume || !chapter.number) {
@@ -142,41 +132,36 @@ export class MangalibConnector implements SourceAdapter {
         if (branch) {
             url.searchParams.set('branch_id', branch);
         }
-        const response = await this._getJson<LibPagesResponse>(url);
+        const response = await fetchJson<LibPagesResponse>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: { 'Site-Id': '1' } });
         const pages = (response.data?.pages || []).map(page => (page.url ? IMAGE_SERVER + page.url.replace(/^\/+/, '/') : '')).filter(url => !!url);
         if (pages.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return pages;
     }
 
     /** img2.imglib.info rejects requests without Referer https://mangalib.org/. */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), referer: REFERER, accept: 'image/*,*/*' }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: REFERER,
+            accept: 'image/*,*/*',
+            error: (status, hostname) => `HTTP ${status} on ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
-        }
-        return {
-            mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg',
-            data: new Uint8Array(await response.arrayBuffer())
-        };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const url = new URL(`${API}/manga`);
             url.searchParams.set('limit', '20');
             url.searchParams.set('offset', '0');
-            const response = await this._getJson<LibListResponse>(url);
-            if ((response.data || []).length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (API modifiée ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            const response = await fetchJson<LibListResponse>(url, {
+                id: this.id,
+                hostname: 'api.cdnlibs.org',
+                label: this.label,
+                headers: { 'Site-Id': '1' }
+            });
+            return { ok: (response.data || []).length > 0, error: 'Catalogue vide (API modifiée ?)' };
+        });
     }
 }

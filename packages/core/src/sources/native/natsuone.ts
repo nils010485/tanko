@@ -8,8 +8,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaProbe, fetchNativeText, noPagesError } from './http.js';
 
 /** Catalog pages scanned by the search fallback (empty search + local filter). */
 const FALLBACK_PAGES = 5;
@@ -40,7 +40,7 @@ function decodeEntities(text: string): string {
         .replace(/&#8230;/g, '…');
 }
 
-export interface NatsuOneOptions {
+interface NatsuOneOptions {
     id: string;
     label: string;
     base: string;
@@ -65,10 +65,6 @@ export class NatsuOneConnector implements SourceAdapter {
     }
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
@@ -109,7 +105,7 @@ export class NatsuOneConnector implements SourceAdapter {
         }
         return items
             .map((item): MangaInfo | null => {
-                const link = this._absolute(item.link);
+                const link = absoluteUrl(item.link, this.base);
                 const title = decodeEntities(item.title?.rendered || '')
                     .replace(/<[^>]+>/g, '')
                     .replace(/\s+/g, ' ')
@@ -125,7 +121,7 @@ export class NatsuOneConnector implements SourceAdapter {
         const chapters: ChapterInfo[] = [];
         const seen = new Set<string>();
         for (const anchor of [...document.querySelectorAll('a[href*="/chapter-"]')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             // only chapters of this series (the page embeds "latest updates" from other series)
             if (!href?.startsWith(seriesUrl) || seen.has(href)) {
                 continue;
@@ -176,24 +172,18 @@ export class NatsuOneConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('section[data-image-data] img')]
             .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const items = await this._getJson<WpManga[]>(`${this.base}/wp-json/wp/v2/manga?per_page=1`);
-            if (items.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'API répond mais catalogue vide' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: items.length > 0, error: 'API répond mais catalogue vide' };
+        });
     }
 }

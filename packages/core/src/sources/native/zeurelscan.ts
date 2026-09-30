@@ -8,8 +8,8 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
 
 export class ZeurelScanConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -20,10 +20,6 @@ export class ZeurelScanConnector implements SourceAdapter {
     readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, `${this.base}/`);
-    }
 
     /** The reader serves valid HTML with a fake HTTP 400 status: keep the body. */
     private async _getText(url: string): Promise<string> {
@@ -43,7 +39,7 @@ export class ZeurelScanConnector implements SourceAdapter {
         const seen = new Set<string>();
         // catalogue links are relative (serie/<slug>) with no leading slash
         for (const anchor of [...document.querySelectorAll('a[href*="serie"]')] as Array<HTMLAnchorElement>) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/`);
             if (!href) {
                 continue;
             }
@@ -66,7 +62,7 @@ export class ZeurelScanConnector implements SourceAdapter {
                 id: url,
                 title: title === slug ? title.replace(/-/g, ' ') : title,
                 url,
-                thumbnail: anchor.querySelector('img')?.getAttribute('data-src') || anchor.querySelector('img')?.getAttribute('src') || undefined
+                thumbnail: lazySrc(anchor.querySelector('img'))
             });
         }
         return results;
@@ -79,7 +75,7 @@ export class ZeurelScanConnector implements SourceAdapter {
         const chapters: ChapterInfo[] = [];
         const seen = new Set<string>();
         for (const anchor of [...document.querySelectorAll('a[href*="/read/"]')] as Array<HTMLAnchorElement>) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/`);
             if (!href) {
                 continue;
             }
@@ -113,24 +109,15 @@ export class ZeurelScanConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('div.reader img[src], .reader-container img[src]')]
             .map(img => img.getAttribute('src'))
             .filter((src): src is string => !!src && src.startsWith('http') && src.includes('/immagini/'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, `${this.base}/`))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Catalogue vide (site modifié ?)');
     }
 }

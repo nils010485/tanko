@@ -6,7 +6,8 @@
 
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../../shims/browser.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
-import { SourceError } from '../types.js';
+import type { HealthResult, MangaInfo } from '../types.js';
+import { errorMessage, SourceError } from '../types.js';
 
 /** Resolve href against base, null when href is empty or unparseable. */
 export function absoluteUrl(href: string | undefined | null, base: string): string | null {
@@ -87,6 +88,91 @@ export function pinToOrigin(url: string, base: string, options?: { id?: string; 
         throw new SourceError(`Blocked cross-origin URL "${parsed.href}" (expected ${new URL(base).origin})`, options?.id ?? 'unknown');
     }
     return parsed.href;
+}
+
+export interface FetchJsonOptions {
+    id: string;
+    hostname?: string;
+    label?: string;
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+}
+
+export async function fetchJson<T>(url: string | URL, options: FetchJsonOptions): Promise<T> {
+    const response = await fetch(String(url), {
+        headers: { 'user-agent': randomUserAgent(), accept: 'application/json', ...options.headers },
+        redirect: 'follow',
+        ...(options.timeoutMs !== undefined ? { signal: AbortSignal.timeout(options.timeoutMs) } : {})
+    });
+    const httpSite = options.hostname ?? new URL(String(url)).pathname;
+    if (!response.ok) {
+        throw new SourceError(`HTTP ${response.status} sur ${httpSite}`, options.id);
+    }
+    try {
+        return (await response.json()) as T;
+    } catch (error) {
+        throw new SourceError(`Réponse JSON invalide sur ${options.label ?? httpSite}: ${errorMessage(error)}`, options.id);
+    }
+}
+
+export interface RefererImageOptions {
+    id: string;
+    referer: string;
+    accept?: string;
+    error: (status: number, hostname: string) => string;
+}
+
+export async function fetchRefererImage(url: string, options: RefererImageOptions): Promise<{ mime: string; data: Uint8Array }> {
+    const response = await fetch(url, {
+        headers: { 'user-agent': randomUserAgent(), referer: options.referer, accept: options.accept ?? 'image/*' }
+    });
+    if (!response.ok) {
+        throw new SourceError(options.error(response.status, new URL(url).hostname), options.id);
+    }
+    const buffer = await response.arrayBuffer();
+    return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
+}
+
+export async function checkHealthViaProbe(probe: () => Promise<{ ok: boolean; error?: string }>): Promise<HealthResult> {
+    const startedAt = Date.now();
+    try {
+        const { ok, error } = await probe();
+        return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : error };
+    } catch (error) {
+        return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
+    }
+}
+
+export function checkHealthViaSearch(source: { searchMangas(query: string): Promise<MangaInfo[]> }, query: string, emptyError: string): Promise<HealthResult> {
+    return checkHealthViaProbe(async () => ({ ok: (await source.searchMangas(query)).length > 0, error: emptyError }));
+}
+
+export function noPagesError(chapter: { title: string }, source: { id: string; label: string }): SourceError {
+    return new SourceError(`No pages found for "${chapter.title}" on ${source.label}`, source.id);
+}
+
+export function lazySrc(img: Element | null | undefined): string | undefined {
+    return img?.getAttribute('data-src') || img?.getAttribute('src') || undefined;
+}
+
+export function createThrottle(minIntervalMs: number): () => Promise<void> {
+    let lastRequestAt = 0;
+    return async () => {
+        const wait = lastRequestAt + minIntervalMs - Date.now();
+        if (wait > 0) {
+            await new Promise(resolve => setTimeout(resolve, wait));
+        }
+        lastRequestAt = Date.now();
+    };
+}
+
+export function siteHeaders(base: string, userAgent: string): Record<string, string> {
+    return {
+        'User-Agent': userAgent,
+        Accept: 'application/json, text/html;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        Referer: `${base}/`
+    };
 }
 
 export interface NativeTextOptions {

@@ -29,6 +29,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { checkHealthViaProbe } from './http.js';
 
 const SERIES_MARKER = 'c-series-items__item';
 const SITE = 'https://pocket.shonenmagazine.com';
@@ -178,15 +179,9 @@ export class MagaPokeConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const html = await this._getText(`${SITE}/series`);
-            if (!html.includes(SERIES_MARKER)) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de séries vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: html.includes(SERIES_MARKER), error: 'Liste de séries vide (site modifié ?)' };
+        });
     }
 }

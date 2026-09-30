@@ -8,23 +8,18 @@ import { browserEnabled, getBrowser } from '../../shims/browser.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchRefererImage, lazySrc, noPagesError } from './http.js';
 
 export class WebComicsAppConnector implements SourceAdapter {
     readonly kind = 'native' as const;
     readonly id = 'webcomicsapp';
     readonly label = 'WebComics';
     readonly tags = ['webtoon', 'english'];
-    readonly url = 'https://www.webcomicsapp.com';
-
     private readonly base = 'https://www.webcomicsapp.com';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, `${this.base}/en/`);
-    }
 
     private async _getText(url: string): Promise<string> {
         const response = await fetch(url, {
@@ -44,7 +39,7 @@ export class WebComicsAppConnector implements SourceAdapter {
         const needle = query.trim().toLowerCase();
         const results = new Map<string, MangaInfo>();
         for (const anchor of [...document.querySelectorAll('a[href^="/en/comic/"]')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/en/`);
             const title = (anchor.getAttribute('title') || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title || results.has(href)) {
                 continue;
@@ -57,7 +52,7 @@ export class WebComicsAppConnector implements SourceAdapter {
                 id: href,
                 title,
                 url: href,
-                thumbnail: image?.getAttribute('data-src') || image?.getAttribute('src') || undefined
+                thumbnail: lazySrc(image)
             });
         }
         return [...results.values()];
@@ -68,7 +63,7 @@ export class WebComicsAppConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters = new Map<number, ChapterInfo>();
         for (const anchor of [...document.querySelectorAll('a[href*="/en/bl/"]')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/en/`);
             const match = href?.match(/\/en\/bl\/[^/]+\/(\d+)\//);
             if (!href || !match) {
                 continue;
@@ -114,32 +109,21 @@ export class WebComicsAppConnector implements SourceAdapter {
             .map(src => new URL(src).href);
         const unique = [...new Set(images)];
         if (unique.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return unique;
     }
 
     /** The mangaina CDN requires the site Referer. */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), referer: `${this.base}/`, accept: 'image/*' }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: `${this.base}/`,
+            error: (status, hostname) => `HTTP ${status} on ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
-        }
-        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(await response.arrayBuffer()) };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Catalogue vide (site modifié ?)');
     }
 }

@@ -9,7 +9,7 @@
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl } from './http.js';
+import { absoluteUrl, checkHealthViaProbe, fetchRefererImage, noPagesError } from './http.js';
 
 interface ComizySearchItem {
     id?: string;
@@ -23,7 +23,6 @@ interface ComizyTitle {
     name?: string;
     url?: string;
     cover?: string;
-    stats?: { chapters_count?: number };
 }
 
 interface ComizyChapter {
@@ -36,7 +35,6 @@ interface ComizyChapter {
 
 interface ComizyChapterDetail {
     images?: string[];
-    pages?: Array<{ url?: string; image?: string }>;
 }
 
 export class ComizyConnector implements SourceAdapter {
@@ -77,9 +75,6 @@ export class ComizyConnector implements SourceAdapter {
     private _splitMangaId(mangaId: string): string {
         return mangaId.split('#')[0];
     }
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.webBase);
-    }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const data = await this._getJson<{ items?: ComizySearchItem[] }>(`${this.apiBase}/titles/search?q=${encodeURIComponent(query.trim())}`);
@@ -101,43 +96,34 @@ export class ComizyConnector implements SourceAdapter {
             .map(chapter => ({
                 id: chapter.id,
                 title: chapter.name || (chapter.number != null ? `Chapter ${chapter.number}` : chapter.id),
-                url: this._absolute(chapter.url) || `${this.webBase}/titles/${id}/${chapter.slug || chapter.id}`
+                url: absoluteUrl(chapter.url, this.webBase) || `${this.webBase}/titles/${id}/${chapter.slug || chapter.id}`
             }));
         // newest first -> chronological
         return chapters.reverse();
     }
 
-    async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const data = await this._getJson<{ chapter?: ComizyChapterDetail }>(`${this.apiBase}/titles/${this._splitMangaId(_manga.id)}/chapters/${chapter.id}`);
+    async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
+        const data = await this._getJson<{ chapter?: ComizyChapterDetail }>(`${this.apiBase}/titles/${this._splitMangaId(manga.id)}/chapters/${chapter.id}`);
         const images = data.chapter?.images?.filter(src => typeof src === 'string' && src.startsWith('http')) || [];
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     /** cmzcdn.org rejects plain fetches without the site Referer (403). */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), referer: `${this.webBase}/`, accept: 'image/*' }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: `${this.webBase}/`,
+            error: (status, hostname) => `HTTP ${status} on ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
-        }
-        const buffer = await response.arrayBuffer();
-        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const data = await this._getJson<{ title?: ComizyTitle }>(`${this.apiBase}/titles/WjBr4oj2`);
-            if (!data.title?.id) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'API répond mais sans titre attendu' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: !!data.title?.id, error: 'API répond mais sans titre attendu' };
+        });
     }
 }

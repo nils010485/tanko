@@ -16,15 +16,16 @@
 import { createHash } from 'node:crypto';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaSearch, noPagesError } from './http.js';
 
 const API = 'https://sg.mangatoon.mobi';
 const SIGN_SECRET = '66c10a61bd916c23f3b33810d3785d17';
 const UA = randomUserAgent();
 
-export type MangaToonLanguage = 'en' | 'cn' | 'id' | 'vi';
+type MangaToonLanguage = 'en' | 'cn' | 'id' | 'vi';
 
-export interface MangaToonOptions {
+interface MangaToonOptions {
     id: string;
     label: string;
     language: MangaToonLanguage;
@@ -75,7 +76,7 @@ export class MangaToonConnector implements SourceAdapter {
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const data = await this._api<MangaToonContent[]>('/api/content/list', { word: query.trim() });
         const results: MangaInfo[] = [];
-        for (const item of data || []) {
+        for (const item of data) {
             if (!item.id || !item.title) {
                 continue;
             }
@@ -91,7 +92,7 @@ export class MangaToonConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const data = await this._api<MangaToonEpisode[]>('/api/content/episodes', { id: manga.id });
-        const chapters: ChapterInfo[] = (data || [])
+        const chapters: ChapterInfo[] = data
             .filter(episode => episode.id && !episode.is_fee) // paid -> error_code -3001 without an account
             .sort((a, b) => (a.weight ?? 0) - (b.weight ?? 0))
             .map(episode => ({
@@ -108,24 +109,15 @@ export class MangaToonConnector implements SourceAdapter {
             id: chapter.id,
             close_wait_free_tooltip: 'true'
         });
-        const pages = (data || []).map(item => item.url && this._decodeImageUrl(item.url)).filter((url): url is string => !!url);
+        const pages = data.map(item => item.url && this._decodeImageUrl(item.url)).filter((url): url is string => !!url);
         if (pages.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return pages;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const results = await this.searchMangas('a');
-            if (results.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Réponse vide (API modifiée ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, 'a', 'Réponse vide (API modifiée ?)');
     }
 
     /** md5(path + sorted-encoded-params + secret) over the merged default params. */
@@ -162,11 +154,11 @@ export class MangaToonConnector implements SourceAdapter {
             throw new SourceError(`HTTP ${response.status} on ${path} (${this.label})`, this.id);
         }
         const json = (await response.json().catch(() => undefined)) as MangaToonResponse<T> | undefined;
-        if (!json || json.status === 'error') {
+        if (!json || json.status === 'error' || json.data == null) {
             const detail = json?.error_code !== undefined ? ` (error_code ${json.error_code})` : '';
             throw new SourceError(`API error on ${path}${detail}: ${this.label}`, this.id);
         }
-        return json.data as T;
+        return json.data;
     }
 
     /** Scrambled webp -> watermark jpg twin, dashed image host, https. */

@@ -8,8 +8,8 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
 
 export class ThreeHentaiConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -20,10 +20,6 @@ export class ThreeHentaiConnector implements SourceAdapter {
     readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
@@ -38,8 +34,8 @@ export class ThreeHentaiConnector implements SourceAdapter {
         const document = parseDocument(html);
         const results: MangaInfo[] = [];
         const seen = new Set<string>();
-        for (const anchor of [...document.querySelectorAll('a[href^="/d/"], a[href*="/d/"]')] as Array<HTMLAnchorElement>) {
-            const href = this._absolute(anchor.getAttribute('href'));
+        for (const anchor of [...document.querySelectorAll('a[href*="/d/"]')] as Array<HTMLAnchorElement>) {
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -60,7 +56,7 @@ export class ThreeHentaiConnector implements SourceAdapter {
                 id: href,
                 title,
                 url: href,
-                thumbnail: anchor.querySelector('img')?.getAttribute('data-src') || anchor.querySelector('img')?.getAttribute('src') || undefined
+                thumbnail: lazySrc(anchor.querySelector('img'))
             });
         }
         return results;
@@ -76,34 +72,25 @@ export class ThreeHentaiConnector implements SourceAdapter {
         const html = await this._getText(manga.url || manga.id);
         const document = parseDocument(html);
         const images: string[] = [];
-        for (const img of [...document.querySelectorAll('#thumbnail-gallery img[data-src], #thumbnail-gallery img')]) {
+        for (const img of [...document.querySelectorAll('#thumbnail-gallery img')]) {
             const src = img.getAttribute('data-src') || img.getAttribute('src');
             if (!src) {
                 continue;
             }
             // thumb  https://s1.3hentai.xyz/<hash>/<n>t.jpg -> full .../<n>.jpg
             const full = src.replace(/(\d)t(\.(?:jpe?g|png|webp|gif))$/i, '$1$2');
-            const url = this._absolute(full);
+            const url = absoluteUrl(full, this.base);
             if (url && !images.includes(url)) {
                 images.push(url);
             }
         }
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${manga.title}" on ${this.label}`, this.id);
+            throw noPagesError(manga, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('milk');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Recherche vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, 'milk', 'Recherche vide (site modifié ?)');
     }
 }

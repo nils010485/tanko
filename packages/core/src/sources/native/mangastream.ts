@@ -7,10 +7,9 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
 
-export interface MangastreamOptions {
+interface MangastreamOptions {
     id: string;
     label: string;
     base: string;
@@ -40,10 +39,6 @@ export class MangastreamConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
     }
@@ -54,7 +49,7 @@ export class MangastreamConnector implements SourceAdapter {
         const needle = query.trim().toLowerCase();
         const results: MangaInfo[] = [];
         for (const anchor of [...document.querySelectorAll('div.soralist ul li a.series, .listupd .bs a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             const title = (anchor.getAttribute('title') || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title || href.includes('/chapter/')) {
                 continue;
@@ -67,7 +62,7 @@ export class MangastreamConnector implements SourceAdapter {
                 id: href,
                 title,
                 url: href,
-                thumbnail: img?.getAttribute('data-src') || img?.getAttribute('src') || undefined
+                thumbnail: lazySrc(img)
             });
         }
         return results;
@@ -78,7 +73,7 @@ export class MangastreamConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('div#chapterlist ul li div.eph-num a, .eplister ul li a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -99,7 +94,7 @@ export class MangastreamConnector implements SourceAdapter {
             try {
                 const parsed = JSON.parse(json) as { sources?: Array<{ images?: string[] }> };
                 const images = parsed.sources?.[0]?.images ?? [];
-                const absolute = images.map(src => this._absolute(src)).filter((src): src is string => !!src);
+                const absolute = images.map(src => absoluteUrl(src, this.base)).filter((src): src is string => !!src);
                 if (absolute.length > 0) {
                     return absolute;
                 }
@@ -111,24 +106,15 @@ export class MangastreamConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('div#readerarea img')]
             .map(img => img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de mangas vide (site modifié ?)');
     }
 }

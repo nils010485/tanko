@@ -11,8 +11,8 @@ import { browserEnabled, getPageHTML, isAntiBotShell } from '../../shims/browser
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaProbe, lazySrc, noPagesError } from './http.js';
 
 export class KuMangaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -25,10 +25,6 @@ export class KuMangaConnector implements SourceAdapter {
     private readonly jar = new Map<string, string>();
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, `${this.base}/`);
-    }
 
     private _cookieHeader(): string {
         return [...this.jar.entries()].map(([name, value]) => `${name}=${value}`).join('; ');
@@ -57,7 +53,7 @@ export class KuMangaConnector implements SourceAdapter {
             }
             const location = response.headers.get('location');
             if (response.status >= 300 && response.status < 400 && location) {
-                current = this._absolute(location) || current;
+                current = absoluteUrl(location, `${this.base}/`) || current;
                 continue;
             }
             return { status: response.status, body: await response.text().catch(() => ''), url: current };
@@ -86,7 +82,7 @@ export class KuMangaConnector implements SourceAdapter {
         const needle = query.trim().toLowerCase();
         const results = new Map<string, MangaInfo>();
         for (const anchor of [...document.querySelectorAll('a[href*="manga/"]')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/`);
             const match = href?.match(/\/manga\/(\d+)\/([a-z0-9-]+)/);
             if (!href || !match) {
                 continue;
@@ -103,7 +99,7 @@ export class KuMangaConnector implements SourceAdapter {
                 id: `manga/${match[1]}/${match[2]}`,
                 title,
                 url: href,
-                thumbnail: image?.getAttribute('data-src') || image?.getAttribute('src') || undefined
+                thumbnail: lazySrc(image)
             });
         }
         return [...results.values()];
@@ -118,7 +114,7 @@ export class KuMangaConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('a.media-chapter__link, a[href*="/capitulo/"]')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), `${this.base}/`);
             const match = href?.match(/\/manga\/(\d+)\/capitulo\/(\d+)/);
             if (!href || !match) {
                 continue;
@@ -151,32 +147,22 @@ export class KuMangaConnector implements SourceAdapter {
             if (!hex || hex.length % 2 !== 0) {
                 continue;
             }
-            try {
-                const decoded = Buffer.from(hex, 'hex').toString('utf8');
-                if (decoded.startsWith('http')) {
-                    images.push(decoded);
-                }
-            } catch {
-                /* skip malformed hex */
+            const decoded = Buffer.from(hex, 'hex').toString('utf8');
+            if (decoded.startsWith('http')) {
+                images.push(decoded);
             }
         }
         const unique = [...new Set(images)];
         if (unique.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return unique;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const html = await this._getText(`${this.base}/`);
-            if (!html.includes('manga/')) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: html.includes('manga/'), error: 'Catalogue vide (site modifié ?)' };
+        });
     }
 }

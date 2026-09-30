@@ -8,8 +8,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
 
 interface DataTablesRow {
     id?: number | string;
@@ -19,8 +19,6 @@ interface DataTablesRow {
 }
 
 interface DataTablesResponse {
-    recordsTotal?: number;
-    recordsFiltered?: number;
     data?: DataTablesRow[];
 }
 
@@ -36,10 +34,6 @@ export class HeavenMangaConnector implements SourceAdapter {
     readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
@@ -78,7 +72,7 @@ export class HeavenMangaConnector implements SourceAdapter {
         const seen = new Set<string>();
         // search results use c-tabs-item cards (page-item-detail was the old /top markup)
         for (const anchor of [...document.querySelectorAll('a[href*="/manga/"]')] as Array<HTMLAnchorElement>) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href || seen.has(href)) {
                 continue;
             }
@@ -105,7 +99,7 @@ export class HeavenMangaConnector implements SourceAdapter {
                 id: href,
                 title,
                 url: href,
-                thumbnail: img?.getAttribute('data-src') || img?.getAttribute('src') || undefined
+                thumbnail: lazySrc(img)
             });
         }
         return results;
@@ -142,7 +136,7 @@ export class HeavenMangaConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('table.table tr td h4.title a, table#dataTableBuilder a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href?.includes('/manga/leer/')) {
                 continue;
             }
@@ -162,7 +156,7 @@ export class HeavenMangaConnector implements SourceAdapter {
         // chapter page redirects through a#leer to the actual reader
         const leer = document.querySelector('a#leer')?.getAttribute('href');
         if (leer) {
-            const readerUrl = this._absolute(leer);
+            const readerUrl = absoluteUrl(leer, this.base);
             if (readerUrl && readerUrl !== chapterUrl) {
                 html = await this._getText(readerUrl);
                 document = parseDocument(html);
@@ -171,35 +165,26 @@ export class HeavenMangaConnector implements SourceAdapter {
         // reader embeds the page list as "imgURL": "<url>" JSON-ish entries
         const images: string[] = [];
         for (const match of html.matchAll(/['"]imgURL['"]\s*:\s*['"]([^'"]+)['"]/g)) {
-            const url = this._absolute(match[1].replace(/\\\//g, '/'));
+            const url = absoluteUrl(match[1].replace(/\\\//g, '/'), this.base);
             if (url && !images.includes(url)) {
                 images.push(url);
             }
         }
         if (images.length === 0) {
             for (const img of [...document.querySelectorAll('div.lecteur img, #content img, img[src*="i.ibb.co"]')]) {
-                const src = this._absolute(img.getAttribute('src') || img.getAttribute('data-src'));
+                const src = absoluteUrl(img.getAttribute('src') || img.getAttribute('data-src'), this.base);
                 if (src && !images.includes(src)) {
                     images.push(src);
                 }
             }
         }
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('tower');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Recherche vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, 'tower', 'Recherche vide (site modifié ?)');
     }
 }
