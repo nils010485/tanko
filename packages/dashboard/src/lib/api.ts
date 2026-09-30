@@ -10,7 +10,6 @@ import type {
     AppSettingsResponseDto,
     ChapterDto,
     ConnectorsUpdateInfo,
-    ConnectorsUpdateStatus,
     DeadSeriesDto,
     DownloadsPageDto,
     GlobalSearchStatusDto,
@@ -28,7 +27,9 @@ import type {
     SourceAlternativeDto,
     SourceAlternativesResponseDto,
     SourceDto,
-    SourceSearchResponseDto
+    SourceSearchResponseDto,
+    SourcesPackInfo,
+    SourcesUpdateStatus
 } from '@tanko/shared';
 import { TOKEN_HEADER } from '@tanko/shared';
 import type { TFunction } from '../i18n/index.js';
@@ -157,8 +158,8 @@ export const api = {
         request<ChapterDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/chapters?${qs({ mangaId, title })}`),
     pages: (sourceId: string, mangaId: string, chapterId: string, mangaTitle: string, chapterTitle: string) =>
         request<{ pages: string[] }>(`/api/sources/${encodeURIComponent(sourceId)}/pages?${qs({ mangaId, chapterId, mangaTitle, chapterTitle })}`),
-    sourcesUpdateStatus: () => request<ConnectorsUpdateStatus>('/api/sources/update'),
-    updateSources: () => request<{ info: ConnectorsUpdateInfo; restart: boolean }>('/api/sources/update', { method: 'POST' }),
+    sourcesUpdateStatus: () => request<SourcesUpdateStatus>('/api/sources/update'),
+    updateSources: () => request<{ info: ConnectorsUpdateInfo; pack: SourcesPackInfo; restart: boolean }>('/api/sources/update', { method: 'POST' }),
 
     // library
     addToLibrary: (entry: {

@@ -29,11 +29,26 @@ function sameSite(a: string, b: string): boolean {
 
 export class SourceRegistry {
     private readonly adapters = new Map<string, SourceAdapter>();
+    private readonly nativeIds = new Set<string>();
     private loading?: Promise<void>;
 
     /** Native connectors registered up-front (no network needed). */
     constructor(private readonly wrap: (adapter: SourceAdapter) => SourceAdapter = adapter => adapter) {
+        this.registerNatives();
+    }
+
+    /** Re-instantiate the native connectors (picks up reloaded overrides). */
+    reloadNatives(): void {
+        for (const id of this.nativeIds) {
+            this.adapters.delete(id);
+        }
+        this.nativeIds.clear();
+        this.registerNatives();
+    }
+
+    private registerNatives(): void {
         for (const native of createNativeConnectors()) {
+            this.nativeIds.add(native.id);
             this.adapters.set(native.id, native);
         }
     }

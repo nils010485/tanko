@@ -4,7 +4,7 @@
  * interface language and cover cache apply instantly.
  */
 
-import type { ConnectorsUpdateStatus, QueueSettingsDto } from '@tanko/shared';
+import type { QueueSettingsDto, SourcesUpdateStatus } from '@tanko/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
 import { useToast } from '../components/toast.js';
@@ -59,7 +59,7 @@ export default function Settings() {
     const [confirmHideAdult, setConfirmHideAdult] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
-    const [updateStatus, setUpdateStatus] = useState<ConnectorsUpdateStatus | null>(null);
+    const [updateStatus, setUpdateStatus] = useState<SourcesUpdateStatus | null>(null);
     const [updating, setUpdating] = useState(false);
     const [updateMessage, setUpdateMessage] = useState('');
     const toast = useToast();
@@ -163,7 +163,7 @@ export default function Settings() {
         setUpdateMessage('');
         setUpdating(true);
         try {
-            const { info, restart } = await api.updateSources();
+            const { info, pack, restart } = await api.updateSources();
             const diff = info.connectorCount - info.previousCount;
             let diffText = '';
             if (diff > 0) {
@@ -177,7 +177,12 @@ export default function Settings() {
                 location.reload();
                 return;
             }
-            setUpdateMessage(t('settings.updatedManual', { n: info.connectorCount, diff: diffText }));
+            if (pack.applied) {
+                setUpdateMessage(t('settings.packApplied', { v: pack.version }));
+            } else {
+                setUpdateMessage(t('settings.updatedManual', { n: info.connectorCount, diff: diffText }));
+            }
+            setUpdateStatus(await api.sourcesUpdateStatus());
         } catch (error) {
             setUpdateMessage(t('settings.errorPrefix', { msg: (error as Error).message }));
         } finally {
@@ -399,6 +404,7 @@ export default function Settings() {
                                         {updateStatus?.last
                                             ? `${formatDate(updateStatus.last.date)} · ${String(updateStatus.last.commit).slice(0, 7)}`
                                             : t('settings.never')}
+                                        {updateStatus?.pack?.last ? ` · pack ${updateStatus.pack.last.version}` : ''}
                                     </div>
                                     {updateMessage && <div className="mt-1 text-xs text-sky-300">{updateMessage}</div>}
                                 </div>

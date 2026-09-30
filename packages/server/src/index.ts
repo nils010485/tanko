@@ -51,6 +51,7 @@ import { failoverDownloadMessage } from './scheduler/notify.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { GlobalSearchService } from './sources/global-search.js';
 import { SourceHealthService } from './sources/health.js';
+import { startPackPolling, stopPackPolling } from './sources/pack-updater.js';
 import { apiToken, registerTokenGuard } from './util/token-guard.js';
 import { EventBus } from './ws.js';
 
@@ -341,7 +342,7 @@ registerHealthRoutes(app);
 registerActivityRoutes(app, activity, { library, sourceHealth: healthService }, jobs);
 registerSourceRoutes(app, sourceRegistry, preferredLanguages, hideAdultSourcesPref);
 registerSourceHealthRoutes(app, healthService);
-registerSourceUpdateRoutes(app, config, database);
+registerSourceUpdateRoutes(app, config, database, { registry: sourceRegistry, events });
 registerDownloadRoutes(app, queue, sourceRegistry, library);
 registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers, jobs);
 registerSettingsRoutes(app, queue, database, covers);
@@ -399,6 +400,8 @@ if (fs.existsSync(config.dashboardDirectory)) {
 healthService.probeNative().catch(error => console.warn('[health] native probe failed:', error));
 // rolling re-check: probes due/dead sources in the background (backoff ladder)
 healthService.start();
+// daily sources-pack poll: hot-applies remote overrides (domain fixes)
+startPackPolling({ dataDirectory: config.dataDirectory, db: database, onApplied: () => sourceRegistry.reloadNatives() });
 
 await app.listen({ host: config.host, port: config.port });
 console.log(`[server] listening on http://${config.host}:${config.port} (data: ${config.dataDirectory})`);
@@ -409,6 +412,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         queue.stop();
         scheduler.stop();
         healthService.stop();
+        stopPackPolling();
         await app.close();
         database.close();
         // solved-session pages + Chromium: teardown is ours, not puppeteer's

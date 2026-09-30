@@ -12,6 +12,7 @@ import { installGlobals } from './shims/globals.js';
 import { HeadlessRequest } from './shims/request.js';
 import { HeadlessSettings } from './shims/settings.js';
 import { HeadlessStorage } from './shims/storage.js';
+import { loadOverrides } from './sources/native/config.js';
 
 export interface EngineContext {
     Settings: HeadlessSettings;
@@ -81,6 +82,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     installGlobals();
 
     const dataDirectory = path.resolve(options.dataDirectory);
+    loadOverrides(path.join(dataDirectory, 'sources-overrides.json'));
     // Prefer a synced copy of the connectors (written by the updater) over the
     // built-in vendored one; falls back when no sync has happened yet.
     const syncedVendor = path.join(dataDirectory, 'vendor');

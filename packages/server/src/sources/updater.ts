@@ -18,6 +18,7 @@ const execFile = promisify(execFileCallback);
 
 const UPSTREAM_URL = 'https://github.com/manga-download/hakuneko.git';
 const UPSTREAM_PATH = 'src/web/mjs';
+const PINNED_COMMIT = process.env.CONNECTORS_COMMIT || '128f3c771c7d50bf4eec19638d480f133469eca8';
 /** Minimum plausible connector count — guards against a broken upstream checkout. */
 const MIN_CONNECTORS = 1000;
 
@@ -42,10 +43,12 @@ function countConnectors(directory: string): number {
     }
 }
 
-/** Default clone: shallow sparse checkout limited to src/web/mjs (skips the large assets). */
+/** Default clone: shallow sparse checkout of the pinned upstream commit (CONNECTORS_COMMIT overrides). */
 async function cloneUpstream(destination: string): Promise<string> {
     await execFile('git', ['clone', '--depth', '1', '--filter', 'blob:none', '--sparse', UPSTREAM_URL, destination], { timeout: 120_000 });
     await execFile('git', ['sparse-checkout', 'set', UPSTREAM_PATH], { cwd: destination, timeout: 120_000 });
+    await execFile('git', ['fetch', '--depth', '1', 'origin', PINNED_COMMIT], { cwd: destination, timeout: 120_000 });
+    await execFile('git', ['checkout', 'FETCH_HEAD'], { cwd: destination, timeout: 120_000 });
     const { stdout } = await execFile('git', ['rev-parse', 'HEAD'], { cwd: destination, timeout: 30_000 });
     return stdout.trim();
 }

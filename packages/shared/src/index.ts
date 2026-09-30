@@ -41,6 +41,22 @@ export interface ConnectorsUpdateStatus {
     activeCount: number;
 }
 
+/** Last applied sources pack (remote overrides JSON). */
+export interface SourcesPackInfo {
+    date: string;
+    version: string;
+    applied: boolean;
+}
+
+export interface SourcesPackStatus {
+    running: boolean;
+    last: { date: string; version: string } | null;
+}
+
+export interface SourcesUpdateStatus extends ConnectorsUpdateStatus {
+    pack: SourcesPackStatus;
+}
+
 export interface MangaDto {
     sourceId: string;
     id: string;

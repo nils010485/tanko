@@ -702,6 +702,7 @@ export const en = {
     'settings.updateSources': 'Update sources',
     'settings.updatedRestarting': 'Sources updated: {n} sources{diff} — restarting the server…',
     'settings.updatedManual': 'Sources updated: {n} sources{diff} — restart the server to load them.',
+    'settings.packApplied': 'Sources pack applied (v{v}) — sources reloaded.',
     'settings.errorPrefix': 'Error: {msg}',
     'settings.unreachableAfterUpdate': 'Server unreachable after the update — make sure it restarts, then reload the page.',
 
