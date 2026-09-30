@@ -4,12 +4,13 @@
  * the running background jobs.
  */
 import type { ActivityJobsDto, ActivityStatsDto, JobStatusDto, LibraryEntryDto, LogCategory } from '@tanko/shared';
-import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentType, useMemo, useRef, useState } from 'react';
 import { IconActivity, IconArrowLeftRight, IconCheck, IconGlobe, type IconProps, IconRefresh, IconSettings } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
+import { usePoll } from '../lib/hooks.js';
 import type { LogLine } from '../lib/live.js';
 
 /** Lucide icon per event family. */
@@ -79,26 +80,15 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
     };
 
     // system pulse + running jobs, polled while the view is open
-    useEffect(() => {
-        let alive = true;
-        const poll = async () => {
-            try {
-                const [statsResult, jobsResult] = await Promise.all([api.activityStats(), api.activityJobs()]);
-                if (alive) {
-                    setStats(statsResult);
-                    setJobs(jobsResult);
-                }
-            } catch {
-                /* keep the last known values */
-            }
-        };
-        void poll();
-        const timer = setInterval(poll, 3000);
-        return () => {
-            alive = false;
-            clearInterval(timer);
-        };
-    }, []);
+    usePoll(
+        async () => {
+            const [statsResult, jobsResult] = await Promise.all([api.activityStats(), api.activityJobs()]);
+            setStats(statsResult);
+            setJobs(jobsResult);
+        },
+        3000,
+        message => toast.error(message)
+    );
 
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();

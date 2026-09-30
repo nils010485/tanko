@@ -12,6 +12,7 @@ import { Badge, Button, Card, ErrorBanner, Input, SectionTitle, Skeleton, Spinne
 import type { TFunction } from '../i18n/index.js';
 import { useI18n } from '../i18n/index.js';
 import { api, type CoverStatusDto, type SchedulePatch } from '../lib/api.js';
+import { usePoll } from '../lib/hooks.js';
 
 const CRON_PRESETS: Array<{ value: string; key: Parameters<TFunction>[0] }> = [
     { value: '0 */6 * * *', key: 'schedule.cron6' },
@@ -83,25 +84,11 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
     }, [loadSchedule]);
 
     // cover cache status: polled every few seconds while the view is open
-    useEffect(() => {
-        let alive = true;
-        const poll = async () => {
-            try {
-                const status = await api.coversStatus();
-                if (alive) {
-                    setCovers(status);
-                }
-            } catch {
-                /* keep the last known status */
-            }
-        };
-        void poll();
-        const timer = setInterval(poll, 3000);
-        return () => {
-            alive = false;
-            clearInterval(timer);
-        };
-    }, []);
+    usePoll(
+        async () => setCovers(await api.coversStatus()),
+        3000,
+        message => toast.error(message)
+    );
 
     const save = async (patch: SchedulePatch) => {
         setSaving(true);

@@ -19,7 +19,7 @@ import { LibraryToolbar } from '../components/library/LibraryToolbar.js';
 import { useLibraryActions } from '../components/library/useLibraryActions.js';
 import { MigrationBanner } from '../components/MigrationBanner.js';
 import { MigrationModal } from '../components/MigrationModal.js';
-import { Badge, Button, EmptyState } from '../components/ui.js';
+import { Badge, Button, EmptyState, ErrorBanner } from '../components/ui.js';
 import { useI18n } from '../i18n/index.js';
 import { useLongPress } from '../lib/hooks.js';
 import {
@@ -40,6 +40,7 @@ import {
 export default function Library({
     library,
     loaded,
+    libraryError,
     refreshLibrary,
     focusFilter,
     onFocusFilterDone,
@@ -48,6 +49,7 @@ export default function Library({
 }: {
     library: LibraryEntryDto[];
     loaded: boolean;
+    libraryError: string;
     refreshLibrary: () => Promise<void>;
     focusFilter?: string | null;
     onFocusFilterDone?: () => void;
@@ -308,9 +310,11 @@ export default function Library({
                 />
             )}
 
-            {!loaded && <LibrarySkeleton view={view} />}
+            {libraryError && <ErrorBanner message={libraryError} onRetry={refreshLibrary} />}
 
-            {loaded && filtered.length === 0 && source.length === 0 && !showHidden && (
+            {!loaded && !libraryError && <LibrarySkeleton view={view} />}
+
+            {loaded && !libraryError && filtered.length === 0 && source.length === 0 && !showHidden && (
                 <EmptyState title={t('library.noSeries')} hint={t('library.noSeriesHint')} icon={<IconLibrary size={28} />}>
                     <div className="flex flex-wrap items-center justify-center gap-2">
                         <Button small onClick={() => onNavigateTab?.('discover')}>
@@ -322,10 +326,12 @@ export default function Library({
                     </div>
                 </EmptyState>
             )}
-            {loaded && filtered.length === 0 && source.length === 0 && showHidden && (
+            {loaded && !libraryError && filtered.length === 0 && source.length === 0 && showHidden && (
                 <EmptyState title={t('library.noHidden')} hint={t('library.noHiddenHint')} icon={<IconEyeOff size={28} />} />
             )}
-            {loaded && filtered.length === 0 && source.length > 0 && <EmptyState title={t('library.noMatch')} icon={<IconSearch size={28} />} />}
+            {loaded && !libraryError && filtered.length === 0 && source.length > 0 && (
+                <EmptyState title={t('library.noMatch')} icon={<IconSearch size={28} />} />
+            )}
 
             {loaded && filtered.length > 0 && view === 'list' && (
                 <div className="space-y-2">

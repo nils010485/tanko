@@ -19,35 +19,26 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
     );
 }
 
-export type BadgeTone = 'zinc' | 'green' | 'orange' | 'red' | 'blue' | 'purple';
+export type BadgeTone = 'zinc' | 'green' | 'orange' | 'red' | 'red-solid' | 'blue' | 'purple';
 
-export function Badge({ children, tone = 'zinc', solid = false }: { children: ReactNode; tone?: BadgeTone; solid?: boolean }) {
+export function Badge({ children, tone = 'zinc' }: { children: ReactNode; tone?: BadgeTone }) {
     const tones: Record<BadgeTone, string> = {
         zinc: 'bg-white/5 text-muted border-line',
         green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
         orange: 'bg-accent/10 text-accent-soft border-accent/25',
         red: 'bg-red-500/10 text-red-400 border-red-500/25',
+        'red-solid': 'bg-red-500 text-white border-red-500',
         blue: 'bg-sky-500/10 text-sky-400 border-sky-500/25',
         purple: 'bg-violet-500/10 text-violet-400 border-violet-500/25'
     };
-    const solidTones: Record<BadgeTone, string> = {
-        zinc: 'bg-muted text-canvas border-faint',
-        green: 'bg-emerald-500 text-white border-emerald-500',
-        orange: 'bg-accent text-canvas border-accent',
-        red: 'bg-red-500 text-white border-red-500',
-        blue: 'bg-sky-500 text-white border-sky-500',
-        purple: 'bg-violet-500 text-white border-violet-500'
-    };
     return (
-        <span
-            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${solid ? solidTones[tone] : tones[tone]}`}
-        >
+        <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${tones[tone]}`}>
             {children}
         </span>
     );
 }
 
-export type ButtonVariant = 'primary' | 'ghost' | 'danger';
+type ButtonVariant = 'primary' | 'ghost' | 'danger';
 
 const buttonVariants: Record<ButtonVariant, string> = {
     primary: 'bg-accent text-canvas shadow-lg shadow-accent/20 hover:bg-accent-deep hover:text-white disabled:bg-line disabled:text-faint disabled:shadow-none',
@@ -109,13 +100,12 @@ export function IconButton({ children, onClick, variant = 'ghost', disabled = fa
     );
 }
 
-export type ProgressTone = 'orange' | 'green' | 'red';
+type ProgressTone = 'orange' | 'green';
 
 export function ProgressBar({ value, tone = 'orange' }: { value: number; tone?: ProgressTone }) {
     const tones: Record<ProgressTone, string> = {
         orange: 'bg-accent',
-        green: 'bg-emerald-500',
-        red: 'bg-red-500'
+        green: 'bg-emerald-500'
     };
     return (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
@@ -272,6 +262,36 @@ export function ErrorDetail({ error, className = '' }: { error: string; classNam
                     )}
                 </>
             )}
+        </div>
+    );
+}
+
+export function Modal({
+    children,
+    onClose,
+    overlayClassName,
+    panelClassName,
+    ariaLabel
+}: {
+    children: ReactNode;
+    onClose: () => void;
+    overlayClassName: string;
+    panelClassName: string;
+    ariaLabel?: string;
+}) {
+    return (
+        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; every dialog also closes with Escape (handled by the caller)
+        <div
+            className={`fixed inset-0 flex items-center justify-center p-4 backdrop-blur-sm ${overlayClassName}`}
+            onClick={event => {
+                if (event.target === event.currentTarget) {
+                    onClose();
+                }
+            }}
+        >
+            <div role="dialog" aria-modal="true" aria-label={ariaLabel} className={panelClassName}>
+                {children}
+            </div>
         </div>
     );
 }

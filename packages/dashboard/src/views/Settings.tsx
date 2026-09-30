@@ -103,71 +103,49 @@ export default function Settings() {
         setLanguages(savedLanguages);
     };
 
-    /** The cover cache is applied server-side on toggle (enabling rebuilds it in the background). */
-    const toggleCovers = async (value: boolean) => {
-        setUseCovers(value);
+    const applyToggle = async (
+        current: boolean,
+        next: boolean,
+        patch: Parameters<typeof api.updateSettings>[0],
+        set: (value: boolean) => void,
+        onApplied?: (value: boolean) => void
+    ) => {
+        set(next);
         try {
-            await api.updateSettings({ useFirstChapterCovers: value });
-            if (value) {
+            await api.updateSettings(patch);
+            onApplied?.(next);
+        } catch (error) {
+            set(current);
+            toast.error((error as Error).message);
+        }
+    };
+
+    /** The cover cache is applied server-side on toggle (enabling rebuilds it in the background). */
+    const toggleCovers = (value: boolean) =>
+        applyToggle(useCovers, value, { useFirstChapterCovers: value }, setUseCovers, applied => {
+            if (applied) {
                 toast.info(t('schedule.coversRegenStarted'));
             }
-        } catch (error) {
-            setUseCovers(!value);
-            toast.error((error as Error).message);
-        }
-    };
+        });
 
-    /** Starved-source detection is applied server-side on toggle. */
-    const toggleDetection = async (value: boolean) => {
-        setDetectIncomplete(value);
-        try {
-            await api.updateSettings({ incompleteSourceDetection: value });
-        } catch (error) {
-            setDetectIncomplete(!value);
-            toast.error((error as Error).message);
-        }
-    };
+    const toggleDetection = (value: boolean) => applyToggle(detectIncomplete, value, { incompleteSourceDetection: value }, setDetectIncomplete);
 
-    /** Stalled-source detection is applied server-side on toggle. */
-    const toggleStalledDetection = async (value: boolean) => {
-        setDetectStalled(value);
-        try {
-            await api.updateSettings({ stalledSourceDetection: value });
-        } catch (error) {
-            setDetectStalled(!value);
-            toast.error((error as Error).message);
-        }
-    };
+    const toggleStalledDetection = (value: boolean) => applyToggle(detectStalled, value, { stalledSourceDetection: value }, setDetectStalled);
 
-    /** Exact-match auto-migration is applied server-side on toggle. */
-    const toggleAutoMigrateExact = async (value: boolean) => {
-        setAutoMigrateExact(value);
-        try {
-            await api.updateSettings({ autoMigrateExactMatch: value });
-        } catch (error) {
-            setAutoMigrateExact(!value);
-            toast.error((error as Error).message);
-        }
-    };
+    const toggleAutoMigrateExact = (value: boolean) => applyToggle(autoMigrateExact, value, { autoMigrateExactMatch: value }, setAutoMigrateExact);
 
     /** Turning the filter on asks for confirmation: mixed sources reduce search coverage. */
     const requestHideAdult = (value: boolean) => {
         if (value) {
             setConfirmHideAdult(true);
         } else {
-            applyHideAdult(false);
+            void applyHideAdult(false);
         }
     };
 
     const applyHideAdult = async (value: boolean) => {
         setConfirmHideAdult(false);
-        setHideAdult(value);
-        try {
-            await api.updateSettings({ hideAdultSources: value });
-        } catch (error) {
-            setHideAdult(!value);
-            toast.error((error as Error).message);
-        }
+        await applyToggle(hideAdult, value, { hideAdultSources: value }, setHideAdult);
     };
 
     /** Wipe the finished-job history after confirmation. */

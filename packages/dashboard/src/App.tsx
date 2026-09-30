@@ -238,6 +238,7 @@ export default function App() {
                             <Library
                                 library={live.library}
                                 loaded={live.libraryLoaded}
+                                libraryError={live.libraryError}
                                 refreshLibrary={live.refreshLibrary}
                                 focusFilter={libraryFocusFilter}
                                 onFocusFilterDone={() => setLibraryFocusFilter(null)}
@@ -250,6 +251,7 @@ export default function App() {
                                 entryId={seriesId}
                                 library={live.library}
                                 libraryLoaded={live.libraryLoaded}
+                                libraryError={live.libraryError}
                                 onBack={() => navigateSeries(null)}
                                 refreshLibrary={live.refreshLibrary}
                             />

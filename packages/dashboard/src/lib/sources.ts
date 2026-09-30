@@ -6,7 +6,6 @@
 import type { SourceDto } from '@tanko/shared';
 import type { TFunction } from '../i18n/index.js';
 import { api } from './api.js';
-import { pollUntil } from './poll.js';
 
 /** Sort rank: natives first, then working, untested/checking, broken. */
 export function sourceRank(source: SourceDto): number {
@@ -61,10 +60,18 @@ export async function recheckAllSources(options: {
     try {
         await api.checkSources();
         options.onStarted?.();
-        await pollUntil(() => options.refreshSources(), {
-            cancelled: options.cancelled,
-            done: (list, attempt) => !list.some(source => source.health === 'checking') && attempt > 2
-        });
+        // sleeps first — the probes just started; bails out silently when
+        // `cancelled` flips (component unmounted). Errors propagate.
+        for (let attempt = 0; attempt < 40; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            if (options.cancelled()) {
+                return;
+            }
+            const list = await options.refreshSources();
+            if (!list.some(source => source.health === 'checking') && attempt > 2) {
+                return;
+            }
+        }
     } catch (error) {
         options.onError((error as Error).message);
     }

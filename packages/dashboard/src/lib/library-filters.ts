@@ -21,7 +21,7 @@ export const GAP_THRESHOLD = 10;
 export const STALE_DAYS = 7;
 export const VIEW_KEY = 'tanko.library.view';
 export const PREFS_KEY = 'tanko.library.prefs';
-export const DEFAULT_PREFS: DisplayPrefs = { progress: true, date: true, source: true, missing: true, actions: false };
+const DEFAULT_PREFS: DisplayPrefs = { progress: true, date: true, source: true, missing: true, actions: false };
 
 function missingCount(entry: LibraryEntryDto): number {
     return Math.max(0, entry.chapterCount - entry.downloadedCount);
@@ -49,8 +49,8 @@ const GRID_CLASSES: Record<Exclude<ViewMode, 'list'>, string> = {
     'grid-compact': 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7'
 };
 
-export function gridClassName(view: ViewMode): string {
-    return `grid gap-4 ${GRID_CLASSES[view === 'grid-compact' ? 'grid-compact' : 'grid']}`;
+export function gridClassName(view: Exclude<ViewMode, 'list'>): string {
+    return `grid gap-4 ${GRID_CLASSES[view]}`;
 }
 
 export const FILTER_IDS: FilterId[] = ['new', 'missing', 'gap', 'failing', 'stale', 'migration', 'paused'];

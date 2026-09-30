@@ -7,7 +7,7 @@ import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryD
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/index.js';
 import { api } from '../../lib/api.js';
-import { enqueueEntryChapters, rematchOutcomeKey } from '../../lib/chapters.js';
+import { createEntryActions } from '../../lib/entry-actions.js';
 import { useToast } from '../toast.js';
 
 export function useLibraryActions({
@@ -44,10 +44,10 @@ export function useLibraryActions({
     const refreshHidden = useCallback(async () => {
         try {
             setHiddenList(await api.library(true));
-        } catch {
-            /* keep the last known list */
+        } catch (error) {
+            toast.error((error as Error).message);
         }
-    }, []);
+    }, [toast]);
     useEffect(() => {
         void refreshHidden();
     }, [refreshHidden]);
@@ -67,40 +67,22 @@ export function useLibraryActions({
 
     const setBusyFlag = (key: string, value: boolean) => setBusy(current => ({ ...current, [key]: value }));
 
-    const checkEntry = async (entry: LibraryEntryDto) => {
-        setBusyFlag(`check-${entry.id}`, true);
-        try {
-            const result = await api.checkEntry(entry.id);
-            toast.info(
-                result.newChapters > 0 ? t('library.newChapters', { n: result.newChapters, title: entry.title }) : t('library.upToDate', { title: entry.title })
-            );
-            await refreshLibrary();
-            // keep an open chapters panel in step with the new statuses
-            if (expanded === entry.id) {
-                setChapters(await api.entryChapters(entry.id));
+    const actions = createEntryActions({
+        t,
+        toast,
+        refreshLibrary,
+        setBusy: setBusyFlag,
+        // keep an open chapters panel in step with the new statuses
+        reloadChapters: async entryId => {
+            if (expanded === entryId) {
+                setChapters(await api.entryChapters(entryId));
             }
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag(`check-${entry.id}`, false);
         }
-    };
+    });
 
-    const downloadNew = async (entry: LibraryEntryDto) => {
-        setBusyFlag(`dl-${entry.id}`, true);
-        try {
-            await api.downloadNew(entry.id);
-            await refreshLibrary();
-            // keep an open chapters panel in step with the new statuses
-            if (expanded === entry.id) {
-                setChapters(await api.entryChapters(entry.id));
-            }
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag(`dl-${entry.id}`, false);
-        }
-    };
+    const checkEntry = (entry: LibraryEntryDto) => actions.checkEntry(entry, `check-${entry.id}`);
+
+    const downloadNew = (entry: LibraryEntryDto) => actions.downloadNew(entry, `dl-${entry.id}`);
 
     /** Queue every already-detected new chapter across visible series (no source re-check). */
     const downloadAllNew = async () => {
@@ -265,72 +247,19 @@ export function useLibraryActions({
         }
     };
 
-    const togglePaused = async (entry: LibraryEntryDto) => {
-        try {
-            await api.setPaused(entry.id, !entry.paused);
-            toast.success(t(entry.paused ? 'library.resumedToast' : 'library.pausedToast', { title: entry.title }));
-            await refreshLibrary();
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const togglePaused = (entry: LibraryEntryDto) => actions.togglePaused(entry);
 
-    const rematch = async (entry: LibraryEntryDto) => {
-        setBusyFlag(`rematch-${entry.id}`, true);
-        try {
-            const result = await api.rematchEntry(entry.id);
-            toast.info(t(rematchOutcomeKey(result.outcome), { title: entry.title, source: result.entry?.sourceLabel ?? '' }));
-            await refreshLibrary();
-        } catch (error) {
-            toast.error((error as Error).message);
-        } finally {
-            setBusyFlag(`rematch-${entry.id}`, false);
-        }
-    };
+    const rematch = (entry: LibraryEntryDto) => actions.rematch(entry, `rematch-${entry.id}`);
 
-    const confirmMigration = async (entry: LibraryEntryDto, apply: boolean) => {
-        try {
-            const result = await api.confirmRematch(entry.id, apply);
-            if (apply) {
-                toast.success(t('library.migratedKept', { title: entry.title, kept: result.kept ?? 0, total: result.total ?? 0 }));
-            }
-            await refreshLibrary();
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const confirmMigration = (entry: LibraryEntryDto, apply: boolean) => actions.confirmMigration(entry, apply);
 
-    const undoMigration = async (entry: LibraryEntryDto) => {
-        try {
-            await api.rollbackMigration(entry.id);
-            toast.success(t('library.migrationUndone', { title: entry.title }));
-            await refreshLibrary();
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const undoMigration = (entry: LibraryEntryDto) => actions.undoMigration(entry);
 
-    const rollbackChapter = async (entry: LibraryEntryDto, chapter: LibraryChapterDto) => {
-        try {
-            await api.rollbackChapter(entry.id, chapter.chapterId);
-            toast.success(t('library.chapterRestored', { chapter: chapter.title }));
-            setChapters(await api.entryChapters(entry.id));
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const rollbackChapter = (entry: LibraryEntryDto, chapter: LibraryChapterDto) => actions.rollbackChapter(entry, chapter);
 
     /** Queue one chapter (download or retry) via the ad-hoc endpoint; the route
      *  resolves the entry so the chapter status follows the job. */
-    const downloadChapter = async (entry: LibraryEntryDto, chapter: LibraryChapterDto) => {
-        try {
-            await enqueueEntryChapters(entry, [chapter]);
-            toast.success(t('library.chapterQueued', { chapter: chapter.title }));
-            setChapters(await api.entryChapters(entry.id));
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
+    const downloadChapter = (entry: LibraryEntryDto, chapter: LibraryChapterDto) => actions.downloadChapter(entry, chapter);
 
     /** Ignore responses that resolve after the user switched entries. */
     const chaptersSeq = useRef(0);

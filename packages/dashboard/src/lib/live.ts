@@ -14,6 +14,7 @@ export interface LiveState {
     connected: boolean;
     library: LibraryEntryDto[];
     libraryLoaded: boolean;
+    libraryError: string;
     /** Authoritative queue counters, pushed over WS (null before the first snapshot). */
     queueStatus: QueueStatusDto | null;
     schedule: ScheduleStatusDto | null;
@@ -43,6 +44,7 @@ export function useLiveState(): LiveState {
     const [connected, setConnected] = useState(false);
     const [library, setLibrary] = useState<LibraryEntryDto[]>([]);
     const [libraryLoaded, setLibraryLoaded] = useState(false);
+    const [libraryError, setLibraryError] = useState('');
     const [schedule, setSchedule] = useState<ScheduleStatusDto | null>(null);
     const [queueStatus, setQueueStatus] = useState<QueueStatusDto | null>(null);
     const [logs, setLogs] = useState<LogLine[]>([]);
@@ -58,8 +60,10 @@ export function useLiveState(): LiveState {
         try {
             setLibrary(await api.library());
             setLibraryLoaded(true);
-        } catch {
-            /* ignore */
+            setLibraryError('');
+        } catch (error) {
+            setLibraryError((error as Error).message);
+            setLibraryLoaded(true);
         }
     }, []);
 
@@ -210,6 +214,7 @@ export function useLiveState(): LiveState {
         connected,
         library,
         libraryLoaded,
+        libraryError,
         queueStatus,
         schedule,
         logs,

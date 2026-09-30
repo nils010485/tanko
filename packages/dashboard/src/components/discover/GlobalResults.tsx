@@ -80,7 +80,7 @@ export function GlobalResults({
             }
         }
         return [...byTitle.values()]
-            .map(({ alsoOn, primaryLabel, manga, score }) => ({ manga, score, alsoOn: [...alsoOn].filter(label => label !== primaryLabel) }))
+            .map(({ alsoOn, primaryLabel, manga, score }) => ({ manga, score, primaryLabel, alsoOn: [...alsoOn].filter(label => label !== primaryLabel) }))
             .sort((a, b) => b.score - a.score || a.manga.title.localeCompare(b.manga.title));
     }, [globalStatus]);
     // sources with hits render as cards; the rest (empty/failed/skipped)
@@ -131,14 +131,13 @@ export function GlobalResults({
                         <span className="text-sm font-medium">{t('discover.mergedCount', { n: mergedResults.length })}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {mergedResults.map(({ manga, alsoOn }) => {
+                        {mergedResults.map(({ manga, alsoOn, primaryLabel }) => {
                             const key = `${manga.sourceId}:${manga.id}`;
-                            const label = globalStatus.results.find(group => group.sourceId === manga.sourceId)?.sourceLabel ?? manga.sourceId;
                             return (
                                 <MangaResultCard
                                     key={key}
                                     manga={manga}
-                                    sourceLabel={label}
+                                    sourceLabel={primaryLabel}
                                     alsoOn={alsoOn}
                                     isAdded={added.has(key)}
                                     isAdding={addingKey === key}
