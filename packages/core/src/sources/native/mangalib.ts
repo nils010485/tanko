@@ -3,6 +3,8 @@
  *
  * The historical domain mangalib.me is geoblocked from some IPs (DDoS-Guard
  * 1020); the unified JSON API api.cdnlibs.org is reachable and used here.
+ * DDoS-Guard 403s the API without Origin/Referer https://mangalib.org/, and the
+ * API requires site_id[]=1 as a query param (not a header).
  * Page images live on img2.imglib.info and REQUIRE
  * Referer: https://mangalib.org/ (403 without) hence fetchPageImage().
  *
@@ -18,6 +20,7 @@ import { checkHealthViaProbe, fetchJson, fetchRefererImage, noPagesError } from 
 const API = 'https://api.cdnlibs.org/api';
 const IMAGE_SERVER = 'https://img2.imglib.info';
 const REFERER = 'https://mangalib.org/';
+const API_HEADERS = { origin: 'https://mangalib.org', referer: REFERER };
 
 interface LibCover {
     thumbnail?: string;
@@ -67,12 +70,17 @@ export class MangalibConnector implements SourceAdapter {
     readonly tags = ['manga', 'russian'];
     readonly url = 'https://mangalib.org';
 
+    private api<T>(url: URL): Promise<T> {
+        url.searchParams.append('site_id[]', '1');
+        return fetchJson<T>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: API_HEADERS });
+    }
+
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const url = new URL(`${API}/manga`);
         url.searchParams.set('limit', '20');
         url.searchParams.set('offset', '0');
         url.searchParams.set('q', query.trim());
-        const response = await fetchJson<LibListResponse>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: { 'Site-Id': '1' } });
+        const response = await this.api<LibListResponse>(url);
         const results: MangaInfo[] = [];
         for (const item of response.data || []) {
             if (!item.slug) {
@@ -91,12 +99,7 @@ export class MangalibConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const slug = manga.id.replace(/^.*\/manga\//, '');
-        const response = await fetchJson<LibChaptersResponse>(`${API}/manga/${slug}/chapters`, {
-            id: this.id,
-            hostname: 'api.cdnlibs.org',
-            label: this.label,
-            headers: { 'Site-Id': '1' }
-        });
+        const response = await this.api<LibChaptersResponse>(new URL(`${API}/manga/${slug}/chapters`));
         const chapters: ChapterInfo[] = [];
         for (const chapter of response.data || []) {
             if (!chapter.volume || !chapter.number) {
@@ -130,7 +133,7 @@ export class MangalibConnector implements SourceAdapter {
         if (branch) {
             url.searchParams.set('branch_id', branch);
         }
-        const response = await fetchJson<LibPagesResponse>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: { 'Site-Id': '1' } });
+        const response = await this.api<LibPagesResponse>(url);
         const pages = (response.data?.pages || []).map(page => (page.url ? IMAGE_SERVER + page.url.replace(/^\/+/, '/') : '')).filter(url => !!url);
         if (pages.length === 0) {
             throw noPagesError(chapter, this);
@@ -153,12 +156,7 @@ export class MangalibConnector implements SourceAdapter {
             const url = new URL(`${API}/manga`);
             url.searchParams.set('limit', '20');
             url.searchParams.set('offset', '0');
-            const response = await fetchJson<LibListResponse>(url, {
-                id: this.id,
-                hostname: 'api.cdnlibs.org',
-                label: this.label,
-                headers: { 'Site-Id': '1' }
-            });
+            const response = await this.api<LibListResponse>(url);
             return { ok: (response.data || []).length > 0, error: 'Catalogue vide (API modifiée ?)' };
         });
     }
