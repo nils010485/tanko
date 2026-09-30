@@ -159,7 +159,8 @@ export const api = {
     pages: (sourceId: string, mangaId: string, chapterId: string, mangaTitle: string, chapterTitle: string) =>
         request<{ pages: string[] }>(`/api/sources/${encodeURIComponent(sourceId)}/pages?${qs({ mangaId, chapterId, mangaTitle, chapterTitle })}`),
     sourcesUpdateStatus: () => request<SourcesUpdateStatus>('/api/sources/update'),
-    updateSources: () => request<{ info: ConnectorsUpdateInfo; pack: SourcesPackInfo; restart: boolean }>('/api/sources/update', { method: 'POST' }),
+    updateSources: () =>
+        request<{ info: ConnectorsUpdateInfo; pack: SourcesPackInfo; changed: boolean; restart: boolean }>('/api/sources/update', { method: 'POST' }),
 
     // library
     addToLibrary: (entry: {

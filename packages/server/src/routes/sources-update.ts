@@ -5,15 +5,13 @@
  *   pack (hot-applied); restarts only when the legacy tree changed
  */
 import type { SourceRegistry } from '@tanko/core';
-import type { ConnectorsUpdateInfo, SourcesUpdateStatus } from '@tanko/shared';
+import type { ConnectorsUpdateInfo, SourcesPackInfo, SourcesUpdateStatus } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
 import type { ServerConfig } from '../config.js';
 import type { Database } from '../db.js';
 import { getPackStatus, isPackRunning, syncSourcesPack } from '../sources/pack-updater.js';
 import { getUpdateStatus, isSyncRunning, syncConnectors } from '../sources/updater.js';
 import type { EventBus } from '../ws.js';
-
-export type { SourcesUpdateStatus };
 
 export function registerSourceUpdateRoutes(
     app: FastifyInstance,
@@ -30,16 +28,22 @@ export function registerSourceUpdateRoutes(
         try {
             const previousCommit = getUpdateStatus(database).last?.commit;
             const info: ConnectorsUpdateInfo = await syncConnectors({ dataDirectory: config.dataDirectory, db: database });
-            const pack = await syncSourcesPack({ dataDirectory: config.dataDirectory, db: database });
-            if (pack.applied) {
-                deps.registry.reloadNatives();
-                deps.events.publish({ type: 'sources.updated' });
+            const changed = info.commit !== previousCommit;
+            let pack: SourcesPackInfo = { date: new Date().toISOString(), version: '', applied: false };
+            try {
+                pack = await syncSourcesPack({ dataDirectory: config.dataDirectory, db: database });
+                if (pack.applied) {
+                    deps.registry.reloadNatives();
+                    deps.events.publish({ type: 'sources.updated' });
+                }
+            } catch (error) {
+                pack = { ...pack, error: error instanceof Error ? error.message : 'erreur inattendue' };
             }
-            const restart = info.commit !== previousCommit && process.env.CONNECTORS_AUTO_RESTART !== '0';
+            const restart = changed && process.env.CONNECTORS_AUTO_RESTART !== '0';
             if (restart) {
                 setTimeout(() => process.exit(0), 1000);
             }
-            return reply.send({ info, pack, restart });
+            return reply.send({ info, pack, changed, restart });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'erreur inattendue';
             return reply.code(502).send({ error: `Échec de la mise à jour des sources : ${message}` });

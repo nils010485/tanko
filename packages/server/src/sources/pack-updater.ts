@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { reloadOverrides } from '@tanko/core';
-import type { SourcesPackInfo, SourcesPackStatus } from '@tanko/shared';
+import { isOverrideValue, type SourcesPackInfo, type SourcesPackStatus } from '@tanko/shared';
 import type { Database } from '../db.js';
 
 const DEFAULT_PACK_URL = 'https://raw.githubusercontent.com/nils010485/tanko/main/app/sources-pack.json';
@@ -12,8 +12,6 @@ const URL_KEYS = /^(base|api|url|referer|origin|imageServer)$/;
 
 export const SOURCES_PACK_KEY = 'sources-pack-update';
 
-export type { SourcesPackInfo, SourcesPackStatus };
-
 export interface SourcesPack {
     version: string;
     sources: Record<string, Record<string, unknown>>;
@@ -22,6 +20,15 @@ export interface SourcesPack {
 let running = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let pollKickoff: ReturnType<typeof setTimeout> | undefined;
+
+function overridesFileReadable(file: string): boolean {
+    try {
+        JSON.parse(fs.readFileSync(file, 'utf8'));
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 export function validatePack(pack: unknown): SourcesPack {
     if (typeof pack !== 'object' || pack === null) {
@@ -39,10 +46,10 @@ export function validatePack(pack: unknown): SourcesPack {
             throw new Error(`Pack de sources invalide : ${id}`);
         }
         for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
-            const scalar = typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number';
-            const list = Array.isArray(value) && value.every(item => typeof item === 'string');
-            const map = typeof value === 'object' && value !== null && Object.values(value).every(item => typeof item === 'string');
-            if (!scalar && !list && !map) {
+            if (key === 'id') {
+                throw new Error(`Pack de sources invalide (clé id interdite) : ${id}`);
+            }
+            if (!isOverrideValue(value)) {
                 throw new Error(`Pack de sources invalide : ${id}.${key}`);
             }
             if (typeof value === 'string' && URL_KEYS.test(key) && !value.startsWith('https://')) {
@@ -71,9 +78,9 @@ export async function syncSourcesPack(options: { dataDirectory: string; db: Data
             throw new Error(`HTTP ${response.status} sur le pack de sources`);
         }
         const pack = validatePack(await response.json());
+        const target = path.join(options.dataDirectory, 'sources-overrides.json');
         const info: SourcesPackInfo = { date: new Date().toISOString(), version: pack.version, applied: false };
-        if (pack.version !== appliedVersion) {
-            const target = path.join(options.dataDirectory, 'sources-overrides.json');
+        if (pack.version !== appliedVersion || !overridesFileReadable(target)) {
             const temp = `${target}.tmp`;
             fs.writeFileSync(temp, JSON.stringify({ sources: pack.sources }, null, 2));
             fs.renameSync(temp, target);
