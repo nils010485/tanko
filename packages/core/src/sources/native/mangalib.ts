@@ -15,12 +15,12 @@
 
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
+import { config } from './config.js';
 import { checkHealthViaProbe, fetchJson, fetchRefererImage, noPagesError } from './http.js';
 
 const API = 'https://api.cdnlibs.org/api';
 const IMAGE_SERVER = 'https://img2.imglib.info';
 const REFERER = 'https://mangalib.org/';
-const API_HEADERS = { origin: 'https://mangalib.org', referer: REFERER };
 
 interface LibCover {
     thumbnail?: string;
@@ -70,9 +70,21 @@ export class MangalibConnector implements SourceAdapter {
     readonly tags = ['manga', 'russian'];
     readonly url = 'https://mangalib.org';
 
+    private readonly cfg = config('mangalib', {
+        api: API,
+        imageServer: IMAGE_SERVER,
+        referer: REFERER,
+        origin: 'https://mangalib.org'
+    });
+
     private api<T>(url: URL): Promise<T> {
         url.searchParams.append('site_id[]', '1');
-        return fetchJson<T>(url, { id: this.id, hostname: 'api.cdnlibs.org', label: this.label, headers: API_HEADERS });
+        return fetchJson<T>(url, {
+            id: this.id,
+            hostname: new URL(url).hostname,
+            label: this.label,
+            headers: { origin: this.cfg.origin, referer: this.cfg.referer }
+        });
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
@@ -134,7 +146,7 @@ export class MangalibConnector implements SourceAdapter {
             url.searchParams.set('branch_id', branch);
         }
         const response = await this.api<LibPagesResponse>(url);
-        const pages = (response.data?.pages || []).map(page => (page.url ? IMAGE_SERVER + page.url.replace(/^\/+/, '/') : '')).filter(url => !!url);
+        const pages = (response.data?.pages || []).map(page => (page.url ? this.cfg.imageServer + page.url.replace(/^\/+/, '/') : '')).filter(url => !!url);
         if (pages.length === 0) {
             throw noPagesError(chapter, this);
         }
@@ -145,7 +157,7 @@ export class MangalibConnector implements SourceAdapter {
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
         return fetchRefererImage(url, {
             id: this.id,
-            referer: REFERER,
+            referer: this.cfg.referer,
             accept: 'image/*,*/*',
             error: (status, hostname) => `HTTP ${status} on ${hostname}`
         });

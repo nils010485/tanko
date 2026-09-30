@@ -685,6 +685,7 @@ export const fr: typeof import('./en.js').en = {
     'settings.updateSources': 'Mettre à jour les sources',
     'settings.updatedRestarting': 'Sources mises à jour : {n} sources{diff} — redémarrage du serveur…',
     'settings.updatedManual': 'Sources mises à jour : {n} sources{diff} — redémarrez le serveur pour les charger.',
+    'settings.packApplied': 'Pack de sources appliqué (v{v}) — sources rechargées.',
     'settings.errorPrefix': 'Erreur : {msg}',
     'settings.unreachableAfterUpdate': 'Serveur injoignable après la mise à jour — vérifiez qu’il redémarre, puis rechargez la page.',
     'settings.useFirstChapterCovers': 'Utiliser le premier chapitre comme vignette',

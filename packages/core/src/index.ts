@@ -6,6 +6,7 @@ export { HeadlessRequest, randomUserAgent, retryAfterMs } from './shims/request.
 export { createComicInfoXML } from './shims/storage.js';
 export { LegacySourceAdapter } from './sources/legacy-adapter.js';
 export { normalizeAsuraPath } from './sources/native/asurascans.js';
+export { loadOverrides, reloadOverrides } from './sources/native/config.js';
 export { MadaraConnector } from './sources/native/madara.js';
 export { MangastreamConnector } from './sources/native/mangastream.js';
 export { SourceRegistry } from './sources/registry.js';
