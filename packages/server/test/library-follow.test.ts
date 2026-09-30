@@ -53,6 +53,7 @@ beforeAll(() => {
         events: new EventBus(),
         settings: {
             dataDirectory: path.join(tmpDir, 'downloads'),
+            directoryLayout: 'source',
             chapterFormat: 'cbz',
             parallelSources: 1,
             concurrencyPerSource: 1,

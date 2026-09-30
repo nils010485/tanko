@@ -21,7 +21,9 @@ function chapterList(languages: string[]) {
 }
 
 function stubFetch(json: unknown) {
-    const mock = vi.fn(async () => new Response(JSON.stringify(json), { headers: { 'Content-Type': 'application/json' } }));
+    const mock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(json), { headers: { 'Content-Type': 'application/json' } })
+    );
     vi.stubGlobal('fetch', mock);
     return mock;
 }

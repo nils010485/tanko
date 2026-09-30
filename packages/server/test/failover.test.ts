@@ -115,9 +115,9 @@ describe('manual source picker (listAlternatives)', () => {
                 getChapters: async () => Array.from({ length: 9 }, (_, index) => ({ id: `r${index}`, title: `Ch.${index + 1}`, language: 'en' }))
             }
         };
-        const listSources = async () => [
+        const listSources = async (): Promise<SourceInfo[]> => [
             { id: 'decoy', label: 'Decoy', tags: ['English'], kind: 'native' },
-            ...Array.from({ length: 24 }, (_, index) => ({ id: `filler${index}`, label: `Filler ${index}`, tags: ['English'], kind: 'native' })),
+            ...Array.from({ length: 24 }, (_, index): SourceInfo => ({ id: `filler${index}`, label: `Filler ${index}`, tags: ['English'], kind: 'native' })),
             { id: 'rescue', label: 'Rescue', tags: ['English'], kind: 'legacy' }
         ];
         const localFailover = new FailoverService({
@@ -361,7 +361,7 @@ describe('linked provenances (library_alternatives)', () => {
         // the linked provenance leads, ahead of any crawl hit
         expect(alternatives[0]).toMatchObject({ sourceId: 'stranger', mangaId: 'linked-1' });
         // consumed by a migration to it
-        await store.migrateEntry(entryId, { sourceId: 'stranger', mangaId: 'linked-1', mangaTitle: 'Starved Series — Official' });
+        await store.migrateEntry(entryId, { sourceId: 'stranger', sourceLabel: 'Stranger', mangaId: 'linked-1', mangaTitle: 'Starved Series — Official' });
         expect(store.listAlternatives(entryId)).toHaveLength(0);
     });
 

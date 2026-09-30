@@ -19,7 +19,9 @@ const schedulers: Scheduler[] = [];
  * an inert default — a run must never crash because a mock lacks a method
  * the scheduler started calling (the crash would be swallowed by runNow's
  * catch and the assertions would pass vacuously). */
-function buildScheduler(store?: object, failover?: unknown): Scheduler {
+type FailoverLike = NonNullable<ConstructorParameters<typeof Scheduler>[0]['failover']>;
+
+function buildScheduler(store?: object, failover?: FailoverLike): Scheduler {
     const defaults: Record<string, unknown> = {
         listFollowedEntries: async () => [],
         checkForNewChapters: async () => ({ fresh: [], usableSeen: 1 }),
@@ -305,7 +307,7 @@ describe('scheduler stalled-source detection pass', () => {
             recordStalenessProbe,
             getEntry: () => found
         };
-        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} } as unknown as FailoverLike).runNow();
         // the detection pass runs in the background after the run itself
         await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(2), { timeout: 4000 });
         expect(recordStalenessProbe).toHaveBeenCalledWith(21, false);
@@ -322,7 +324,7 @@ describe('scheduler stalled-source detection pass', () => {
                 Array.from({ length: 12 }, (_, index) => ({ id: 40 + index, sourceId: 'src', title: `Stalled ${index}`, chapterCount: 10 })),
             recordStalenessProbe
         };
-        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} } as unknown as FailoverLike).runNow();
         // 12 candidates — more than DETECTION_PROBES — yet 'skipped' costs nothing
         await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(12), { timeout: 4000 });
         expect(recordStalenessProbe).not.toHaveBeenCalled();
@@ -336,7 +338,7 @@ describe('scheduler stalled-source detection pass', () => {
             listStalledCandidates: () => [{ id: 55, sourceId: 'src', title: 'Flaky', chapterCount: 30 }],
             recordStalenessProbe
         };
-        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} } as unknown as FailoverLike).runNow();
         await vi.waitFor(() => expect(recordStalenessProbe).toHaveBeenCalledWith(55, false), { timeout: 4000 });
     });
 
@@ -361,7 +363,12 @@ describe('scheduler stalled-source detection pass', () => {
             listStalledCandidates: () => [{ id: 80, sourceId: 'src', title: 'Stalled', chapterCount: 40 }],
             recordStalenessProbe
         };
-        await buildScheduler(store, { suggestIfIncomplete, suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} }).runNow();
+        await buildScheduler(store, {
+            suggestIfIncomplete,
+            suggestIfStalled,
+            tryBeginProbe: () => true,
+            endProbe: () => {}
+        } as unknown as FailoverLike).runNow();
         await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(1), { timeout: 4000 });
         expect(suggestIfIncomplete).toHaveBeenCalledTimes(12);
         expect(recordStalenessProbe).toHaveBeenCalledWith(80, false);
