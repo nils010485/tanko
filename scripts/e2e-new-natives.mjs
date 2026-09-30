@@ -41,7 +41,10 @@ const QUERIES = {
     helveticascans: 'king',
     mangalib: 'wind',
     mangabuddy: 'daemuljeon',
-    'tappytoon-en': ''
+    'tappytoon-en': '',
+    webtoonscan: 'wife',
+    manhwaread: 'complex',
+    mangascantrad: 'one piece'
 };
 const IDS = [
     'comicaction',
@@ -79,7 +82,10 @@ const IDS = [
     'webcomicsapp',
     'kumanga',
     'neteasecomic',
-    'mgkomik'
+    'mgkomik',
+    'webtoonscan',
+    'manhwaread',
+    'mangascantrad'
 ];
 
 await createEngine({ dataDirectory: fs.mkdtempSync(path.join(os.tmpdir(), 't-e2e-')) });

@@ -214,6 +214,34 @@ export function createNativeConnectors(): SourceAdapter[] {
             label: 'ManhwaClub',
             base: 'https://manhwaclub.net',
             tags: ['webtoon', 'english', 'manhwa']
+        }),
+        new MadaraConnector({
+            id: 'webtoonscan',
+            label: 'WebtoonScan',
+            base: 'https://webtoonscan.com',
+            tags: ['webtoon', 'english', 'manhwa']
+        }),
+        // "mangomic" theme renamed the Madara classes and decodes reader pages client-side
+        new MadaraConnector({
+            id: 'manhwaread',
+            label: 'ManhwaRead',
+            base: 'https://manhwaread.com',
+            capturePages: true,
+            captureImagePattern: /https?:\/\/[^\s"'\\]+?\/mr_(\d+)\.(?:jpe?g|png|webp|avif)/gi,
+            selectors: {
+                searchRows: '.manga-item',
+                searchTitle: 'a.manga-item__link',
+                chapters: 'a.chapter-item',
+                chapterAnchor: ''
+            },
+            tags: ['webtoon', 'english', 'manhwa', 'adult']
+        }),
+        // FR aggregator, moved from manga-scantrad.net (dead) to .io; native registration shadows the dead legacy connector
+        new MadaraConnector({
+            id: 'mangascantrad',
+            label: 'Manga-Scantrad',
+            base: 'https://manga-scantrad.io',
+            tags: ['manga', 'french']
         })
     ];
 }

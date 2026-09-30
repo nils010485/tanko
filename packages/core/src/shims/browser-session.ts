@@ -34,7 +34,7 @@ const SOLVE_POLL_MS = 1000;
 /** Evicted pages stay alive this long: in-flight evaluates may still run. */
 const GRACE_CLOSE_MS = 60_000;
 /** A failed solve poisons its origin for this long (no retry storm). */
-const NEGATIVE_CACHE_MS = 5 * 60 * 1000;
+const NEGATIVE_CACHE_MS = 60 * 1000;
 
 interface Session {
     page: Page;
@@ -75,6 +75,19 @@ function isPageDeath(error: unknown): boolean {
 
 /** Navigate to the origin and wait until the challenge (if any) is solved. */
 async function solve(origin: string): Promise<Page> {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await solveOnce(origin);
+        } catch (error) {
+            if (attempt >= 1) {
+                solveFailUntil.set(origin, Date.now() + NEGATIVE_CACHE_MS);
+                throw error;
+            }
+        }
+    }
+}
+
+async function solveOnce(origin: string): Promise<Page> {
     const browser = await getBrowser();
     const page = await browser.newPage();
     try {
@@ -90,7 +103,6 @@ async function solve(origin: string): Promise<Page> {
         throw new Error(`anti-bot: challenge not solved within ${SOLVE_TIMEOUT_MS}ms on ${origin}`);
     } catch (error) {
         await page.close().catch(() => undefined);
-        solveFailUntil.set(origin, Date.now() + NEGATIVE_CACHE_MS);
         throw error;
     }
 }
@@ -218,13 +230,17 @@ export async function browserFetchBinary(origin: string, url: string): Promise<{
  * URL seen in a response body or a request, deduped and index-sorted.
  * Captures are serialized: they navigate the shared per-origin page.
  */
-export async function browserCapturePageImages(origin: string, url: string, timeoutMs = 30_000): Promise<string[]> {
+/** Default capture pattern (Madara themes): group 1 = page order index. */
+const CAPTURE_IMAGE_PATTERN = /https?:\/\/[^\s"'\\]+?\/image_(\d+)\.(?:jpe?g|png|webp|avif)/gi;
+
+export async function browserCapturePageImages(origin: string, url: string, timeoutMs = 30_000, imagePattern?: RegExp): Promise<string[]> {
     requireBrowser();
     const run = async (): Promise<string[]> => {
         const page = await getSession(origin);
         const seen = new Map<number, string>();
+        const pattern = imagePattern ?? CAPTURE_IMAGE_PATTERN;
         const collect = (text: string): void => {
-            for (const match of text.matchAll(/https?:\/\/[^\s"'\\]+?\/image_(\d+)\.(?:jpe?g|png|webp|avif)/gi)) {
+            for (const match of text.matchAll(pattern)) {
                 seen.set(Number(match[1]), match[0].replace(/\\/g, ''));
             }
         };
@@ -244,6 +260,17 @@ export async function browserCapturePageImages(origin: string, url: string, time
         try {
             await page.goto(url, { waitUntil: 'networkidle2', timeout: timeoutMs });
             await new Promise(resolve => setTimeout(resolve, 1000)); // late ajax settles
+            // lazy-load readers (e.g. manhwaread) only request images as they
+            // scroll into view: walk the page once to flush them all out
+            await page
+                .evaluate(async () => {
+                    for (let y = 0; y < document.body.scrollHeight; y += 700) {
+                        window.scrollTo(0, y);
+                        await new Promise(resolve => setTimeout(resolve, 220));
+                    }
+                })
+                .catch(() => undefined);
+            await page.waitForNetworkIdle({ idleTime: 1200, timeout: 10_000 }).catch(() => undefined);
         } finally {
             page.off('request', onRequest);
             page.off('response', onResponse);

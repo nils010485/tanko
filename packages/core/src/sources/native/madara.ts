@@ -81,6 +81,9 @@ export interface MadaraOptions {
     /** Reader decodes pages client-side (blob: images): capture the real
      *  image URLs during a browser render instead of parsing the HTML. */
     capturePages?: boolean;
+    /** capture mode: image URL pattern whose capture group 1 orders the pages
+     *  (default: Madara image_N filenames). */
+    captureImagePattern?: RegExp;
     /** Site-specific overrides for themes that renamed the Madara classes. */
     selectors?: {
         /** Chapter list rows (default: li.wp-manga-chapter). */
@@ -89,6 +92,10 @@ export interface MadaraOptions {
         chapterAnchor?: string;
         /** Page images (default: img.wp-manga-chapter-img, div.page-break img). */
         pages?: string;
+        /** Search result rows (default: .c-tabs-item__content, .page-item-detail, a.acard). */
+        searchRows?: string;
+        /** Manga title link inside a search row (default: .post-title a, .ac-t). */
+        searchTitle?: string;
     };
 }
 
@@ -104,8 +111,11 @@ export class MadaraConnector implements SourceAdapter {
     private readonly _chapterSelector: string;
     private readonly _chapterAnchorSelector: string | null;
     private readonly _pageSelectors: string[];
+    private readonly _searchRows?: string;
+    private readonly _searchTitle?: string;
     private readonly _chapterApiPath?: string;
     private readonly _capturePages: boolean;
+    private readonly _captureImagePattern?: RegExp;
     /** Sticky browser-mode deadline: 0 = raw HTTP; set when a challenge was
      *  proven, so later requests skip the doomed raw attempt. */
     private _browserUntil = 0;
@@ -121,8 +131,11 @@ export class MadaraConnector implements SourceAdapter {
         const anchorSelector = options.selectors?.chapterAnchor;
         this._chapterAnchorSelector = anchorSelector === undefined ? 'a' : anchorSelector || null;
         this._pageSelectors = [options.selectors?.pages || 'img.wp-manga-chapter-img', 'div.page-break img'];
+        this._searchRows = options.selectors?.searchRows;
+        this._searchTitle = options.selectors?.searchTitle;
         this._chapterApiPath = options.chapterApiPath;
         this._capturePages = options.capturePages === true;
+        this._captureImagePattern = options.captureImagePattern;
         this._ajaxHeaders = {
             'User-Agent': UA,
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -181,10 +194,11 @@ export class MadaraConnector implements SourceAdapter {
         const results: MangaInfo[] = [];
         // themes disagree on the row markup (.c-tabs-item__content vs
         // .page-item-detail vs the a.acard cards)
-        for (const row of [...document.querySelectorAll('.c-tabs-item__content, .page-item-detail, a.acard')]) {
+        const rows = this._searchRows ?? '.c-tabs-item__content, .page-item-detail, a.acard';
+        for (const row of [...document.querySelectorAll(rows)]) {
             const asRow = row.tagName === 'A' ? row : null;
             // .post-title/.ac-t is manga-specific; the first link covers the rest
-            const anchor = row.querySelector('.post-title a, .ac-t') || asRow || row.querySelector('a[href]');
+            const anchor = row.querySelector(this._searchTitle ?? '.post-title a, .ac-t') || asRow || row.querySelector('a[href]');
             const href = (asRow ?? anchor)?.getAttribute('href');
             if (!anchor || !href) {
                 continue;
@@ -291,7 +305,7 @@ export class MadaraConnector implements SourceAdapter {
         const chapterUrl = this._pin(chapter.url || chapter.id);
         // client-side readers (blob: images): capture the real URLs mid-render
         if (this._capturePages) {
-            const captured = await browserCapturePageImages(this.base, chapterUrl);
+            const captured = await browserCapturePageImages(this.base, chapterUrl, 30_000, this._captureImagePattern);
             if (captured.length === 0) {
                 throw new SourceError(`No pages captured for "${chapter.title}" on ${this.label}`, this.id);
             }
@@ -506,21 +520,26 @@ export class MadaraConnector implements SourceAdapter {
             return { ...raw, error: 'anti-bot: Cloudflare challenge; no browser backend (needs Chromium + Xvfb — the Docker image has both)' };
         }
         try {
-            const response = await browserFetch(this.base, `${this.base}/?s=a&post_type=wp-manga`);
-            const ok = response.ok && !isAntiBotShell(response.body, response.status);
-            if (ok) {
-                // warm the sticky browser mode for real traffic
-                this._browserUntil = Date.now() + BROWSER_SESSION_MS;
-            }
-            return {
-                ok,
-                latencyMs: Date.now() - startedAt,
-                via: ok ? 'browser' : undefined,
-                error: ok ? undefined : 'anti-bot: Cloudflare challenge not solved (browser present but blocked)'
-            };
+            const first = await this._probeBrowser(startedAt);
+            return first.ok ? first : await this._probeBrowser(startedAt);
         } catch (error) {
             return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
         }
+    }
+
+    private async _probeBrowser(startedAt: number): Promise<HealthResult> {
+        const response = await browserFetch(this.base, `${this.base}/?s=a&post_type=wp-manga`);
+        const ok = response.ok && !isAntiBotShell(response.body, response.status);
+        if (ok) {
+            // warm the sticky browser mode for real traffic
+            this._browserUntil = Date.now() + BROWSER_SESSION_MS;
+        }
+        return {
+            ok,
+            latencyMs: Date.now() - startedAt,
+            via: ok ? 'browser' : undefined,
+            error: ok ? undefined : 'anti-bot: Cloudflare challenge not solved (browser present but blocked)'
+        };
     }
 
     /** Raw fail-fast probes (no browser): the search ajax, then the server-rendered

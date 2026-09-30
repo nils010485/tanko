@@ -100,7 +100,7 @@ describe('MadaraConnector anti-bot escalation', () => {
         );
         expect(pages).toHaveLength(2);
         expect(pages[0]).toContain('image_0.jpg');
-        expect(browserCapturePageImages).toHaveBeenCalledWith('https://madara.test', 'https://madara.test/manga/a/chapter-1/');
+        expect(browserCapturePageImages).toHaveBeenCalledWith('https://madara.test', 'https://madara.test/manga/a/chapter-1/', 30_000, undefined);
     });
 
     it('capture mode fails honestly when nothing was captured', async () => {
