@@ -9,17 +9,16 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaSearch, fetchNativeText } from './http.js';
 
 export class BilibiliManhuaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
     readonly id = 'neteasecomic';
     readonly label = 'Bilibili Manhua';
     readonly tags = ['manga', 'chinese'];
-    readonly url = 'https://manga.bilibili.com';
-
     private readonly base = 'https://manga.bilibili.com';
+    readonly url = this.base;
 
     async initialize(): Promise<void> {}
 
@@ -102,15 +101,6 @@ export class BilibiliManhuaConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Catalogue vide (site modifié ?)');
     }
 }

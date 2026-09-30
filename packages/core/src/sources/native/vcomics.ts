@@ -16,8 +16,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { fetchWithRetries } from './http.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, fetchWithRetries, noPagesError, siteHeaders } from './http.js';
 
 const UA = randomUserAgent();
 
@@ -33,7 +33,7 @@ interface VComicsQueryResponse {
     posts?: VComicsPost[];
 }
 
-export interface VComicsOptions {
+interface VComicsOptions {
     id: string;
     label: string;
     base: string; // e.g. https://hivetoons.org
@@ -199,40 +199,27 @@ export class VComicsConnector implements SourceAdapter {
             .map(img => img.getAttribute('src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'));
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images.map(src => new URL(src.trim(), chapterUrl).href);
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const response = await fetch(`${this.base}/api/query?searchTerm=a&perPage=1`, {
-                headers: this._headers(),
+                headers: siteHeaders(this.base, UA),
                 signal: AbortSignal.timeout(15000)
             });
             if (!response.ok) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: `HTTP ${response.status}` };
+                return { ok: false, error: `HTTP ${response.status}` };
             }
             const json = (await response.json().catch(() => null)) as VComicsQueryResponse | null;
-            const ok = Array.isArray(json?.posts);
-            return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : 'Réponse API invalide' };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
-    }
-
-    private _headers(): Record<string, string> {
-        return {
-            'User-Agent': UA,
-            Accept: 'application/json, text/html;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            Referer: `${this.base}/`
-        };
+            return { ok: Array.isArray(json?.posts), error: 'Réponse API invalide' };
+        });
     }
 
     private _request(url: string): Promise<Response> {
-        return fetchWithRetries(url, { id: this.id, headers: this._headers() });
+        return fetchWithRetries(url, { id: this.id, headers: siteHeaders(this.base, UA) });
     }
 
     protected async _getText(url: string): Promise<string> {

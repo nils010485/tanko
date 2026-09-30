@@ -6,13 +6,12 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
 
 /** Catalog pages scanned for a local (client-side) title search. */
 const SEARCH_PAGES = 5;
 
-export interface KomikIndoOptions {
+interface KomikIndoOptions {
     id: string;
     label: string;
     base: string;
@@ -38,10 +37,6 @@ export class KomikIndoConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'id,*;q=0.5' } });
     }
@@ -58,7 +53,7 @@ export class KomikIndoConnector implements SourceAdapter {
         for (let page = 1; page <= pages; page++) {
             const document = parseDocument(await this._getText(this._listUrl(page)));
             for (const anchor of [...document.querySelectorAll('div.listupd .animepost a')]) {
-                const href = this._absolute(anchor.getAttribute('href'));
+                const href = absoluteUrl(anchor.getAttribute('href'), this.base);
                 if (!href || seen.has(href)) {
                     continue;
                 }
@@ -76,7 +71,7 @@ export class KomikIndoConnector implements SourceAdapter {
                     id: href,
                     title,
                     url: href,
-                    thumbnail: img?.getAttribute('data-src') || img?.getAttribute('src') || undefined
+                    thumbnail: lazySrc(img)
                 });
             }
         }
@@ -87,7 +82,7 @@ export class KomikIndoConnector implements SourceAdapter {
         const document = parseDocument(await this._getText(manga.url || manga.id));
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('div#chapter_list span.lchx a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -104,24 +99,15 @@ export class KomikIndoConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('div#chimg-auh img')]
             .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de mangas vide (site modifié ?)');
     }
 }

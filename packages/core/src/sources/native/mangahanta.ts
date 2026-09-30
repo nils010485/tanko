@@ -9,8 +9,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
 
 /** Safety cap for the admin-ajax chapter pagination (10 chapters/page). */
 const MAX_CHAPTER_PAGES = 200;
@@ -20,12 +20,10 @@ interface LoadMorePayload {
     data?: { html?: string; has_more?: boolean };
 }
 
-export interface MangaHantaOptions {
+interface MangaHantaOptions {
     id: string;
     label: string;
     base: string;
-    /** Content language prefix (default tr; en also exists). */
-    lang?: string;
     tags?: string[];
 }
 
@@ -37,22 +35,17 @@ export class MangaHantaConnector implements SourceAdapter {
     readonly url: string;
 
     private readonly base: string;
-    private readonly lang: string;
+    private readonly lang = 'tr';
 
     constructor(options: MangaHantaOptions) {
         this.id = options.id;
         this.label = options.label;
         this.tags = options.tags || ['manga', 'turkish'];
         this.base = options.base.replace(/\/$/, '');
-        this.lang = options.lang || 'tr';
         this.url = `${this.base}/${this.lang}/`;
     }
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': `${this.lang},*;q=0.5` } });
@@ -62,7 +55,7 @@ export class MangaHantaConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('a.chapter-link')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             const title = (anchor.querySelector('h3.chapter-title')?.textContent || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title) {
                 continue;
@@ -78,7 +71,7 @@ export class MangaHantaConnector implements SourceAdapter {
         const results: MangaInfo[] = [];
         const seen = new Set<string>();
         for (const anchor of [...document.querySelectorAll('div.series-card a.series-card-link')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             const title = (anchor.querySelector('h3.series-card-title')?.textContent || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title || seen.has(href)) {
                 continue;
@@ -86,7 +79,7 @@ export class MangaHantaConnector implements SourceAdapter {
             seen.add(href);
             const style = anchor.querySelector('.series-card-thumb')?.getAttribute('style') || '';
             const thumbnail = style.match(/url\(['"]?([^'")]+)['"]?\)/)?.[1];
-            results.push({ id: href, title, url: href, thumbnail: this._absolute(thumbnail) || undefined });
+            results.push({ id: href, title, url: href, thumbnail: absoluteUrl(thumbnail, this.base) || undefined });
         }
         return results;
     }
@@ -148,24 +141,15 @@ export class MangaHantaConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('div.entry-content img')]
             .map(img => (img.getAttribute('data-src') || img.getAttribute('src') || '').trim())
             .filter(src => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de séries vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de séries vide (site modifié ?)');
     }
 }

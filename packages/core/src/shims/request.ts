@@ -38,7 +38,7 @@ interface LegacyRequest {
  * Apply the same header transformations that the legacy electron main
  * process applied in onBeforeSendHeadersHandler.
  */
-export function prepareHeaders(request: LegacyRequest, defaultUserAgent: string): { headers: Headers; extraCookie?: string } {
+function prepareHeaders(request: LegacyRequest, defaultUserAgent: string): { headers: Headers; extraCookie?: string } {
     const headers = new Headers();
     for (const [name, value] of request.headers.entries()) {
         headers.set(name, value);

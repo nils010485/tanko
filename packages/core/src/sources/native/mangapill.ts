@@ -7,10 +7,9 @@
  */
 
 import { parseDocument } from '../../shims/dom.js';
-import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, lazySrc, noPagesError } from './http.js';
 
 export class MangaPillConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -21,10 +20,6 @@ export class MangaPillConnector implements SourceAdapter {
     readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
@@ -40,7 +35,7 @@ export class MangaPillConnector implements SourceAdapter {
         const results: MangaInfo[] = [];
         const seen = new Set<string>();
         for (const anchor of [...document.querySelectorAll('a.mb-2')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href || !/\/manga\/\d+\//.test(href) || seen.has(href)) {
                 continue;
             }
@@ -53,7 +48,7 @@ export class MangaPillConnector implements SourceAdapter {
                 id: href,
                 title,
                 url: href,
-                thumbnail: anchor.querySelector('img')?.getAttribute('data-src') || anchor.querySelector('img')?.getAttribute('src') || undefined
+                thumbnail: lazySrc(anchor.querySelector('img'))
             });
         }
         return results;
@@ -63,8 +58,8 @@ export class MangaPillConnector implements SourceAdapter {
         const html = await this._getText(manga.url || manga.id);
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
-        for (const anchor of [...document.querySelectorAll('div#chapters a, #chapters a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+        for (const anchor of [...document.querySelectorAll('#chapters a')]) {
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href?.includes('/chapters/')) {
                 continue;
             }
@@ -81,36 +76,25 @@ export class MangaPillConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('img[data-src], source[data-src]')]
             .map(el => el.getAttribute('data-src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     /** The B2/Cloudflare image CDN now enforces the site Referer (403 otherwise). */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8', referer: `${this.base}/` }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: `${this.base}/`,
+            accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            error: (status, hostname) => `HTTP ${status} sur l'image CDN ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} sur l'image CDN ${new URL(url).hostname}`, this.id);
-        }
-        const buffer = await response.arrayBuffer();
-        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('one');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Recherche vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, 'one', 'Recherche vide (site modifié ?)');
     }
 }

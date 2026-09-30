@@ -7,10 +7,9 @@
  */
 
 import { parseDocument } from '../../shims/dom.js';
-import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, noPagesError } from './http.js';
 
 export class LineWebtoonConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -24,10 +23,6 @@ export class LineWebtoonConnector implements SourceAdapter {
     readonly url = this.base;
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'th,*;q=0.5' } });
@@ -45,7 +40,7 @@ export class LineWebtoonConnector implements SourceAdapter {
         for (const anchor of [
             ...document.querySelectorAll(`a[href*="/${this.language}/"][href*="list?title_no="], a[href*="list?title_no="]`)
         ] as Array<HTMLAnchorElement>) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -84,8 +79,8 @@ export class LineWebtoonConnector implements SourceAdapter {
             const document = parseDocument(html);
             let added = 0;
             // current markup: episode cards link to .../viewer?title_no=N&episode_no=M
-            for (const anchor of [...document.querySelectorAll('a[href*="viewer?title_no="], a[href*="viewer?"]')] as Array<HTMLAnchorElement>) {
-                const href = this._absolute(anchor.getAttribute('href'));
+            for (const anchor of [...document.querySelectorAll('a[href*="viewer?"]')] as Array<HTMLAnchorElement>) {
+                const href = absoluteUrl(anchor.getAttribute('href'), this.base);
                 if (!href) {
                     continue;
                 }
@@ -120,37 +115,26 @@ export class LineWebtoonConnector implements SourceAdapter {
         const images = [...document.querySelectorAll('img[data-url]')]
             .map(img => img.getAttribute('data-url'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))
-            .map(src => this._absolute(src))
+            .map(src => absoluteUrl(src, this.base))
             .filter((src): src is string => !!src);
         const unique = [...new Set(images)];
         if (unique.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return unique;
     }
 
     /** Naver CDN images reject requests without the site Referer (403 Akamai). */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8', referer: this.refererBase }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: this.refererBase,
+            accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            error: (status, hostname) => `HTTP ${status} sur l'image CDN ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} sur l'image CDN ${new URL(url).hostname}`, this.id);
-        }
-        const buffer = await response.arrayBuffer();
-        return { mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg', data: new Uint8Array(buffer) };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('love');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Recherche vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, 'love', 'Recherche vide (site modifié ?)');
     }
 }

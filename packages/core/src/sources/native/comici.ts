@@ -23,9 +23,9 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl } from './http.js';
+import { absoluteUrl, checkHealthViaProbe, fetchRefererImage, noPagesError } from './http.js';
 
-export interface ComiciOptions {
+interface ComiciOptions {
     id: string;
     label: string;
     base: string;
@@ -80,10 +80,6 @@ export class ComiciConnector implements SourceAdapter {
         }
     }
 
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const needle = query.trim().toLowerCase();
         const seen = new Set<string>();
@@ -96,7 +92,7 @@ export class ComiciConnector implements SourceAdapter {
                 break;
             }
             for (const anchor of anchors) {
-                const href = this._absolute(anchor.getAttribute('href'));
+                const href = absoluteUrl(anchor.getAttribute('href'), this.base);
                 if (!href || seen.has(href)) {
                     continue;
                 }
@@ -124,7 +120,7 @@ export class ComiciConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll("div.series-eplist-item a.series-eplist-item-link[href^='/episodes/']")]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             if (!href) {
                 continue;
             }
@@ -169,35 +165,25 @@ export class ComiciConnector implements SourceAdapter {
             .map(page => page.imageUrl)
             .filter((url): url is string => !!url);
         if (pages.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return pages;
     }
 
     /** CloudFront viewer host rejects image GETs without Referer {base}/ (403). */
     async fetchPageImage(url: string): Promise<{ mime: string; data: Uint8Array }> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), referer: `${this.base}/`, accept: 'image/*,*/*' }
+        return fetchRefererImage(url, {
+            id: this.id,
+            referer: `${this.base}/`,
+            accept: 'image/*,*/*',
+            error: (status, hostname) => `HTTP ${status} on ${hostname}`
         });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} on ${new URL(url).hostname}`, this.id);
-        }
-        return {
-            mime: response.headers.get('content-type')?.split(';')[0] || 'image/jpeg',
-            data: new Uint8Array(await response.arrayBuffer())
-        };
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const html = await this._getText(`${this.base}/series/list/up/1`);
-            if (!html.includes('series-list-item-link')) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de séries vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: html.includes('series-list-item-link'), error: 'Liste de séries vide (site modifié ?)' };
+        });
     }
 }

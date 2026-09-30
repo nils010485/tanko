@@ -9,6 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, MangaInfo, PageList } from '../types.js';
 import { SourceError } from '../types.js';
+import { noPagesError } from './http.js';
 import { VComicsConnector } from './vcomics.js';
 
 export class AzoraFlyConnector extends VComicsConnector {
@@ -47,7 +48,7 @@ export class AzoraFlyConnector extends VComicsConnector {
             .sort((a, b) => a.index - b.index)
             .map(entry => new URL(entry.src.trim(), chapterUrl).href);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }

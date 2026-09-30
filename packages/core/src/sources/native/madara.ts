@@ -70,7 +70,7 @@ function isApiChapter(item: unknown): item is ApiChapter {
     return !!item && typeof item === 'object' && typeof (item as { chapter_slug?: unknown }).chapter_slug === 'string';
 }
 
-export interface MadaraOptions {
+interface MadaraOptions {
     id: string;
     label: string;
     base: string; // e.g. https://toonily.com
@@ -168,8 +168,6 @@ export class MadaraConnector implements SourceAdapter {
                 if (!errored && (json.success !== true || !Array.isArray(json.data) || json.data.length === 0)) {
                     return [];
                 }
-                // ajax locked down ("forbidden" error payload) -> fall
-                // through to the HTML search page below
                 if (!errored) {
                     return (json.data as MadaraAjaxItem[])
                         .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)

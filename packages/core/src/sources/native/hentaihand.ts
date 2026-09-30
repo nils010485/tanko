@@ -8,15 +8,14 @@
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { checkHealthViaProbe, noPagesError } from './http.js';
 
 interface HentaiHandComic {
-    id?: number;
     slug?: string;
     title?: string;
     cover_url?: string;
     image_url?: string;
     thumb_url?: string;
-    md_covers?: Array<{ b2key?: string }>;
 }
 
 interface HentaiHandImage {
@@ -88,27 +87,21 @@ export class HentaiHandConnector implements SourceAdapter {
             .sort((a, b) => (a.page || 0) - (b.page || 0))
             .map(image => image.source_url);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const response = await fetch(`${this.base}/api/comics?page=1`, {
                 headers: { 'user-agent': randomUserAgent(), accept: 'application/json' }
             });
             if (!response.ok) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: `HTTP ${response.status}` };
+                return { ok: false, error: `HTTP ${response.status}` };
             }
             const body = (await response.json().catch(() => null)) as { total?: number } | null;
-            if (!body?.total) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (API modifiée ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: !!body?.total, error: 'Catalogue vide (API modifiée ?)' };
+        });
     }
 }

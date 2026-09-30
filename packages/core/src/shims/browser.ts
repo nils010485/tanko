@@ -27,9 +27,7 @@ export function browserEnabled(): boolean {
 /** Heuristic shared with the request shim: true when the page is a JS/anti-bot shell.
  *  `status` (when the caller has it) is the strongest signal — a 403/503 body
  *  is never usable payload. Challenge pages localize their <title> ("Un
- *  instant…", "Vérification de sécurité"), and the cdn-cgi challenge scripts
- *  PERSIST after a successful solve, so the script marker only counts on a
- *  page too thin to be real content. */
+ *  instant…", "Vérification de sécurité"). */
 const CHALLENGE_TITLE =
     /<title[^>]*>\s*(?:loading|just a moment|checking|attention|verify|one more step|ddos|cf-|un instant|v[eé]rification|veuillez patienter|un momento|momento de espera|einen moment|attendere)/i;
 const CHALLENGE_MARKER = /cdn-cgi\/challenge-platform|cf-chl-|challenges\.cloudflare\.com/i;

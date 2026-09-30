@@ -18,9 +18,9 @@
  * GET /api/v1/reader/<slug>/<chapterSlug> (pages + full chapter list).
  */
 
-import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, fetchJson, noPagesError } from './http.js';
 
 const API = 'https://www.mangadenizi.net';
 
@@ -59,27 +59,24 @@ export class MangadeniziConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private async _getJson<T>(url: string): Promise<T> {
-        const response = await fetch(url, {
-            headers: { 'user-agent': randomUserAgent(), accept: 'application/json' },
-            redirect: 'follow'
-        });
-        if (!response.ok) {
-            throw new SourceError(`HTTP ${response.status} sur ${new URL(url).hostname}`, this.id);
-        }
-        try {
-            return (await response.json()) as T;
-        } catch (error) {
-            throw new SourceError(`Réponse JSON invalide sur ${this.label}: ${errorMessage(error)}`, this.id);
-        }
-    }
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const needle = query.trim();
         const results: MangaInfo[] = [];
         const items = needle
-            ? (await this._getJson<DeniziSearchResponse>(`${API}/api/search?q=${encodeURIComponent(needle)}`)).results || []
-            : (await this._getJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`)).data || [];
+            ? (
+                  await fetchJson<DeniziSearchResponse>(`${API}/api/search?q=${encodeURIComponent(needle)}`, {
+                      id: this.id,
+                      hostname: new URL(API).hostname,
+                      label: this.label
+                  })
+              ).results || []
+            : (
+                  await fetchJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`, {
+                      id: this.id,
+                      hostname: new URL(API).hostname,
+                      label: this.label
+                  })
+              ).data || [];
         for (const item of items) {
             if (!item.slug || !item.title) {
                 continue;
@@ -91,7 +88,11 @@ export class MangadeniziConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const slug = manga.id.replace(/^.*\/manga\//, '').replace(/\/$/, '');
-        const response = await this._getJson<DeniziMangaResponse>(`${API}/api/v1/manga/${slug}`);
+        const response = await fetchJson<DeniziMangaResponse>(`${API}/api/v1/manga/${slug}`, {
+            id: this.id,
+            hostname: new URL(API).hostname,
+            label: this.label
+        });
         const chapters: ChapterInfo[] = [];
         for (const chapter of response.manga?.chapters || []) {
             if (!chapter.slug) {
@@ -115,24 +116,26 @@ export class MangadeniziConnector implements SourceAdapter {
 
     async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         const slug = manga.id.replace(/^.*\/manga\//, '').replace(/\/$/, '');
-        const response = await this._getJson<DeniziReaderResponse>(`${API}/api/v1/reader/${slug}/${chapter.id}`);
+        const response = await fetchJson<DeniziReaderResponse>(`${API}/api/v1/reader/${slug}/${chapter.id}`, {
+            id: this.id,
+            hostname: new URL(API).hostname,
+            label: this.label
+        });
         const pages = (response.pages || []).map(page => page.image_url).filter((url): url is string => !!url);
         if (pages.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return pages;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const response = await this._getJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`);
-            if ((response.data || []).length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide (API modifiée ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaProbe(async () => {
+            const response = await fetchJson<DeniziCatalogResponse>(`${API}/api/v1/manga?page=1`, {
+                id: this.id,
+                hostname: new URL(API).hostname,
+                label: this.label
+            });
+            return { ok: (response.data || []).length > 0, error: 'Catalogue vide (API modifiée ?)' };
+        });
     }
 }

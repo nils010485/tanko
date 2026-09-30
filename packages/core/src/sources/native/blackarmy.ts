@@ -8,8 +8,8 @@
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
 
 /** Archive pages scanned for a local (client-side) title search. */
 const SEARCH_PAGES = 5;
@@ -19,7 +19,7 @@ interface AjaxChapterPayload {
     data?: { locked?: boolean; images?: unknown[] };
 }
 
-export interface BlackArmyOptions {
+interface BlackArmyOptions {
     id: string;
     label: string;
     base: string;
@@ -45,10 +45,6 @@ export class BlackArmyConnector implements SourceAdapter {
 
     async initialize(): Promise<void> {}
 
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'fr,*;q=0.5' } });
     }
@@ -62,7 +58,7 @@ export class BlackArmyConnector implements SourceAdapter {
             const path = page === 1 ? '/serie/' : `/serie/page/${page}/`;
             const document = parseDocument(await this._getText(`${this.base}${path}`));
             for (const anchor of [...document.querySelectorAll('div.manga-card a.manga-title')]) {
-                const href = this._absolute(anchor.getAttribute('href'));
+                const href = absoluteUrl(anchor.getAttribute('href'), this.base);
                 const title = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
                 if (!href || !title || seen.has(href)) {
                     continue;
@@ -87,7 +83,7 @@ export class BlackArmyConnector implements SourceAdapter {
         const document = parseDocument(await this._getText(manga.url || manga.id));
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('a.chapter-card')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             const title = (anchor.querySelector('span.chapter-card-title')?.textContent || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title) {
                 continue;
@@ -143,21 +139,12 @@ export class BlackArmyConnector implements SourceAdapter {
             .sort((a, b) => (Number.isNaN(a.page) || Number.isNaN(b.page) ? a.index - b.index : a.page - b.page))
             .map(entry => entry.url);
         if (ordered.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return ordered;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de mangas vide (site modifié ?)');
     }
 }

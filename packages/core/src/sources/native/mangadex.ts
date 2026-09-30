@@ -8,7 +8,8 @@
 
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, ChapterOptions, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, createThrottle } from './http.js';
 
 const API = 'https://api.mangadex.org';
 
@@ -59,8 +60,6 @@ export class MangaDexConnector implements SourceAdapter {
     readonly label = 'MangaDex';
     readonly tags = ['manga', 'multi-lingual', 'high-quality'];
     readonly url = 'https://mangadex.org';
-
-    private lastRequestAt = 0;
 
     async initialize(): Promise<void> {
         // stateless API, nothing to warm up
@@ -157,16 +156,13 @@ export class MangaDexConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const response = await fetch(`${API}/manga?limit=1`, {
                 headers: { 'User-Agent': UA },
                 signal: AbortSignal.timeout(15000)
             });
-            return { ok: response.ok, latencyMs: Date.now() - startedAt, error: response.ok ? undefined : `HTTP ${response.status}` };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: response.ok, error: `HTTP ${response.status}` };
+        });
     }
 
     /** API endpoint with the shared content-rating filter. */
@@ -231,13 +227,7 @@ export class MangaDexConnector implements SourceAdapter {
     }
 
     /** ~4 req/s to stay well under the public API rate limit. */
-    private async _throttle(): Promise<void> {
-        const wait = this.lastRequestAt + 250 - Date.now();
-        if (wait > 0) {
-            await new Promise(resolve => setTimeout(resolve, wait));
-        }
-        this.lastRequestAt = Date.now();
-    }
+    private readonly _throttle = createThrottle(250);
 
     private async _fetch<T>(url: URL, attempt = 0): Promise<T> {
         await this._throttle();

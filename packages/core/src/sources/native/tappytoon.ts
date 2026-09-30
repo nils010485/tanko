@@ -11,6 +11,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
+import { checkHealthViaProbe, noPagesError } from './http.js';
 
 interface TappytoonHeaders {
     Authorization?: string;
@@ -27,7 +28,6 @@ interface TappytoonComic {
 
 interface TappytoonChapter {
     id?: number;
-    comicId?: number;
     title?: string;
     order?: number;
     isFree?: boolean;
@@ -128,7 +128,7 @@ export class TappytoonConnector implements SourceAdapter {
         const data = await this._getJson<TappytoonComic[]>(`/comics?locale=${this.locale}`);
         const needle = query.trim().toLowerCase();
         return (
-            (Array.isArray(data) ? data : [])
+            data
                 // "uncut" (adult [Uncut] editions) always answer InvalidLicense anonymously
                 .filter(comic => comic.contentRating !== 'uncut')
                 .filter((comic): comic is TappytoonComic & { id: number; title: string } => !!comic.id && !!comic.title)
@@ -149,7 +149,7 @@ export class TappytoonConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const data = await this._getJson<TappytoonChapter[]>(`/comics/${manga.id}/chapters`);
-        const chapters = (Array.isArray(data) ? data : [])
+        const chapters = data
             .filter((chapter): chapter is TappytoonChapter & { id: number } => !!chapter.id && this._isReadable(chapter))
             .map(chapter => ({
                 id: String(chapter.id),
@@ -173,22 +173,16 @@ export class TappytoonConnector implements SourceAdapter {
                   .map(item => item.path)
             : (data.contents || []).map(item => item.url).filter((url): url is string => !!url);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             await this.initialize();
             const data = await this._getJson<TappytoonComic[]>(`/comics?locale=${this.locale}`);
-            if ((Array.isArray(data) ? data.length : 0) === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Catalogue vide' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: data.length > 0, error: 'Catalogue vide' };
+        });
     }
 }

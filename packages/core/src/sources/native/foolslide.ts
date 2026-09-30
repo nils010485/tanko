@@ -7,15 +7,13 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
-import { absoluteUrl, fetchNativeText } from './http.js';
+import { SourceError } from '../types.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText } from './http.js';
 
-export interface FoolSlideOptions {
+interface FoolSlideOptions {
     id: string;
     label: string;
     base: string;
-    /** Series directory path (default /directory/). */
-    path?: string;
     tags?: string[];
 }
 
@@ -27,22 +25,17 @@ export class FoolSlideConnector implements SourceAdapter {
     readonly url: string;
 
     private readonly base: string;
-    private readonly directoryPath: string;
+    private readonly directoryPath = '/directory/';
 
     constructor(options: FoolSlideOptions) {
         this.id = options.id;
         this.label = options.label;
         this.tags = options.tags || ['manga'];
         this.base = options.base.replace(/\/$/, '');
-        this.directoryPath = options.path || '/directory/';
         this.url = this.base;
     }
 
     async initialize(): Promise<void> {}
-
-    private _absolute(href: string | undefined | null): string | null {
-        return absoluteUrl(href, this.base);
-    }
 
     /** POST adult=true (FoolSlide adult gate); anti-bot shells render in Chromium. */
     private async _getText(url: string): Promise<string> {
@@ -66,7 +59,7 @@ export class FoolSlideConnector implements SourceAdapter {
             const html = await this._getText(url);
             const document = parseDocument(html);
             for (const anchor of [...document.querySelectorAll<HTMLAnchorElement>('div.list div.group > div.title a')]) {
-                const href = this._absolute(anchor.getAttribute('href'));
+                const href = absoluteUrl(anchor.getAttribute('href'), this.base);
                 const title = (anchor.getAttribute('title') || anchor.textContent || '').replace(/\s+/g, ' ').trim();
                 if (!href?.includes('/series/') || !title) {
                     continue;
@@ -79,7 +72,7 @@ export class FoolSlideConnector implements SourceAdapter {
                     results.set(href, { id: href, title, url: href, thumbnail: image?.getAttribute('src') || undefined });
                 }
             }
-            const next = this._absolute(document.querySelector('div.prevnext div.next a')?.getAttribute('href'));
+            const next = absoluteUrl(document.querySelector('div.prevnext div.next a')?.getAttribute('href'), this.base);
             if (next && !visited.has(next)) {
                 queue.push(next);
             }
@@ -92,7 +85,7 @@ export class FoolSlideConnector implements SourceAdapter {
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll<HTMLAnchorElement>('div.list div.element div.title a')]) {
-            const href = this._absolute(anchor.getAttribute('href'));
+            const href = absoluteUrl(anchor.getAttribute('href'), this.base);
             const title = (anchor.getAttribute('title') || anchor.textContent || '').replace(/\s+/g, ' ').trim();
             if (!href || !title) {
                 continue;
@@ -115,7 +108,7 @@ export class FoolSlideConnector implements SourceAdapter {
         } catch (error) {
             throw new SourceError(`JSON de pages invalide pour "${chapter.title}" sur ${this.label}`, this.id, error);
         }
-        const images = pages.map(page => this._absolute(page.url)).filter((src): src is string => !!src);
+        const images = pages.map(page => absoluteUrl(page.url, this.base)).filter((src): src is string => !!src);
         if (images.length === 0) {
             throw new SourceError(`Aucune page pour "${chapter.title}" sur ${this.label}`, this.id);
         }
@@ -123,15 +116,6 @@ export class FoolSlideConnector implements SourceAdapter {
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
-            const mangas = await this.searchMangas('');
-            if (mangas.length === 0) {
-                return { ok: false, latencyMs: Date.now() - startedAt, error: 'Liste de mangas vide (site modifié ?)' };
-            }
-            return { ok: true, latencyMs: Date.now() - startedAt };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+        return checkHealthViaSearch(this, '', 'Liste de mangas vide (site modifié ?)');
     }
 }

@@ -11,7 +11,8 @@
 
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { errorMessage, SourceError } from '../types.js';
+import { SourceError } from '../types.js';
+import { checkHealthViaProbe, noPagesError } from './http.js';
 
 interface FlameSeries {
     series_id: number;
@@ -21,7 +22,6 @@ interface FlameSeries {
 }
 
 interface FlameChapter {
-    chapter_id: number;
     chapter: string;
     title?: string | null;
     token: string;
@@ -50,9 +50,8 @@ export class FlameScansConnector implements SourceAdapter {
     readonly id = 'flamescans-org';
     readonly label = 'FlameScans';
     readonly tags = ['manga', 'manhwa', 'english'];
-    readonly url = 'https://flamecomics.xyz';
-
     private readonly base = 'https://flamecomics.xyz';
+    readonly url = this.base;
     private readonly cdn = 'https://cdn.flamecomics.xyz';
 
     async initialize(): Promise<void> {}
@@ -132,19 +131,15 @@ export class FlameScansConnector implements SourceAdapter {
             .filter((name): name is string => !!name)
             .map(name => `${this.cdn}/uploads/images/series/${seriesId}/${token}/${name}`);
         if (images.length === 0) {
-            throw new SourceError(`No pages found for "${chapter.title}" on ${this.label}`, this.id);
+            throw noPagesError(chapter, this);
         }
         return images;
     }
 
     async checkHealth(): Promise<HealthResult> {
-        const startedAt = Date.now();
-        try {
+        return checkHealthViaProbe(async () => {
             const data = await this._getNextData(`${this.base}/browse`);
-            const ok = Array.isArray(data?.props?.pageProps?.series);
-            return { ok, latencyMs: Date.now() - startedAt, error: ok ? undefined : 'Catalogue __NEXT_DATA__ absent' };
-        } catch (error) {
-            return { ok: false, latencyMs: Date.now() - startedAt, error: errorMessage(error) };
-        }
+            return { ok: Array.isArray(data?.props?.pageProps?.series), error: 'Catalogue __NEXT_DATA__ absent' };
+        });
     }
 }
