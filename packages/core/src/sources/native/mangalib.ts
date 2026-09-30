@@ -67,8 +67,6 @@ export class MangalibConnector implements SourceAdapter {
     readonly tags = ['manga', 'russian'];
     readonly url = 'https://mangalib.org';
 
-    async initialize(): Promise<void> {}
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const url = new URL(`${API}/manga`);
         url.searchParams.set('limit', '20');

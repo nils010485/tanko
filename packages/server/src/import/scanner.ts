@@ -29,13 +29,6 @@ export interface ScanResult {
     truncated: boolean;
 }
 
-export interface ScanOptions {
-    maxDepth?: number;
-    maxSeries?: number;
-    maxChaptersPerSeries?: number;
-    maxVisitedDirs?: number;
-}
-
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif']);
 
 /** Also match frequent misspellings of the chapter marker. */
@@ -87,11 +80,11 @@ export function assertValidDirectory(inputPath: string): string {
 }
 
 /** Recursively scan a directory and group chapters into series. */
-export function scanLibrary(rootPath: string, options: ScanOptions = {}): ScanResult {
-    const maxDepth = options.maxDepth ?? 8;
-    const maxSeries = options.maxSeries ?? 5000;
-    const maxChaptersPerSeries = options.maxChaptersPerSeries ?? 20000;
-    const maxVisitedDirs = options.maxVisitedDirs ?? 100000;
+export function scanLibrary(rootPath: string): ScanResult {
+    const maxDepth = 8;
+    const maxSeries = 5000;
+    const maxChaptersPerSeries = 20000;
+    const maxVisitedDirs = 100000;
     const root = assertValidDirectory(rootPath);
 
     const seriesMap = new Map<string, ScannedSeries>();

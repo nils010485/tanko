@@ -46,8 +46,6 @@ export class ComizyConnector implements SourceAdapter {
     private readonly webBase = 'https://comizy.io';
     readonly url = this.webBase;
 
-    async initialize(): Promise<void> {}
-
     private async _getJson<T>(url: string): Promise<T> {
         try {
             const response = await fetch(url, {

@@ -54,8 +54,6 @@ export class FlameScansConnector implements SourceAdapter {
     readonly url = this.base;
     private readonly cdn = 'https://cdn.flamecomics.xyz';
 
-    async initialize(): Promise<void> {}
-
     private _headers(): Record<string, string> {
         return {
             'user-agent': randomUserAgent(),

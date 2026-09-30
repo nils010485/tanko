@@ -57,8 +57,6 @@ export class MangadeniziConnector implements SourceAdapter {
     readonly tags = ['manga', 'turkish'];
     readonly url = API;
 
-    async initialize(): Promise<void> {}
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const needle = query.trim();
         const results: MangaInfo[] = [];

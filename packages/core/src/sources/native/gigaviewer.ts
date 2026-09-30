@@ -50,8 +50,6 @@ export class GigaViewerConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     /** Fetch HTML with a browser UA; anti-bot shells render in Chromium. */
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id, headers: { 'accept-language': 'ja,en,*;q=0.5' } });

@@ -36,8 +36,6 @@ export class MangaGGConnector implements SourceAdapter {
     readonly tags = ['manga', 'manhwa', 'manhua', 'english'];
     readonly url = BASE;
 
-    async initialize(): Promise<void> {}
-
     private async _browserText(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<string> {
         const response = await browserFetch(BASE, url, init).catch((error: unknown) => {
             throw new SourceError(errorMessage(error), this.id, error);

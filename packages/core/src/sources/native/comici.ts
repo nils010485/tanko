@@ -59,8 +59,6 @@ export class ComiciConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string, headers: Record<string, string> = {}): Promise<string> {
         const response = await fetch(url, {
             headers: { 'user-agent': randomUserAgent(), accept: 'text/html,application/xhtml+xml,*/*', ...headers },

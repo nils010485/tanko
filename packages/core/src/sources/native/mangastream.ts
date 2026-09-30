@@ -37,8 +37,6 @@ export class MangastreamConnector implements SourceAdapter {
         this.url = this.base;
     }
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         return fetchNativeText(url, { id: this.id });
     }

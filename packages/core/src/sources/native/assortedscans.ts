@@ -52,8 +52,6 @@ export class AssortedScansConnector implements SourceAdapter {
     private readonly base = 'https://assortedscans.com';
     readonly url = this.base;
 
-    async initialize(): Promise<void> {}
-
     async searchMangas(query: string): Promise<MangaInfo[]> {
         const needle = query.trim();
         // server-side title filter when given; otherwise walk all pages

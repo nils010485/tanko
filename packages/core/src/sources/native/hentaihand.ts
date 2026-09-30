@@ -31,8 +31,6 @@ export class HentaiHandConnector implements SourceAdapter {
     private readonly base = 'https://hentaihand.com';
     readonly url = this.base;
 
-    async initialize(): Promise<void> {}
-
     private async _getJson<T>(url: string): Promise<T> {
         try {
             const response = await fetch(url, {

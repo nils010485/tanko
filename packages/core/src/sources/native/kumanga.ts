@@ -24,8 +24,6 @@ export class KuMangaConnector implements SourceAdapter {
     private readonly base = 'https://www.kumanga.com';
     private readonly jar = new Map<string, string>();
 
-    async initialize(): Promise<void> {}
-
     private _cookieHeader(): string {
         return [...this.jar.entries()].map(([name, value]) => `${name}=${value}`).join('; ');
     }

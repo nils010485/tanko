@@ -67,8 +67,6 @@ export class MagaPokeConnector implements SourceAdapter {
     readonly tags = ['manga', 'japanese'];
     readonly url = SITE;
 
-    async initialize(): Promise<void> {}
-
     private async _getText(url: string): Promise<string> {
         const response = await fetch(url, {
             headers: { 'user-agent': randomUserAgent(), accept: 'text/html,application/xhtml+xml,*/*', 'accept-language': 'ja,en,*;q=0.5' },

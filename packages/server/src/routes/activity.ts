@@ -10,7 +10,6 @@ export function registerActivityRoutes(
     activity: ActivityService,
     stats: { library: LibraryStore; sourceHealth: SourceHealthService },
     /** Shared with the library routes — index.ts passes the same instance. */
-    /** Shared with the library routes — index.ts passes the same instance. */
     jobs: JobRunner
 ): void {
     // Activity history (checks, notifications, errors) — newest first

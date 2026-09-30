@@ -125,12 +125,13 @@ export interface StalledCandidate {
     chapterCount: number;
 }
 
-/** Case/punctuation-insensitive title key for cross-source duplicate
- *  detection (keeps letters of any script and digits, drops the rest). */
-export function normalizeTitle(title: string): string {
+/** Case/punctuation/space-insensitive title key for cross-source duplicate
+ *  detection (keeps letters of any script and digits, drops the rest —
+ *  distinct from import/similarity's normalizeTitle, which keeps spaces). */
+export function normalizeTitleKey(title: string): string {
     return title
         .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks — "Café" == "Cafe" (mirrors similarity.ts)
+        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks — "Café" == "Cafe"
         .toLowerCase()
         .replace(/[\p{P}\p{S}\s]+/gu, '');
 }
@@ -140,11 +141,11 @@ export function normalizeTitle(title: string): string {
  *  equal to the entry's own title, capped so a fat-fingered paste cannot
  *  multiply the failover's search queries. */
 export function normalizeAliases(title: string, aliases: ReadonlyArray<string>): string[] {
-    const seen = new Set([normalizeTitle(title)]);
+    const seen = new Set([normalizeTitleKey(title)]);
     const kept: string[] = [];
     for (const alias of aliases) {
         const trimmed = alias.trim();
-        const key = normalizeTitle(trimmed);
+        const key = normalizeTitleKey(trimmed);
         if (trimmed.length < 3 || trimmed.length > 200 || seen.has(key)) {
             continue;
         }

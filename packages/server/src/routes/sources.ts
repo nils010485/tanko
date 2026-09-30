@@ -151,8 +151,8 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
 export function registerSourceRoutes(
     app: FastifyInstance,
     sourceRegistry: SourceRegistry,
-    getPreferredLanguages: () => string[] = () => [],
-    getHideAdultSources: () => boolean = () => false
+    getPreferredLanguages: () => string[],
+    getHideAdultSources: () => boolean
 ): void {
     app.get('/api/sources', async (): Promise<SourceDto[]> => {
         const sources = await sourceRegistry.list();

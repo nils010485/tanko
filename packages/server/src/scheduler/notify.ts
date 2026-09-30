@@ -16,6 +16,25 @@ export function failoverMessage(title: string, outcome: 'migrated' | 'suggested'
     }
 }
 
+export function failoverDetail(outcome: 'migrated' | 'suggested' | 'none'): string {
+    return outcome === 'migrated'
+        ? 'migré vers une nouvelle source'
+        : outcome === 'suggested'
+          ? 'migration suggérée (à confirmer)'
+          : 'aucune source de rechange';
+}
+
+export function failoverDownloadMessage(title: string, failures: number, outcome: 'migrated' | 'suggested' | 'none'): string {
+    switch (outcome) {
+        case 'migrated':
+            return `"${title}" : ${failures} téléchargements en échec — migré vers une autre source, reprise du téléchargement`;
+        case 'suggested':
+            return `"${title}" : ${failures} téléchargements en échec — migration de source suggérée (à confirmer)`;
+        default:
+            return `"${title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`;
+    }
+}
+
 /** Send the new-chapters webhook notification. */
 export async function notifyNewChapters(notifications: NotificationSettings, newBySeries: Array<{ title: string; chapters: string[] }>): Promise<void> {
     if (!notificationEnabled(notifications, 'newChapters')) {
