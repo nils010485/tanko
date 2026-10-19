@@ -524,6 +524,7 @@ export const en = {
     'activity.outage.closed': 'Source {source} no longer fails — outage closed, failed downloads resumed',
     'activity.source.recovered': 'Source {source} seems recovered — fast retry of failed downloads',
     'activity.source.healthCheck': 'Health check: {label}…',
+    'activity.source.healthSummary': 'Health check: {checked} sources — {ok} ok, {errors} errors',
     'activity.system.autoPause': 'Monitoring of "{title}" paused automatically (no new chapter for more than {days} days)',
     'activity.system.bulk': 'Bulk « {action} »: {processed} processed, {skipped} skipped, {failed} failed',
     'activity.system.cbzBudget': 'Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #{jobId})',

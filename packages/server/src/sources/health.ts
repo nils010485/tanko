@@ -197,7 +197,9 @@ export class SourceHealthService {
         // a full re-check re-surfaces previously hidden sources
         this.unhideAll();
         const ids = await this.opts.listAdapterIds();
-        return this.probeMany(ids);
+        const summary = await this.probeMany(ids, { quiet: true });
+        this._logSummary(summary);
+        return summary;
     }
 
     /** Probe only native sources (fast, done in background at startup). */
@@ -210,7 +212,17 @@ export class SourceHealthService {
                 nativeIds.push(id);
             }
         }
-        await this.probeMany(nativeIds);
+        this._logSummary(await this.probeMany(nativeIds, { quiet: true }));
+    }
+
+    private _logSummary(summary: { checked: number; ok: number; errors: number }): void {
+        this.opts.events.publishLog({
+            level: summary.errors > 0 ? 'warn' : 'info',
+            category: 'source',
+            code: 'source.healthSummary',
+            params: summary,
+            message: `Health check: ${summary.checked} sources (${summary.ok} ok, ${summary.errors} errors)`
+        });
     }
 
     /** Start the background rolling re-check (stop() on shutdown). */

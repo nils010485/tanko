@@ -527,6 +527,7 @@ export const fr: typeof import('./en.js').en = {
     'activity.outage.closed': 'La source {source} n’échoue plus — clôture de la panne, reprise des téléchargements en échec',
     'activity.source.recovered': 'La source {source} semble rétablie — nouvelle tentative rapide des téléchargements en échec',
     'activity.source.healthCheck': 'Vérification de santé : {label}…',
+    'activity.source.healthSummary': 'Vérification de santé : {checked} sources — {ok} OK, {errors} en erreur',
     'activity.system.autoPause': 'Suivi de « {title} » mis en pause automatiquement (aucun nouveau chapitre depuis plus de {days} jours)',
     'activity.system.bulk': 'Action groupée « {action} » : {processed} traitée(s), {skipped} ignorée(s), {failed} échec(s)',
     'activity.system.cbzBudget': 'Chapitre au-delà du budget CBZ en mémoire — enregistré en dossier d’images (job #{jobId})',

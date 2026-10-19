@@ -56,6 +56,21 @@ interface PageResult {
 
 let browserPromise: Promise<Browser> | undefined;
 
+function containPageSetupRejections(page: unknown): void {
+    const proto = Object.getPrototypeOf(page) as {
+        evaluateOnNewDocument(...args: unknown[]): Promise<unknown>;
+        setupContained?: boolean;
+    };
+    if (proto.setupContained) {
+        return;
+    }
+    proto.setupContained = true;
+    const evaluateOnNewDocument = proto.evaluateOnNewDocument;
+    proto.evaluateOnNewDocument = function (this: unknown, ...args: unknown[]): Promise<unknown> {
+        return evaluateOnNewDocument.call(this, ...args).catch(() => undefined);
+    };
+}
+
 async function launch(): Promise<Browser> {
     if (BROWSER_URL) {
         // external browser (podman/docker container with CDP): connect, never own it
@@ -81,13 +96,14 @@ async function launch(): Promise<Browser> {
     // dependency -> fall back to plain puppeteer-core headless when absent.
     try {
         const { connect } = await import('puppeteer-real-browser');
-        const { browser } = await connect({
+        const { browser, page } = await connect({
             // 'auto' = headful under Xvfb when available (needed by the
             // Turnstile solver); typings only allow boolean
             headless: 'auto',
             customConfig: { chromePath: executablePath, chromeFlags: args },
             turnstile: true
         } as unknown as Parameters<typeof connect>[0]);
+        containPageSetupRejections(page);
         return browser as unknown as Browser;
     } catch {
         // not installed (npm i --omit=optional) or launch failed
