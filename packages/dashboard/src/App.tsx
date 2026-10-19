@@ -64,7 +64,7 @@ export default function App() {
     const activeLabel = t(`nav.${tab}`);
 
     useEffect(() => {
-        document.title = `Tanko — ${activeLabel}`;
+        document.title = `Tanko - ${activeLabel}`;
     }, [activeLabel]);
 
     useEffect(() => {

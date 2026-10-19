@@ -17,17 +17,17 @@ const DAY_MS = 24 * HOUR_MS;
  *  watched closely, a long-dead one ends at one probe per month. */
 const RETRY_LADDER_MS = [1 * HOUR_MS, 6 * HOUR_MS, 1 * DAY_MS, 7 * DAY_MS, 30 * DAY_MS];
 /** A healthy source is re-checked at this leisurely pace only: day-to-day use
- *  (search, downloads) refreshes its state anyway — this catches slow deaths. */
+ *  (search, downloads) refreshes its state anyway - this catches slow deaths. */
 const OK_REFRESH_MS = 7 * DAY_MS;
 /** Rolling re-check cadence: each pass probes the sources whose backoff
- *  expired (plus a few never-probed ones) — a bounded trickle instead of a
+ *  expired (plus a few never-probed ones) - a bounded trickle instead of a
  *  1300-source sweep. */
 const SWEEP_MS = 15 * 60 * 1000;
 const SWEEP_QUOTA = 25;
 /** First pass shortly after boot: lets the engine finish warming up. */
 const SWEEP_KICKOFF_MS = 30_000;
 
-/** How dead a failure makes the source look — drives the ladder speed. */
+/** How dead a failure makes the source look - drives the ladder speed. */
 type HealthErrorClass = 'dead' | 'antibot' | 'transient';
 
 function classifyHealthError(error: string | undefined): HealthErrorClass {
@@ -49,14 +49,14 @@ function classifyHealthError(error: string | undefined): HealthErrorClass {
 function retryDelayMs(failures: number, errorClass: HealthErrorClass): number {
     let index = Math.min(failures, RETRY_LADDER_MS.length) - 1;
     if (errorClass === 'dead') {
-        // DNS gone / 5xx wall: dead domains almost never come back — skip rungs
+        // DNS gone / 5xx wall: dead domains almost never come back - skip rungs
         index = Math.min(index + 2, RETRY_LADDER_MS.length - 1);
     }
     const cap = errorClass === 'antibot' ? 1 * DAY_MS : RETRY_LADDER_MS[RETRY_LADDER_MS.length - 1];
     return Math.min(RETRY_LADDER_MS[index], cap);
 }
 
-/** Fisher-Yates shuffle (in place) — used for the random jitter. */
+/** Fisher-Yates shuffle (in place) - used for the random jitter. */
 function shuffle<T>(items: T[]): T[] {
     for (let i = items.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -73,7 +73,7 @@ interface HealthRow {
     checked_at: string;
     failure_count: number;
     next_probe_at: string | null;
-    /** 'http' | 'browser' — how the last probe reached the site. */
+    /** 'http' | 'browser' - how the last probe reached the site. */
     via: string | null;
 }
 
@@ -114,14 +114,14 @@ export class SourceHealthService {
         return row ? this._toDto(row) : { sourceId, status: 'untested' };
     }
 
-    /** `quiet` skips the per-probe Activity log — used by the rolling sweep. */
+    /** `quiet` skips the per-probe Activity log - used by the rolling sweep. */
     async probeOne(sourceId: string, opts?: { quiet?: boolean }): Promise<SourceHealthDto> {
         if (this.checking.has(sourceId)) {
             return { sourceId, status: 'checking' };
         }
         const adapter = await this.opts.getAdapter(sourceId);
         if (!adapter) {
-            // adapter gone (upstream connector removed): drop the stale row —
+            // adapter gone (upstream connector removed): drop the stale row -
             // its expired next_probe_at would eat sweep quota forever
             this.opts.db.db.prepare('DELETE FROM source_health WHERE source_id = ?').run(sourceId);
             return { sourceId, status: 'error', error: 'Unknown source' };
@@ -168,7 +168,7 @@ export class SourceHealthService {
                     const before = this.get(current).status;
                     const result = await this.probeOne(current, opts);
                     if (result.status === 'checking') {
-                        continue; // already probed elsewhere — not a real outcome
+                        continue; // already probed elsewhere - not a real outcome
                     }
                     if (before !== 'checking' && result.status !== before) {
                         changed = true;
@@ -258,7 +258,7 @@ export class SourceHealthService {
                 return;
             }
             // quiet: a rolling pass must not flood the Activity feed with one
-            // log line per probe — only status changes leave a trace
+            // log line per probe - only status changes leave a trace
             // (probeMany publishes sources.updated when a status changed)
             const summary = await this.probeMany(targets, { quiet: true });
             console.log(`[health] sweep: ${summary.ok}/${summary.checked} ok (${summary.errors} errors)`);
@@ -269,8 +269,8 @@ export class SourceHealthService {
         }
     }
 
-    /** Sources to probe this pass: due ones first — those backing a visible
-     *  library entry ahead of the pack, oldest deadline first — then a random
+    /** Sources to probe this pass: due ones first - those backing a visible
+     *  library entry ahead of the pack, oldest deadline first - then a random
      *  slice of the never-probed ones (jitter avoids hammering the catalog in
      *  the same order every pass). NB: reads the `library` table, created by
      *  LibraryStore before this service in index.ts (tests create it too). */
@@ -347,7 +347,7 @@ export class SourceHealthService {
     /** Single write path for probe outcomes: last result + backoff bookkeeping
      *  (returns the checked-at timestamp). A success clears the failure count,
      *  un-hides the source and schedules a leisurely re-check; a failure climbs
-     *  the ladder — dead sources climb faster, anti-bot ones are capped at a day. */
+     *  the ladder - dead sources climb faster, anti-bot ones are capped at a day. */
     private _recordResult(sourceId: string, result: HealthResult): string {
         const failures = result.ok ? 0 : this._nextFailureCount(sourceId);
         const nextInMs = result.ok ? OK_REFRESH_MS : retryDelayMs(failures, classifyHealthError(result.error));

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { LibraryChapterDto } from '@tanko/shared';
 import type { DownloadQueue } from '../downloader/queue.js';
-// runtime constant only — the queue module does not import this file, so no
+// runtime constant only - the queue module does not import this file, so no
 // runtime cycle is created
 import { AUTO_RETRY_MAX } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
@@ -20,7 +20,7 @@ import type { ChapterRow, EntryRow } from './rows.js';
 import { SQL_INSERT_CHAPTER_FULL, SQL_INSERT_NEW_CHAPTER } from './rows.js';
 
 /** Databases whose download_jobs table has been seen (the table is created by
- *  DownloadQueue, possibly after the store — cached once found). */
+ *  DownloadQueue, possibly after the store - cached once found). */
 const jobsTableSeen = new WeakSet<object>();
 
 function jobsTableExists(ctx: StoreContext): boolean {
@@ -79,7 +79,7 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
     // catalogue (Asura Scans rotates a shared build code embedded in every
     // URL), the entire listing looks unknown while the chapter numbers still
     // match the stored rows. An overwhelming mismatch re-ids the existing
-    // rows instead of treating the series as brand new — otherwise each
+    // rows instead of treating the series as brand new - otherwise each
     // rotation re-downloads and re-notifies the whole series.
     const listed = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));
     const unknown = listed.filter(chapter => !known.has(chapter.id));
@@ -118,7 +118,7 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
         }
     }
     // Reconcile failed chapters against the listing: a chapter the source
-    // no longer lists is 'lost' (slow revalidation stops — the download
+    // no longer lists is 'lost' (slow revalidation stops - the download
     // can never succeed), and a 'lost' chapter listed again goes back to
     // 'failed' (revalidation resumes at its cooldown step). Guarded by
     // usableSeen > 0: an empty or language-stripped listing (takedown)
@@ -146,7 +146,7 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
     if (fresh.length > 0) {
         // a new chapter just arrived: refresh the date that arms the
         // stale-series auto-unfollow and clear the stalled-probe
-        // back-off — the series is fresh again
+        // back-off - the series is fresh again
         ctx.db.db
             .prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ?, staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?')
             .run(now, now, entryId);
@@ -197,7 +197,7 @@ export function enqueueChapters(ctx: StoreContext, entryId: number, chapterIds: 
 /** Attach local files to an entry's chapters by number, and register the
  *  files the source never listed as local-only chapter rows ('local:<n>'):
  *  a starved or oddly numbered source must not hide chapters that sit on
- *  disk — they appear in the chapter list and the counts, and a later
+ *  disk - they appear in the chapter list and the counts, and a later
  *  check absorbs them into the real source chapter. */
 export function registerLocalChapters(ctx: StoreContext, entryId: number, localByNumber: Map<number, string>): { attached: number; registered: number } {
     const attached = markDownloadedByNumber(ctx, entryId, localByNumber);

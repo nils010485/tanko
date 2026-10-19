@@ -94,7 +94,7 @@ export function readUiLanguage(db: Database): UiLanguage {
 }
 
 /** Disk usage moves slowly and the walk is expensive (tens of thousands of
- *  CBZ) — serve the last result for a minute instead of walking repeatedly. */
+ *  CBZ) - serve the last result for a minute instead of walking repeatedly. */
 const SIZE_CACHE_TTL_MS = 60 * 1000;
 let sizeCache: { directory: string; bytes: number; at: number } | null = null;
 

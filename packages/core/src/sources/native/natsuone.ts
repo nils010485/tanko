@@ -36,7 +36,7 @@ function decodeEntities(text: string): string {
         .replace(/&quot;/g, '"')
         .replace(/&#0?39;/g, "'")
         .replace(/&#8217;/g, '’')
-        .replace(/&#8211;/g, '–')
+        .replace(/&#8211;/g, '-')
         .replace(/&#8230;/g, '…');
 }
 

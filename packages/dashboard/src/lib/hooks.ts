@@ -51,7 +51,7 @@ export function usePoll(fetch: () => Promise<void>, intervalMs = 3000, onError?:
     }, [intervalMs]);
 }
 /**
- * A ref flipped to true on unmount — long loops started from onClick
+ * A ref flipped to true on unmount - long loops started from onClick
  * handlers (polling, batch actions) check it to stop early.
  */
 export function useUnmounted(): React.MutableRefObject<boolean> {
@@ -69,7 +69,7 @@ export function useUnmounted(): React.MutableRefObject<boolean> {
  * Long-press (~500 ms, steady pointer) gesture for cards/rows: returns a
  * factory of pointer handlers that fires `onPress(id)` when the press holds.
  * Moving >10 px or releasing early cancels. The release click that follows a
- * fired press is swallowed — it would land on the re-rendered handlers and
+ * fired press is swallowed - it would land on the re-rendered handlers and
  * undo what the press just did. On touch, long-press would otherwise open
  * the context menu, which is prevented here too.
  */

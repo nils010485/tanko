@@ -203,7 +203,7 @@ export function GlobalResults({
                         <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
                             {missGroups.map(group => (
                                 <div key={group.sourceId} className="flex min-w-0 items-center gap-2 text-xs text-faint">
-                                    <span className="min-w-0 flex-1 truncate" title={group.error ? `${group.sourceLabel} — ${group.error}` : group.sourceLabel}>
+                                    <span className="min-w-0 flex-1 truncate" title={group.error ? `${group.sourceLabel} - ${group.error}` : group.sourceLabel}>
                                         {group.sourceLabel}
                                     </span>
                                     {group.status === 'ok' ? (

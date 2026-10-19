@@ -85,7 +85,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const formatDate = useMemo(
         () => (iso?: string) => {
             if (!iso) {
-                return '—';
+                return '-';
             }
             return new Date(iso).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB', {
                 day: '2-digit',

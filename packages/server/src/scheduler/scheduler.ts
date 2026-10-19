@@ -28,7 +28,7 @@ const DETECTION_PROBES = 10;
 /** Retry rounds after a run: t0 + 12min + 24min reaches the 3-failure threshold. */
 const MAX_RETRY_ROUNDS = 2;
 /** Raised when the source still answers but lists zero chapters in the
- *  preferred languages (license takedown typically) — a per-series CONTENT
+ *  preferred languages (license takedown typically) - a per-series CONTENT
  *  signal: it must keep migrating at its own pace, never open an outage. */
 const NO_USABLE_CHAPTERS = 'la source ne référence plus aucun chapitre dans les langues préférées';
 /** A series with no new chapter for this long gets its monitoring paused
@@ -119,7 +119,7 @@ export class Scheduler {
         let totalNew = 0;
         const newBySeries: Array<{ title: string; chapters: string[] }> = [];
         // entries already failover-probed in this run (the check-failure and
-        // download-failure loops can both target the same entry — probing it
+        // download-failure loops can both target the same entry - probing it
         // once is enough and halves the catalog crawls)
         const failoverProbed = new Set<number>();
         const failedIds = new Set<number>();
@@ -134,7 +134,7 @@ export class Scheduler {
                 }
             }
             // outage maintenance, before the backstop: close outages whose
-            // last observed failure is stale (the source quietly recovered —
+            // last observed failure is stale (the source quietly recovered -
             // restart the failed jobs' retry ladder) and arm the escalation
             // of outages whose jobs stopped retrying before OUTAGE_ESCALATION_MS
             for (const outage of this.opts.store.listSourceOutages()) {
@@ -146,7 +146,7 @@ export class Scheduler {
                     }
                     this.opts.store.closeSourceOutage(outage.sourceId);
                     this.opts.queue.resetRetryLadder(outage.sourceId);
-                    const recovered = `La source ${outage.sourceId} n'échoue plus — clôture de la panne, reprise des téléchargements en échec`;
+                    const recovered = `La source ${outage.sourceId} n'échoue plus - clôture de la panne, reprise des téléchargements en échec`;
                     this.opts.events.publishLog({
                         level: 'info',
                         category: 'source',
@@ -160,7 +160,7 @@ export class Scheduler {
                 }
                 const escalated = this.opts.store.armOutageEscalation(outage.sourceId);
                 if (escalated?.escalatedAt && !outage.escalatedAt) {
-                    const escalation = `Panne de la source ${outage.sourceId} persistante — migration de source réautorisée`;
+                    const escalation = `Panne de la source ${outage.sourceId} persistante - migration de source réautorisée`;
                     this.opts.events.publishLog({
                         level: 'warn',
                         category: 'source',
@@ -180,7 +180,7 @@ export class Scheduler {
                         continue; // already probed in this run, or the immediate probe owns it once the running jobs settle
                     }
                     // source-wide outage: migration stays suspended until it is
-                    // escalated (persistent) — otherwise the queue's auto-retry
+                    // escalated (persistent) - otherwise the queue's auto-retry
                     // heals the failed jobs when the source comes back
                     const outage = this.opts.store.getSourceOutage(entry.sourceId);
                     if (outage && !outage.escalatedAt) {
@@ -239,10 +239,10 @@ export class Scheduler {
     }
 
     /** Opt-in pass run after each check run: series whose last new chapter is
-     *  older than UNFOLLOW_STALE_DAYS get their monitoring paused — they stay
+     *  older than UNFOLLOW_STALE_DAYS get their monitoring paused - they stay
      *  visible in the library (badge + filter) and can be resumed at any
      *  time; files and history are kept. Entries with pending check failures
-     *  are skipped by the store — an unreachable source is not an abandoned
+     *  are skipped by the store - an unreachable source is not an abandoned
      *  series. */
     private _pauseStaleEntries(): number {
         if (!this.settings.autoUnfollow) {
@@ -268,9 +268,9 @@ export class Scheduler {
         return paused;
     }
 
-    /** Background pass after each run (opt-in): starved sources — entries
-     *  with very few chapters — and stalled sources — entries with no new
-     *  chapter for abnormally long given their own release rhythm — get
+    /** Background pass after each run (opt-in): starved sources - entries
+     *  with very few chapters - and stalled sources - entries with no new
+     *  chapter for abnormally long given their own release rhythm - get
      *  searched on the other sources; a much richer alternative is surfaced
      *  as a migration suggestion. Bounded to DETECTION_PROBES entries per
      *  run (shared budget) to keep the source load sane. */
@@ -322,7 +322,7 @@ export class Scheduler {
             } catch {
                 // an errored probe cannot distinguish hiatus from a broken
                 // crawl: back off (bounded) rather than re-crawl on the next
-                // run — and the crawl ran before throwing: it still cost a probe
+                // run - and the crawl ran before throwing: it still cost a probe
                 onOutcome?.(entry, false);
                 probes++;
                 continue;
@@ -374,7 +374,7 @@ export class Scheduler {
         const { fresh, usableSeen } = await this.opts.store.checkForNewChapters(entry.id);
         if (usableSeen === 0 && (entry.downloadedCount > 0 || entry.autoDownload)) {
             // La source ne référence plus aucun chapitre dans les langues préférées
-            // (retrait pour licence typiquement) alors que la série est suivie —
+            // (retrait pour licence typiquement) alors que la série est suivie -
             // déjà téléchargée ou en attente de nouveautés : compter comme un échec
             // pour armer le failover au lieu de rester silencieusement à « 0 nouveau ».
             await this._handleCheckFailure(entry, new Error(NO_USABLE_CHAPTERS), failoverProbed, failedIds);
@@ -429,7 +429,7 @@ export class Scheduler {
         // repeated failures -> the source is probably dead for this series: try a failover
         const failures = this.opts.store.recordCheckFailure(entry.id);
         // a source-wide outage suspends migration on this path too (same
-        // policy as the download path — probes resume once it escalates).
+        // policy as the download path - probes resume once it escalates).
         // Only thrown errors (network, API) may OPEN the outage: a listing
         // that succeeds with zero usable chapters is a per-series takedown
         // and keeps migrating at its own 3-strike pace, outage or not

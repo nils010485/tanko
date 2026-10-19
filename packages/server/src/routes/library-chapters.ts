@@ -1,5 +1,5 @@
 /**
- * Library routes — chapters: chapter listing, per-entry checks, ad-hoc
+ * Library routes - chapters: chapter listing, per-entry checks, ad-hoc
  * enqueueing (download-new), change history and file rollback. Extracted
  * from routes/library.ts, which registers the whole library API.
  */
@@ -20,7 +20,7 @@ export function registerLibraryChaptersRoutes(app: FastifyInstance, deps: Librar
     });
 
     // Check one entry now for new chapters (does not auto-enqueue)
-    // NB: no 404 guard here on purpose — /check stays callable for any id and
+    // NB: no 404 guard here on purpose - /check stays callable for any id and
     // reports its outcome through the store instead of the route.
     app.post<{ Params: { entryId: string } }>('/api/library/:entryId/check', async (request, reply) => {
         const { entryId } = request.params;

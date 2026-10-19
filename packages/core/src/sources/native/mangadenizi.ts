@@ -3,7 +3,7 @@
  * (custom Laravel + Nuxt; the old MangaReaderCMS endpoints are dead).
  *
  * LIMITATION (scramble): every page image on img.mangadenizi.net is
- * tile-scrambled — each page carries `scramble { method: "tiled-v1",
+ * tile-scrambled - each page carries `scramble { method: "tiled-v1",
  * grid: 10, seed: <int> }` in the reader response, and the web reader
  * reassembles the tiles client-side. This connector does NOT descramble:
  * pages are returned as-is, i.e. visually shuffled (valid webp images,

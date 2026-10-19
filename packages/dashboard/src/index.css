@@ -3,7 +3,7 @@
 @import "tailwindcss";
 
 @theme {
-    /* warm "ink" palette — neutrals lean warm (stone) instead of cold zinc */
+    /* warm "ink" palette - neutrals lean warm (stone) instead of cold zinc */
     --color-accent: #ff6a3d;
     --color-accent-soft: #ff8a66;
     --color-accent-deep: #e04e1f;

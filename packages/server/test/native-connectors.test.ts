@@ -1,6 +1,6 @@
 /**
  * Native connector templates, parsing-only (global fetch stubbed with
- * fixture HTML — no network).
+ * fixture HTML - no network).
  */
 import { MadaraConnector, MangastreamConnector } from '@tanko/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';

@@ -12,7 +12,7 @@ import { EventBus } from '../src/ws.js';
 
 // Boots the real route table on a real Fastify instance: Fastify throws
 // FST_ERR_DUPLICATED_ROUTE at ready() when the same method+URL is declared
-// twice — exactly the crash the Docker image hit once, which neither tsc
+// twice - exactly the crash the Docker image hit once, which neither tsc
 // nor the store tests could catch.
 let tmpDir: string;
 let database: Database;

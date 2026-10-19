@@ -1,8 +1,8 @@
 /**
- * Library API: facade that registers the focused route modules —
+ * Library API: facade that registers the focused route modules -
  * library-entries.ts (entry CRUD, aliases, bulk), library-chapters.ts
  * (chapters, checks, enqueue, rollback) and library-migrations.ts
- * (migrations, rematches, suggestions) — plus the scheduler routes.
+ * (migrations, rematches, suggestions) - plus the scheduler routes.
  */
 import type { LibraryEntryDto } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
@@ -25,7 +25,7 @@ export interface LibraryRouteDeps {
     events: EventBus;
     failover?: FailoverService;
     covers?: CoverService;
-    /** Shared with the activity routes — index.ts passes the same instance. */
+    /** Shared with the activity routes - index.ts passes the same instance. */
     jobs: JobRunner;
     /** Re-read an entry and broadcast it to the dashboard (no-op when it vanished). */
     publishEntry(entryId: number): LibraryEntryDto | undefined;

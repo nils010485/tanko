@@ -1,7 +1,7 @@
 /**
  * Async actions backing the Library view: per-entry and bulk operations
  * (check, download, rematch, hide, remove, rescan) with their busy flags,
- * pending-dialog state and toasts. All of it lives here — the view renders.
+ * pending-dialog state and toasts. All of it lives here - the view renders.
  */
 import type { DeadSeriesDto, LibraryBulkAction, LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';

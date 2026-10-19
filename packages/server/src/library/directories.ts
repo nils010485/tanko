@@ -2,7 +2,7 @@
  * Canonical series directories: every library entry owns a stable folder,
  * stored relative to the data directory and allocated once at add time. The
  * stored path survives source migrations (the failover rewrites title and
- * source in place) and layout changes — the layout only decides where NEW
+ * source in place) and layout changes - the layout only decides where NEW
  * entries are allocated, never where existing files are expected.
  */
 import fs from 'node:fs';
@@ -79,7 +79,7 @@ function hasRecordedPaths(ctx: StoreContext, entryId: number, rel: string): bool
 }
 
 /**
- * Backfill (idempotent): give every legacy row its canonical directory — the
+ * Backfill (idempotent): give every legacy row its canonical directory - the
  * folder its downloaded chapters actually live in, or a fresh allocation when
  * nothing pins it there. Entries sharing a folder they both have files in
  * keep sharing it (recorded reality wins); an entry with no files in a folder

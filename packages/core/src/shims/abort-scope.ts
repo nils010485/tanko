@@ -4,7 +4,7 @@
  * A legacy catalog/chapter crawl is a long sequence of fetches with no
  * cancellation API of its own: when the adapter gives up on it (timeout,
  * health-check race), the crawl keeps running in the background and its
- * in-memory catalog stays alive — the "zombie crawl" that stacks heaps until
+ * in-memory catalog stays alive - the "zombie crawl" that stacks heaps until
  * the process OOMs. Running a call inside an abort scope lets the global
  * fetch wrapper (engine.ts) combine every in-flight request signal with the
  * scope's: aborting the scope kills the whole crawl at once.

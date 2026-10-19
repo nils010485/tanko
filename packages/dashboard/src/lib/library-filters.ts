@@ -1,6 +1,6 @@
 /**
  * Library view logic: filter/sort predicates, display preferences and view
- * helpers — pure functions persisted in localStorage, shared by the Library
+ * helpers - pure functions persisted in localStorage, shared by the Library
  * view and its card components.
  */
 import type { LibraryEntryDto } from '@tanko/shared';

@@ -51,7 +51,7 @@ const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Auto-retry of failed jobs: after its n-th failure a job waits
  *  min(AUTO_RETRY_BASE_MS × 2^n, AUTO_RETRY_CAP_MS) before the sweep requeues
- *  it — a dead source is re-probed for ~31 h (30 min, 1 h, 2 h then 4-hourly)
+ *  it - a dead source is re-probed for ~31 h (30 min, 1 h, 2 h then 4-hourly)
  *  with fewer and fewer requests instead of the old fixed 30 min × 8 (~4 h).
  *  A manual retry resets the ladder; so does resetRetryLadder() when the
  *  source outage closes. */
@@ -94,7 +94,7 @@ export class DownloadQueue {
     private readonly gate: DomainGate;
     private readonly cancelFlags = new Map<number, boolean>();
     private paused = false;
-    /** Whether the library table exists in this database — downloads can run
+    /** Whether the library table exists in this database - downloads can run
      *  standalone (no library ever initialised), in which case the
      *  migration-orphan filter of retryFailed/retryJob is disabled. */
     private libraryPresent = false;
@@ -235,7 +235,7 @@ export class DownloadQueue {
     }
 
     /** Requeue every failed job whose entry (when tracked) still downloads
-     *  from the job's source — jobs left behind by a source migration point
+     *  from the job's source - jobs left behind by a source migration point
      *  at a dead source and must not be resurrected. Returns the requeued
      *  (entryId, chapterId) pairs so the caller can sync the library chapter
      *  statuses back to 'queued'. */
@@ -272,7 +272,7 @@ export class DownloadQueue {
 
     /** Requeue failed jobs that have waited out their backoff slot (bounded
      *  by AUTO_RETRY_MAX for the fast tier, then handed to the slow
-     *  revalidation tier — see _sweepRevalidations): temporary source outages
+     *  revalidation tier - see _sweepRevalidations): temporary source outages
      *  and late timeouts self-heal without a click, and a permanent outage
      *  stays covered until the failover escalates. */
     sweepFailedJobs(): number {
@@ -280,7 +280,7 @@ export class DownloadQueue {
         // tracks: never resurrect them (previously only retryFailed/
         // retryJob filtered, and an unbounded revalidation tier would probe
         // a dead source forever). Both tiers also skip 'lost' chapters: the
-        // source delisted them, the download can never succeed — retrying
+        // source delisted them, the download can never succeed - retrying
         // would only flap the chapter status back and forth.
         const skipFilter = this.libraryPresent
             ? ` AND (entry_id IS NULL OR EXISTS(SELECT 1 FROM library WHERE library.id = download_jobs.entry_id AND library.source_id = download_jobs.source_id))
@@ -317,8 +317,8 @@ export class DownloadQueue {
     /** Exhausted-ladder jobs (auto_retries >= AUTO_RETRY_MAX): one attempt
      *  per cooldown, the cooldown doubling from REVALIDATE_BASE_MS to
      *  REVALIDATE_CAP_MS. Skipped: ad-hoc jobs with no library entry (no UX
-     *  state to serve — the user asked once), migration orphans (dead
-     *  source), 'lost' chapters (removed from the source listing — the
+     *  state to serve - the user asked once), migration orphans (dead
+     *  source), 'lost' chapters (removed from the source listing - the
      *  download can never succeed), and jobs of hidden/paused entries
      *  (monitoring suspended by the user or the auto-unfollow). The attempt
      *  itself is the probe: getPages is the ground truth, no extra listing
@@ -386,7 +386,7 @@ export class DownloadQueue {
     }
 
     /** Whether the library entry (when tracked) still downloads from this
-     *  source — jobs orphaned by a source migration must not be retried. */
+     *  source - jobs orphaned by a source migration must not be retried. */
     private _entryTracksSource(entryId: number, sourceId: string): boolean {
         if (!this.libraryPresent) {
             return true;
@@ -444,7 +444,7 @@ export class DownloadQueue {
     updateSettings(patch: Partial<QueueSettings>): QueueSettings {
         // NB: fields are mutated IN PLACE on purpose. opts.settings is shared
         // by reference with LibraryStore / CoverService / failover, which read
-        // it at call time (disk paths, chapter format) — replacing the object
+        // it at call time (disk paths, chapter format) - replacing the object
         // would freeze them on stale values. Single-threaded + this comment is
         // the contract.
         const settings = this.opts.settings;
@@ -553,7 +553,7 @@ export class DownloadQueue {
     /** Drop finished jobs older than the configured retention; 0 keeps
      *  everything. Entry-linked failed jobs are exempt: they carry the slow
      *  revalidation promise (a paused entry freezes them mid-ladder, a 'lost'
-     *  chapter freezes its job) — pruning them would strand the chapter with
+     *  chapter freezes its job) - pruning them would strand the chapter with
      *  no job behind it, resurrecting the abandoned-chapter gap. */
     private _pruneHistory(): void {
         const days = this._retentionDays();
@@ -571,7 +571,7 @@ export class DownloadQueue {
             return;
         }
         // bounded pass: never materialize the whole queue (a large "download
-        // missing" backlog would be re-read on every tick) — list the sources
+        // missing" backlog would be re-read on every tick) - list the sources
         // having queued jobs (oldest job first), then fetch per source only
         // the jobs it can start under the caps
         const db = this.opts.db.db;
@@ -611,7 +611,7 @@ export class DownloadQueue {
                 this._schedule();
             })
             .catch(error => {
-                // _runJob handles download errors internally — a rejection
+                // _runJob handles download errors internally - a rejection
                 // here comes from the cleanup path (SQLite write, finish
                 // hooks). Swallow it into the log: an unhandled rejection
                 // would take the whole server down.
@@ -740,7 +740,7 @@ export class DownloadQueue {
         this.opts.db.db.prepare(`UPDATE download_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         const row = this.opts.db.db.prepare('SELECT * FROM download_jobs WHERE id = ?').get(jobId) as unknown as JobRow;
         this.opts.events.publish({ type: 'job.updated', job: this._toDto(row) });
-        // status transitions change the queue counters — push them with the job
+        // status transitions change the queue counters - push them with the job
         if (patch.status !== undefined) {
             this._publishStatus();
         }
@@ -791,7 +791,7 @@ export class DownloadQueue {
 
     /** Whether this exhausted failed job sits in the slow revalidation tier
      *  (mirrors _sweepRevalidations' predicates): the dashboard must not
-     *  promise slow retries for jobs that will never run again — ad-hoc
+     *  promise slow retries for jobs that will never run again - ad-hoc
      *  downloads, migration orphans, 'lost' chapters, paused/hidden entries. */
     private _isRevalidating(row: JobRow): boolean {
         if (!this.libraryPresent || row.entry_id == null) {

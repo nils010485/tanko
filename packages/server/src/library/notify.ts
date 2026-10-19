@@ -2,7 +2,7 @@
  * Lightweight webhook notifications.
  * Supports Discord webhooks (rich payload) and anything accepting a plain
  * text POST body (ntfy, gotify, custom endpoints). Delivery is opt-in per
- * event type (NotificationEventToggles) — by default only new chapters
+ * event type (NotificationEventToggles) - by default only new chapters
  * notify, preserving the historical behavior.
  */
 import type { NotificationEventToggles } from '@tanko/shared';
@@ -21,7 +21,7 @@ export type NotificationEvent = keyof NotificationEventToggles;
 export const DEFAULT_EVENT_TOGGLES: NotificationEventToggles = { newChapters: true, outages: false, migrations: false, scans: false };
 
 /** Merge notification settings over the defaults: nested `events` merge and
- *  boolean coercion — HTTP clients may send untyped values. */
+ *  boolean coercion - HTTP clients may send untyped values. */
 export function mergeNotificationSettings(base: NotificationSettings, patch?: Partial<NotificationSettings>): NotificationSettings {
     const events = { ...DEFAULT_EVENT_TOGGLES, ...(base.events || {}), ...(patch?.events || {}) };
     for (const key of Object.keys(events) as Array<keyof NotificationEventToggles>) {

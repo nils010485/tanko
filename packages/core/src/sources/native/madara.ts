@@ -28,8 +28,8 @@ interface MinimalResponse {
 }
 
 /** Strip browser-forbidden headers (User-Agent, Referer): in-page fetch sends
- *  the browser's real UA and the page URL as Referer — exactly what the
- *  anti-bot expects — and overriding them would throw. */
+ *  the browser's real UA and the page URL as Referer - exactly what the
+ *  anti-bot expects - and overriding them would throw. */
 function toPlainInit(init: RequestInit): { method?: string; headers?: Record<string, string>; body?: string } {
     const headers: Record<string, string> = {};
     const skip = new Set(['user-agent', 'referer']);
@@ -312,7 +312,7 @@ export class MadaraConnector implements SourceAdapter {
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
         // paged-style reader (one image per page): the list style renders the
-        // whole chapter at once — prefer it whenever the pager is present
+        // whole chapter at once - prefer it whenever the pager is present
         const paged = document.querySelector('.next_page[href], .select_page') !== null;
         let images = paged ? [] : this._pageImages(document, chapterUrl);
         if (images.length === 0 && paged) {
@@ -387,7 +387,7 @@ export class MadaraConnector implements SourceAdapter {
     private _decode(text: string): string {
         return (
             String(text)
-                // hostile or truncated entities (> 0x10FFFF) would throw — keep them verbatim
+                // hostile or truncated entities (> 0x10FFFF) would throw - keep them verbatim
                 .replace(/&#(\d+);/g, (_, n) => {
                     const code = Number(n);
                     return code <= 0x10ffff ? String.fromCodePoint(code) : _;
@@ -515,7 +515,7 @@ export class MadaraConnector implements SourceAdapter {
         }
         // 2) proven anti-bot challenge -> escalate through the browser
         if (!browserEnabled()) {
-            return { ...raw, error: 'anti-bot: Cloudflare challenge; no browser backend (needs Chromium + Xvfb — the Docker image has both)' };
+            return { ...raw, error: 'anti-bot: Cloudflare challenge; no browser backend (needs Chromium + Xvfb - the Docker image has both)' };
         }
         try {
             const first = await this._probeBrowser(startedAt);
@@ -569,7 +569,7 @@ export class MadaraConnector implements SourceAdapter {
             // a WAF challenge served with HTTP 200 must not count as healthy
             const antibot = isAntiBotShell(html, page.status);
             // a redirect landing on another origin means the site is gone
-            // (Discord invite, parked domain, rebranded spam) — not healthy
+            // (Discord invite, parked domain, rebranded spam) - not healthy
             const sameSite = new URL(page.url).hostname === new URL(this.base).hostname;
             const ok = page.ok && !antibot && sameSite;
             return {

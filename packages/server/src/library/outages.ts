@@ -46,7 +46,7 @@ export function resetDownloadFailures(ctx: StoreContext, entryId: number): void 
 }
 
 /** Distinct entries of this source with a failed download job inside the
- *  window — several at once is a source outage, not per-series rot. */
+ *  window - several at once is a source outage, not per-series rot. */
 export function countRecentSourceFailures(ctx: StoreContext, sourceId: string, windowMs: number): number {
     const cutoff = new Date(Date.now() - windowMs).toISOString();
     const row = ctx.q.get<{ n: number }>(
@@ -59,7 +59,7 @@ export function countRecentSourceFailures(ctx: StoreContext, sourceId: string, w
 
 /** Entries of this source currently failing their checks (the counter
  *  resets on the first success). Several at once means the source itself
- *  is broken (API change, block) — not per-series rot. */
+ *  is broken (API change, block) - not per-series rot. */
 export function countEntriesWithCheckFailures(ctx: StoreContext, sourceId: string): number {
     const row = ctx.q.get<{ n: number }>(
         'SELECT COUNT(*) AS n FROM library WHERE source_id = ? AND hidden = 0 AND paused = 0 AND check_failures > 0',
@@ -71,9 +71,9 @@ export function countEntriesWithCheckFailures(ctx: StoreContext, sourceId: strin
 /** Note a failure on the source-outage record. `open` creates the row
  *  (INSERT OR IGNORE keeps the original started_at of the wave); a refresh
  *  only bumps an existing one. A closed record is reactivated on open: a
- *  quick reopen (flap) resumes the previous wave — escalation included —
+ *  quick reopen (flap) resumes the previous wave - escalation included -
  *  while a stale close starts a fresh clock. Arms the escalation stamp
- *  when the outage has lasted long enough — idempotent. Returns undefined
+ *  when the outage has lasted long enough - idempotent. Returns undefined
  *  when no outage row exists (refresh without a prior open). */
 export function noteSourceFailure(ctx: StoreContext, sourceId: string, open: boolean): SourceOutage | undefined {
     const now = new Date();
@@ -125,7 +125,7 @@ export function closeSourceOutage(ctx: StoreContext, sourceId: string): boolean 
 }
 
 /** Arm the escalation stamp of an open outage whose started_at is old
- *  enough — the arming also happens on noteSourceFailure; this entry
+ *  enough - the arming also happens on noteSourceFailure; this entry
  *  point covers outages whose jobs stopped retrying (silence) before the
  *  escalation delay elapsed. No-op otherwise. */
 export function armOutageEscalation(ctx: StoreContext, sourceId: string): SourceOutage | undefined {
@@ -162,7 +162,7 @@ export function listStaleEntries(ctx: StoreContext, maxAgeDays: number): Array<{
 
 /** Entries whose series looks stalled relative to its own release rhythm
  *  (see the STALE_* constants): probe candidates for the stalled-source
- *  failover regime. Excludes entries with pending check failures — an
+ *  failover regime. Excludes entries with pending check failures - an
  *  unreachable source is the failure regime's job (maybeMigrate), not a
  *  stalled series. Most-stale first. */
 export function listStalledCandidates(ctx: StoreContext): StalledCandidate[] {
@@ -188,7 +188,7 @@ export function listStalledCandidates(ctx: StoreContext): StalledCandidate[] {
 
 /** Record the outcome of a stalled-source probe: a hit (suggestion stored)
  *  resets the back-off; a miss (probable hiatus) spaces the next probe out
- *  exponentially — 7d, 14d, 28d… capped at STALE_BACKOFF_MAX_MS. */
+ *  exponentially - 7d, 14d, 28d… capped at STALE_BACKOFF_MAX_MS. */
 export function recordStalenessProbe(ctx: StoreContext, entryId: number, hit: boolean): void {
     if (hit) {
         ctx.db.db.prepare('UPDATE library SET staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?').run(entryId);

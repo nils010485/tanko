@@ -10,7 +10,7 @@ let database: Database;
 let store: LibraryStore;
 
 /** The user's exact scenario: the first import matched a starved source that
- *  listed a single chapter — one file got marked downloaded, the other local
+ *  listed a single chapter - one file got marked downloaded, the other local
  *  files were never registered. A rematch migrates the entry to a richer
  *  source: the rebuild must carry the disk files over, not just DB rows, and
  *  keep files with no source counterpart visible as local-only chapters. */

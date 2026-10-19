@@ -9,7 +9,7 @@
  *    and is SIGKILLed past the caller's timeout;
  *  - if the hardened spawn is refused (older node, restricted environment),
  *    retry once without the permission flags, and as a last resort fall back
- *    to the in-process evaluation (same code, weakest containment —
+ *    to the in-process evaluation (same code, weakest containment -
  *    TANKO_EVAL_INPROCESS=1 forces it).
  */
 import { fork } from 'node:child_process';
@@ -36,7 +36,7 @@ type ChildToParent = { type: 'ready' } | { type: 'fetch'; reqId: number; request
 /**
  * Read allow-list for the hardened child: the monorepo root covering its own
  * entry file and the runtime dependencies it imports (linkedom). Found by
- * walking up to the topmost package.json — npm workspaces put node_modules
+ * walking up to the topmost package.json - npm workspaces put node_modules
  * there.
  */
 function dependencyRoot(): string {
@@ -51,7 +51,7 @@ function dependencyRoot(): string {
                     return dir;
                 }
             } catch {
-                /* unreadable package.json — keep walking */
+                /* unreadable package.json - keep walking */
             }
         }
         const parent = path.dirname(dir);

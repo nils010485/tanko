@@ -1,5 +1,5 @@
 /**
- * Library routes — migrations: manual and bulk source re-matches, migration
+ * Library routes - migrations: manual and bulk source re-matches, migration
  * suggestions (confirm/dismiss), manual migration and rollback. Extracted
  * from routes/library.ts, which registers the whole library API.
  */
@@ -47,7 +47,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
 
     // Bulk tool (dashboard "better sources" scan): probe healthier sources for
     // every visible entry with at most `maxChapters` chapters. Matches become
-    // migration suggestions awaiting confirmation — nothing is applied here.
+    // migration suggestions awaiting confirmation - nothing is applied here.
     app.post<{ Body: { maxChapters?: number } }>('/api/library/rematch-incomplete', async (request, reply) => {
         if (!failover) {
             return requireFailover(reply);

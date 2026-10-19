@@ -8,7 +8,7 @@
 export function normalizeTitle(title: string): string {
     return title
         .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks (U+0300–U+036F)
+        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks (U+0300-U+036F)
         .toLowerCase()
         .replace(/[’‘`]/g, "'")
         .replace(/["“”«»]/g, ' ')

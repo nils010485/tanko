@@ -87,7 +87,7 @@ const MAX_IN_FLIGHT_PER_HOST = 5;
 
 /** Attempts (total) for rate-limited responses before giving up. */
 const RATE_LIMIT_ATTEMPTS = 3;
-/** Upper bound honoring a Retry-After hint — longer hints still give up. */
+/** Upper bound honoring a Retry-After hint - longer hints still give up. */
 const MAX_RETRY_DELAY_MS = 15000;
 /** Fallback wait between attempts when the server doesn't say how long. */
 const RETRY_BACKOFF_MS = 1000;
@@ -168,7 +168,7 @@ export class HeadlessRequest {
 
     /**
      * Perform an HTTP(S) request with session cookies and header transforms.
-     * Rate-limited (429) responses — and 503 announcing a Retry-After — are
+     * Rate-limited (429) responses - and 503 announcing a Retry-After - are
      * retried with the announced delay (bounded) within the caller's timeout.
      */
     async fetch(request: LegacyRequest | string, timeout = 60000): Promise<Response> {

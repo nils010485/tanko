@@ -101,7 +101,7 @@ export class ActivityService {
         }));
     }
 
-    /** Attention-worthy rows (warn or error) newer than `since` (ISO) —
+    /** Attention-worthy rows (warn or error) newer than `since` (ISO) -
      *  drives the dashboard's unread badge. */
     errorCountSince(since: string): number {
         const row = this.db.db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE level IN ('warn', 'error') AND at > ?").get(since) as unknown as {
@@ -111,7 +111,7 @@ export class ActivityService {
     }
 
     /** Sum of the new-chapter counts of check.newChapters rows newer than
-     *  `since` (ISO timestamp) — bounded by the table retention. */
+     *  `since` (ISO timestamp) - bounded by the table retention. */
     newChaptersSince(since: string): number {
         const rows = this.db.db.prepare("SELECT params FROM activity_log WHERE code = 'check.newChapters' AND at > ?").all(since) as unknown as Array<{
             params: string | null;

@@ -4,7 +4,7 @@ import type { DownloadQueue } from '../downloader/queue.js';
 import type { LibraryStore } from '../library/store.js';
 
 export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueue, sourceRegistry: SourceRegistry, store: LibraryStore): void {
-    // List jobs (active first, then recent history) — paginated & filterable
+    // List jobs (active first, then recent history) - paginated & filterable
     const KNOWN_STATUSES = new Set(['queued', 'downloading', 'completed', 'failed', 'cancelled']);
     // Requeued jobs must flip their library chapter status back to 'queued'
     // ('failed' chapters would otherwise never leave the failed filter).

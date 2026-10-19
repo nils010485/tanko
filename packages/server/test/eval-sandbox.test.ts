@@ -4,7 +4,7 @@
  *
  * The sandbox intentionally runs in a dedicated child process: a remote page
  * script must never reach the server process (env, fs, cookie jar). These
- * tests encode the contract — they fail if the evaluation falls back
+ * tests encode the contract - they fail if the evaluation falls back
  * in-process (TANKO_EVAL_INPROCESS=1), which is exactly the point.
  */
 import http from 'node:http';
@@ -35,7 +35,7 @@ describe('evaluation sandbox isolation', () => {
 
     it('keeps prototype-chain bridges out of the server environment', async () => {
         // any object handed to the context (document, timers…) is a bridge to
-        // the outer realm — the child's env must be wiped, so the marker can
+        // the outer realm - the child's env must be wiped, so the marker can
         // never show up on the other side
         process.env.TANKO_TEST_MARKER = 'leak-canary';
         try {
@@ -89,7 +89,7 @@ describe('evaluation sandbox isolation', () => {
     });
 });
 
-/** Tiny origin server answering /data — used to observe the proxied subrequest. */
+/** Tiny origin server answering /data - used to observe the proxied subrequest. */
 function countingServer() {
     let hits = 0;
     let referer = '';

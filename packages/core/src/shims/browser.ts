@@ -5,13 +5,13 @@
  * download) so the base image stays lean; the browser is launched lazily on first
  * need and reused.
  *
- * Enabled whenever a Chromium binary is detected — the Docker image ships one.
+ * Enabled whenever a Chromium binary is detected - the Docker image ships one.
  */
 import { existsSync } from 'node:fs';
 import type { Browser } from 'puppeteer-core';
 
 /** External Chrome/Chromium exposing CDP (e.g. a podman container publishing
- * port 9222) — takes precedence over a local binary when set. */
+ * port 9222) - takes precedence over a local binary when set. */
 const BROWSER_URL = process.env.TANKO_BROWSER_URL?.trim() || undefined;
 
 const CHROMIUM_CANDIDATES = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
@@ -25,7 +25,7 @@ export function browserEnabled(): boolean {
 }
 
 /** Heuristic shared with the request shim: true when the page is a JS/anti-bot shell.
- *  `status` (when the caller has it) is the strongest signal — a 403/503 body
+ *  `status` (when the caller has it) is the strongest signal - a 403/503 body
  *  is never usable payload. Challenge pages localize their <title> ("Un
  *  instant…", "Vérification de sécurité"). */
 const CHALLENGE_TITLE =

@@ -5,7 +5,7 @@
  * (pattern of ImportService): cached legacy lists resolve instantly, uncached
  * ones get one catalog fetch (warming the 24h cache), native endpoints answer
  * their own search API. Each source gets a wall-clock timeout and the whole
- * job a deadline — sources that don't fit are reported 'skipped', never
+ * job a deadline - sources that don't fit are reported 'skipped', never
  * silently dropped. The dashboard polls get() for progressive results.
  */
 

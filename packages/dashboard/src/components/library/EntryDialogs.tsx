@@ -8,7 +8,7 @@ import { useI18n } from '../../i18n/index.js';
 import { IconEyeOff, IconFolder, IconLibrary } from '../icons.js';
 import { Button, Modal } from '../ui.js';
 
-/** "Remove <series>?" — hide from Tanko or delete the files from disk. */
+/** "Remove <series>?" - hide from Tanko or delete the files from disk. */
 export function RemoveEntryDialog({
     entry,
     onHide,
@@ -67,7 +67,7 @@ export function RemoveEntryDialog({
     );
 }
 
-/** "Remove the N selected series?" — library-only or library + files. */
+/** "Remove the N selected series?" - library-only or library + files. */
 export function BulkRemoveDialog({ count, onDelete, onClose }: { count: number; onDelete(disk: boolean): void; onClose(): void }) {
     const { t } = useI18n();
     return (

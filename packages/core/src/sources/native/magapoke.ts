@@ -18,7 +18,7 @@
  * (tiles visually shuffled).
  *
  * LIMITATION (signed URLs): page_list URLs are CloudFront-signed and expire
- * after ~30 min — always call getPages() again before downloading. Images
+ * after ~30 min - always call getPages() again before downloading. Images
  * answer 200 without Referer, so no fetchPageImage is needed.
  * Premium episodes fail cleanly (response_code 3105 "episode unpurchased").
  */
@@ -88,7 +88,7 @@ export class MagaPokeConnector implements SourceAdapter {
             }
         }
         if (!html.includes(SERIES_MARKER)) {
-            // the same unhydrated shell checkHealth flags as broken — it must
+            // the same unhydrated shell checkHealth flags as broken - it must
             // not pass for a normal "no hit" here
             throw new SourceError(`Liste de séries non rendue sur ${this.label} (rendu navigateur requis)`, this.id);
         }

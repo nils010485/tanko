@@ -46,7 +46,7 @@ export function ChaptersModal({
             <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
                 <div className="min-w-0 truncate text-sm font-semibold" title={selected.title}>
                     {selected.title}
-                    {chapters && <span className="ml-1 font-normal text-faint">— {t('discover.chaptersCount', { n: chapters.length })}</span>}
+                    {chapters && <span className="ml-1 font-normal text-faint">- {t('discover.chaptersCount', { n: chapters.length })}</span>}
                 </div>
                 <button
                     type="button"

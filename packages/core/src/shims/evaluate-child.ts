@@ -13,7 +13,7 @@
  *     own intrinsics, which closes the classic
  *     `Promise.constructor("return process")()` escape.
  *  2. The Web APIs a page needs (document, timers, fetch, Request/Response…)
- *     are outer-realm objects and stay prototype-chain bridges — they can
+ *     are outer-realm objects and stay prototype-chain bridges - they can
  *     never be made safe inside one process. The child therefore runs under
  *     the Node permission model (`--permission`, read-only allow-list) with a
  *     wiped environment and is killed after a single evaluation: an escaped
@@ -73,7 +73,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
     const location = new URL(url);
     const deadline = Date.now() + timeoutMs;
 
-    // page scripts schedule timers that may throw later — a raw callback must
+    // page scripts schedule timers that may throw later - a raw callback must
     // never escape its try/catch (it would kill the child for nothing) and is
     // tracked so nothing survives the evaluation (the legacy BrowserWindow was
     // destroyed after each script)
@@ -94,7 +94,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
     const safeSetInterval = (callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => track(setInterval(() => guard(callback, args), ms));
 
     // the parent owns the session: cookies, header transforms (x-*), per-host
-    // gate/backoff — this side only sends a plain-wire request
+    // gate/backoff - this side only sends a plain-wire request
     const wire = async (request: WireRequest): Promise<Response> => {
         // never hand out a zero budget: the parent's own deadline has to stay positive
         const remaining = Math.max(1, deadline - Date.now());
@@ -117,7 +117,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
     };
 
     // jQuery is always loaded from an external <script src> which we never
-    // fetch — connectors like MangaHere/MangaFox rely on $.ajax, so provide
+    // fetch - connectors like MangaHere/MangaFox rely on $.ajax, so provide
     // a minimal promise-based subset (inline page scripts may overwrite it)
     const ajax = async (settings: unknown) => {
         const options = (typeof settings === 'string' ? { url: settings } : (settings ?? {})) as {
@@ -147,7 +147,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
             }
         }
         const headers = new Headers(options.headers);
-        // jQuery/XHR always sends the page URL as Referer — sites with
+        // jQuery/XHR always sends the page URL as Referer - sites with
         // hotlink protection answer missing-referer requests with 200 + empty body
         if (!headers.has('Referer') && !headers.has('x-referer')) {
             headers.set('x-referer', location.href);
@@ -156,7 +156,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
             headers.set('Content-Type', typeof data === 'string' ? 'application/x-www-form-urlencoded' : 'application/json');
         }
         // per-attempt timeouts + retry backoffs must fit the caller's overall
-        // budget — orphaned fetches would hold gate slots and hammer the host
+        // budget - orphaned fetches would hold gate slots and hammer the host
         // after the evaluation has already timed out
         let text = '';
         let wireResponse: WireResponse | undefined;
@@ -179,7 +179,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
                 }
                 text = Buffer.from(wireResponse.bodyB64, 'base64').toString('utf8');
                 // some endpoints (e.g. mangahere chapterfun.ashx) intermittently
-                // answer 200 with an empty body — retry with backoff instead of
+                // answer 200 with an empty body - retry with backoff instead of
                 // returning junk the connector's eval() cannot use
                 if (text.trim() || attempt === AJAX_EMPTY_ATTEMPTS) {
                     break;
@@ -274,7 +274,7 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
     }
 
     // connectors hand us expression snippets that may end with a
-    // statement semicolon (« new Promise(...); ») — a naive
+    // statement semicolon (« new Promise(...); ») - a naive
     // '(' + script + ')' wrap is then a syntax error
     const expression = script.trim().replace(/;+\s*$/, '');
     let result: unknown;
@@ -291,10 +291,10 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
         }
     }
     // the snippet may resolve a promise that never settles (a page script
-    // waiting on browser-only APIs) — race it so the child always answers
+    // waiting on browser-only APIs) - race it so the child always answers
     const settled = Promise.resolve(result);
     const expired = new Promise<never>((_, reject) => {
-        // inline scripts already consumed part of the budget — race on what's left
+        // inline scripts already consumed part of the budget - race on what's left
         const timer = setTimeout(() => reject(new Error('script evaluation timed out')), Math.max(1, deadline - Date.now()));
         timer.unref?.();
     });

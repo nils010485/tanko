@@ -1,7 +1,7 @@
 /**
  * AniList (graphql.anilist.co) title lookup: free GraphQL API, no key. For a
  * manga/manhwa it knows the official titles (english, romaji, native) plus the
- * alternative spellings, which feed the failover's search aliases — series are
+ * alternative spellings, which feed the failover's search aliases - series are
  * often hosted on other sources under another name.
  */
 import { REVIEW_THRESHOLD, titleSimilarity } from '../import/similarity.js';

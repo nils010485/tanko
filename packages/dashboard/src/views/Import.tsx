@@ -1,7 +1,7 @@
 /**
  * Import view: drives the server-side import job (scan -> match -> confirm ->
  * sync). All state lives server-side (SQLite) so the view can be closed and
- * reopened at any time — it simply polls the current job.
+ * reopened at any time - it simply polls the current job.
  */
 
 import type { SourceDto } from '@tanko/shared';
@@ -104,7 +104,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
             concurrency: Number.isInteger(parsedConcurrency) && parsedConcurrency >= 1 ? parsedConcurrency : undefined,
             sourceIds: sourceFilter.size > 0 ? [...sourceFilter] : undefined
         });
-        // the server adopts a differing folder as the storage folder — resync
+        // the server adopts a differing folder as the storage folder - resync
         const data = await api.settings();
         setStoragePath(data.queue.dataDirectory);
     }, 'start');
@@ -183,7 +183,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                         <IconAlert size={15} className="mt-0.5 flex-none text-amber-400" />
                         <p className="min-w-0 text-sm text-muted">
                             <span className="font-semibold text-amber-300">{t('import.storageAdoptTitle')}</span>
-                            <span className="text-faint"> — {t('import.storageAdoptBody', { path: folderPath.trim(), storage: storagePath })}</span>
+                            <span className="text-faint"> - {t('import.storageAdoptBody', { path: folderPath.trim(), storage: storagePath })}</span>
                         </p>
                     </div>
                 )}
@@ -393,7 +393,7 @@ export default function Import({ onImported }: { onImported: () => void }) {
                                         onChange={event => choose(item, event.target.value)}
                                     >
                                         <option value="" disabled>
-                                            —
+                                            -
                                         </option>
                                         {item.candidates.map(candidate => (
                                             <option key={`${candidate.sourceId}:${candidate.mangaId}`} value={`${candidate.sourceId}:${candidate.mangaId}`}>

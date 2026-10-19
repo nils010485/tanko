@@ -1,7 +1,7 @@
 /**
  * Library entry cards: the grid card and the list row, with their shared
  * pieces (status badges, stat line, action menus, migration banner,
- * chapters panel). All state stays in the Library view — the cards receive
+ * chapters panel). All state stays in the Library view - the cards receive
  * it through `state` / `handlers`.
  */
 import type { LibraryChapterDto, LibraryEntryDto } from '@tanko/shared';

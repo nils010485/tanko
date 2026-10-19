@@ -50,7 +50,7 @@ export default function Sources({ sourcesVersion }: { sourcesVersion: number }) 
     useEffect(() => {
         void refreshSources();
     }, [refreshSources]);
-    // rolling health re-checks push sources.updated — refresh the statuses live
+    // rolling health re-checks push sources.updated - refresh the statuses live
     const seenVersion = useRef(sourcesVersion);
     useEffect(() => {
         if (sourcesVersion === seenVersion.current) {

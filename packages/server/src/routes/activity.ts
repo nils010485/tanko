@@ -9,10 +9,10 @@ export function registerActivityRoutes(
     app: FastifyInstance,
     activity: ActivityService,
     stats: { library: LibraryStore; sourceHealth: SourceHealthService },
-    /** Shared with the library routes — index.ts passes the same instance. */
+    /** Shared with the library routes - index.ts passes the same instance. */
     jobs: JobRunner
 ): void {
-    // Activity history (checks, notifications, errors) — newest first
+    // Activity history (checks, notifications, errors) - newest first
     app.get<{ Querystring: { limit?: string; offset?: string } }>('/api/activity', async request => {
         const parsed = Number.parseInt(request.query?.limit || '', 10);
         const limit = Number.isFinite(parsed) && parsed > 0 && parsed <= ACTIVITY_PAGE_SIZE ? parsed : ACTIVITY_PAGE_SIZE;

@@ -27,11 +27,11 @@ export function failoverDetail(outcome: 'migrated' | 'suggested' | 'none'): stri
 export function failoverDownloadMessage(title: string, failures: number, outcome: 'migrated' | 'suggested' | 'none'): string {
     switch (outcome) {
         case 'migrated':
-            return `"${title}" : ${failures} téléchargements en échec — migré vers une autre source, reprise du téléchargement`;
+            return `"${title}" : ${failures} téléchargements en échec - migré vers une autre source, reprise du téléchargement`;
         case 'suggested':
-            return `"${title}" : ${failures} téléchargements en échec — migration de source suggérée (à confirmer)`;
+            return `"${title}" : ${failures} téléchargements en échec - migration de source suggérée (à confirmer)`;
         default:
-            return `"${title}" : ${failures} téléchargements en échec — aucune source de rechange trouvée`;
+            return `"${title}" : ${failures} téléchargements en échec - aucune source de rechange trouvée`;
     }
 }
 

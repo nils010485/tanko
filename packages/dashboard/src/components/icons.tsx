@@ -102,7 +102,7 @@ export const IconUndo = decorative(Undo2);
 export const IconDots = decorative(Ellipsis);
 export const IconArrowLeft = decorative(ArrowLeft);
 
-/** GitHub logo — brand icons were removed from lucide, kept local. */
+/** GitHub logo - brand icons were removed from lucide, kept local. */
 export function IconGitHub({ size = 16, ...props }: IconProps) {
     return (
         <svg

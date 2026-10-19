@@ -1,5 +1,5 @@
 // Public surface: only what server/tests actually import from the package
-// root — internal modules use relative paths (see each shim/module).
+// root - internal modules use relative paths (see each shim/module).
 export { CONNECTOR_OVERRIDES, createEngine, getVendorDirectory, loadConnectors, VENDOR_PATH } from './engine.js';
 export { closeBrowser, isAntiBotShell } from './shims/browser.js';
 export { HeadlessRequest, randomUserAgent, retryAfterMs } from './shims/request.js';

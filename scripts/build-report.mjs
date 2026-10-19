@@ -237,7 +237,7 @@ const lines = ['# Triage des 310 sources broken (tanko)', ''];
 for (const verdict of order) {
     const group = rows.filter(r => r.verdict === verdict);
     if (!group.length) continue;
-    lines.push(`## ${verdict} — ${group.length}`, '');
+    lines.push(`## ${verdict} - ${group.length}`, '');
     lines.push('| id | label | url | classe | famille | new url | note |', '|---|---|---|---|---|---|---|');
     for (const r of group) {
         lines.push(`| ${r.id} | ${String(r.label).replace(/\|/g, '/')} | ${r.url} | ${r.cls} | ${r.family} | ${r.newUrl ?? ''} | ${r.note ?? ''} |`);

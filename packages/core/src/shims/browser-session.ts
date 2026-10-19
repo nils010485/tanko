@@ -3,14 +3,14 @@
  *
  * After a single page.goto() solves a Cloudflare challenge, a fetch()
  * evaluated INSIDE that page carries the cf_clearance cookies and Chrome's
- * real TLS fingerprint — including POSTs (page.goto cannot POST). One solve
+ * real TLS fingerprint - including POSTs (page.goto cannot POST). One solve
  * therefore amortizes over a whole session of cheap in-page requests.
  *
  * Lifecycle rules (the health of this module is all about not closing pages
  * that in-flight evaluates still use):
  *  - solves are deduped per origin (inflight) and serialized globally (CF
  *    dislikes parallel challenges);
- *  - a page is never closed synchronously on eviction — evicted pages get a
+ *  - a page is never closed synchronously on eviction - evicted pages get a
  *    grace period, then close; requests that raced with the eviction retry
  *    once on a fresh session;
  *  - failed solves are negatively cached per origin: a host we cannot solve
@@ -225,7 +225,7 @@ export async function browserFetchBinary(origin: string, url: string): Promise<{
 }
 /**
  * Readers that decode their pages client-side (blob: URLs, obfuscated ajax
- * keys) hide the image list from the DOM — but the reader still has to fetch
+ * keys) hide the image list from the DOM - but the reader still has to fetch
  * the real images. Render `url` on the session page and collect every image
  * URL seen in a response body or a request, deduped and index-sorted.
  * Captures are serialized: they navigate the shared per-origin page.

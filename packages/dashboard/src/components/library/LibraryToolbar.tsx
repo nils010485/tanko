@@ -2,7 +2,7 @@
  * Library toolbar: title search, sort, view-mode switch (grid / compact /
  * list), display-preferences popover and the rich filter chips (new, missing
  * chapters, source/local gap, failing sources, stale checks, paused…).
- * Controlled component — filter/sort/view/prefs state stays in the Library
+ * Controlled component - filter/sort/view/prefs state stays in the Library
  * view because the filtered list and `focusFilter` depend on it.
  */
 import type { LibraryEntryDto } from '@tanko/shared';
@@ -152,7 +152,7 @@ export function LibraryToolbar({
                 </div>
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
-                {/* mobile: chips collapse behind a toggle — active ones stay visible */}
+                {/* mobile: chips collapse behind a toggle - active ones stay visible */}
                 <button
                     type="button"
                     onClick={() => setFiltersOpen(current => !current)}

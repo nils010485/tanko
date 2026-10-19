@@ -14,7 +14,7 @@ export function MigrationBanner({ count, onReview, onLater }: { count: number; o
             <IconArrowLeftRight size={16} className="flex-none text-accent-soft" />
             <p className="min-w-0 flex-1 text-sm">
                 <span className="font-semibold text-accent-soft">{t('library.migrationBanner', { n: count })}</span>
-                <span className="hidden text-muted sm:inline"> — {t('library.migrationBannerHint')}</span>
+                <span className="hidden text-muted sm:inline"> - {t('library.migrationBannerHint')}</span>
             </p>
             <button type="button" onClick={onLater} className="flex-none text-xs font-semibold text-muted transition-colors hover:text-fg">
                 {t('library.migrationLater')}

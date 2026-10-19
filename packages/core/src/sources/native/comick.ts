@@ -104,7 +104,7 @@ export class ComickConnector implements SourceAdapter {
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         // queue jobs carry only the chapter id (no url): the reader resolves
-        // chapters by hid — slug/chap/lang in the path are decorative
+        // chapters by hid - slug/chap/lang in the path are decorative
         const rawUrl = chapter.url || `${MIRROR}/comic/x/${chapter.id}-chapter-x-en`;
         const html = await this._getReaderHtml(rawUrl);
         const json = html.match(/<script id="sv-data"[^>]*>([\s\S]*?)<\/script>/)?.[1];

@@ -85,7 +85,7 @@ export function getBootToken(): Promise<string> {
     return bootTokenPromise;
 }
 
-/** Forget the memoized token — the server restarted and rotated it. */
+/** Forget the memoized token - the server restarted and rotated it. */
 export function resetBootToken(): void {
     bootToken = null;
     bootTokenPromise = null;
@@ -233,7 +233,7 @@ export const api = {
     downloads: (params: { limit?: number; offset?: number; status?: string; q?: string } = {}) => {
         const query: Record<string, string> = {};
         for (const [key, value] of Object.entries(params)) {
-            // undefined/empty values must not reach the query string — they
+            // undefined/empty values must not reach the query string - they
             // would be stringified as "undefined" and filter everything out
             if (value !== undefined && value !== null && value !== '') {
                 query[key] = String(value);

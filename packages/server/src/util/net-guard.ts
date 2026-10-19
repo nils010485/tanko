@@ -44,7 +44,7 @@ export function isPrivateAddress(address: string): boolean {
         return false;
     }
     // IPv4-mapped: ::ffff:10.0.0.5 (dotted) or ::ffff:a00:5 (hex, WHATWG
-    // URL serializes to hex) — check the embedded IPv4 instead
+    // URL serializes to hex) - check the embedded IPv4 instead
     const embedded = address.match(/^::ffff:(.+)$/i);
     if (embedded) {
         const tail = embedded[1];
@@ -67,7 +67,7 @@ export function isPrivateAddress(address: string): boolean {
 /** Resolve a hostname and reject when ANY resolved address is private
  *  (a public name with one private A/AAAA record is still a rebinding probe). */
 async function assertPublicHost(hostname: string): Promise<void> {
-    // URL.hostname keeps IPv6 literals bracketed ([::1]) — net.isIP doesn't parse those
+    // URL.hostname keeps IPv6 literals bracketed ([::1]) - net.isIP doesn't parse those
     const host = hostname.replace(/^\[(.+)\]$/, '$1');
     if (net.isIP(host) !== 0) {
         if (isPrivateAddress(host)) {
@@ -103,7 +103,7 @@ const MAX_REDIRECTS = 5;
  *  private-range blocklist (redirect: 'manual' + explicit hop loop).
  *
  * NB: a TOCTOU remains between the dns.lookup here and undici's own
- * resolution at connect time (DNS rebinding) — accepted residual, see the
+ * resolution at connect time (DNS rebinding) - accepted residual, see the
  * audit report. */
 export async function fetchGuarded(raw: string, init: RequestInit = {}): Promise<Response> {
     let target = await assertPublicHttpUrl(raw);
@@ -111,7 +111,7 @@ export async function fetchGuarded(raw: string, init: RequestInit = {}): Promise
         const headers = new Headers(init.headers);
         if (hop > 0 && headers.has('referer')) {
             // browser-like: after a hop, the Referer is the redirecting page's
-            // origin — the caller's first-hop Referer (source URL) is preserved
+            // origin - the caller's first-hop Referer (source URL) is preserved
             headers.set('referer', `${target.origin}/`);
         }
         const response = await fetch(target, { ...init, headers, redirect: 'manual', signal: init.signal });

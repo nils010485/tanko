@@ -169,7 +169,7 @@ export interface LibraryEntryDto {
     newCount: number;
     /** Chapters currently in 'failed' state (drives the download-new disabled rule). */
     failedCount?: number;
-    /** Chapters that predate the follow ('missing' state — monitor-only backlog). */
+    /** Chapters that predate the follow ('missing' state - monitor-only backlog). */
     missingCount?: number;
     lastCheckedAt?: string;
     /** Date the last new chapter was discovered (drives the stale-series auto-pause). */
@@ -188,7 +188,7 @@ export interface LibraryEntryDto {
     /** Paused entries stay visible but are not monitored (auto or manual pause). */
     paused?: boolean;
     /** Alternative titles (manual or AniList) searched by the failover when
-     *  the current source goes bad — manhwas are often listed under another name. */
+     *  the current source goes bad - manhwas are often listed under another name. */
     aliases?: string[];
 }
 
@@ -239,7 +239,7 @@ export interface LibraryChapterDto {
     retryExhausted?: boolean;
     /** A matching failed download job still exists: either retry tier may
      *  requeue it automatically. Absent when no job exists (migration
-     *  rollback, cleared history) — nothing retries it on its own. */
+     *  rollback, cleared history) - nothing retries it on its own. */
     retryPlanned?: boolean;
 }
 
@@ -368,7 +368,7 @@ export interface ActivityLogDto extends LogEventMeta {
     at: string;
 }
 
-/** Long-running background job (bulk tools, import, covers, rescan) — GET /api/activity/jobs. */
+/** Long-running background job (bulk tools, import, covers, rescan) - GET /api/activity/jobs. */
 export interface JobStatusDto {
     id: number;
     /** i18n code prefix of the tool, e.g. 'scan.betterSources' or 'import.run'. */
@@ -384,7 +384,7 @@ export interface JobStatusDto {
     cancelled?: boolean;
 }
 
-/** Live snapshot of the background jobs — GET /api/activity/jobs. */
+/** Live snapshot of the background jobs - GET /api/activity/jobs. */
 export interface ActivityJobsDto {
     /** Jobs currently running (at most one "crawl" job, any number of local ones). */
     running: JobStatusDto[];
@@ -392,7 +392,7 @@ export interface ActivityJobsDto {
     history: JobStatusDto[];
 }
 
-/** System pulse — GET /api/activity/stats. */
+/** System pulse - GET /api/activity/stats. */
 export interface ActivityStatsDto {
     /** Visible library entries. */
     series: number;
@@ -403,12 +403,12 @@ export interface ActivityStatsDto {
     /** Healthy vs known sources (health probes). */
     sourcesHealthy: number;
     sourcesTotal: number;
-    /** error-level log rows newer than `?since=` — unread-errors badge. */
+    /** error-level log rows newer than `?since=` - unread-errors badge. */
     errorsSince?: number;
 }
 
 /** Per-event webhook opt-in. Absent fields fall back to the defaults
- *  (only new chapters notify — the historical behavior). */
+ *  (only new chapters notify - the historical behavior). */
 export interface NotificationEventToggles {
     newChapters: boolean;
     outages: boolean;

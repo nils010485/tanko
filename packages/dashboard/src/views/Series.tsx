@@ -1,5 +1,5 @@
 /**
- * Series view (Sonarr-style): one page per tracked series — status, follow
+ * Series view (Sonarr-style): one page per tracked series - status, follow
  * toggle, check / download actions and the full chapter list with per-chapter
  * download, retry, preview and restore. Reached via #/library/:id.
  */
@@ -171,7 +171,7 @@ export default function Series({
     }, [loadChapters]);
 
     // poll while a chapter is in flight (4 s), or a failed one still has
-    // fast-ladder retries pending (30 s — a requeue can only land at a
+    // fast-ladder retries pending (30 s - a requeue can only land at a
     // backoff slot); a paused entry freezes retries, so no polling either
     const jobsActive = chapters?.some(chapter => chapter.status === 'queued' || chapter.status === 'downloading') ?? false;
     const failedRetrying = chapters?.filter(chapter => chapter.status === 'failed' && chapter.retryPlanned && !chapter.retryExhausted).length ?? 0;
@@ -203,7 +203,7 @@ export default function Series({
 
     /** Sonarr-style single action: grab everything not on disk yet ('new' +
      *  'missing' + 'failed'). Chapters that predate the follow ('missing')
-     *  ask first — the confirm dialog is the monitor-only guard a 500-chapter
+     *  ask first - the confirm dialog is the monitor-only guard a 500-chapter
      *  backlog needs. */
     const downloadMissing = async () => {
         if (!entry) return;
@@ -274,7 +274,7 @@ export default function Series({
     };
     const closePicker = () => setPicker(current => ({ ...current, open: false }));
 
-    /** Save the alias list, refresh the entry, then re-run the source search —
+    /** Save the alias list, refresh the entry, then re-run the source search -
      *  editing a name only ever aims at finding more sources. */
     const saveAliases = async (aliases: string[]) => {
         try {
@@ -512,7 +512,7 @@ export default function Series({
                     </div>
                 </div>
             </Card>
-            {/* a paused entry freezes retries — the banner must not promise anything */}
+            {/* a paused entry freezes retries - the banner must not promise anything */}
             {failedCount > 0 && !entry.paused && <RecoveryBanner retrying={failedRetrying} exhausted={failedExhausted} />}
 
             {migrationBanner(

@@ -3,7 +3,7 @@
  * search via GET /?q=, chapters list in div#chapters, reader images as
  * img[data-src] on a third-party B2/Cloudflare CDN.
  * Caveat: genre-filtered catalog pages are AND-logical and empty-query search
- * returns nothing usable — only free-text search is exposed.
+ * returns nothing usable - only free-text search is exposed.
  */
 
 import { parseDocument } from '../../shims/dom.js';

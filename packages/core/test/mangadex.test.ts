@@ -1,7 +1,7 @@
 /**
  * Tests for the MangaDex chapter-list language filter: `languages` in the
  * chapter options must reach the API as `translatedLanguage[]` params, and
- * its absence must keep the unfiltered (all languages) request — the
+ * its absence must keep the unfiltered (all languages) request - the
  * server-side `chapterAllowed` filter stays the correctness mechanism.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';

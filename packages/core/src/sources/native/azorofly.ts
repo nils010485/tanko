@@ -1,7 +1,7 @@
 /**
  * Native connector for Azora Manga (https://azorafly.com, arabic/RTL): the
  * same Astro/VComics platform as VComicsConnector (report
- * scripts/casework/azoraworld.md — the legacy azoramoon.com domain redirects
+ * scripts/casework/azoraworld.md - the legacy azoramoon.com domain redirects
  * here; no Madara, no WordPress). Only search (bigger page + 'a' fallback
  * for the empty query) and the reader markup differ from the base connector.
  */

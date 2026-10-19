@@ -1,6 +1,6 @@
 /**
  * Duplicate-series dialog of the Discover view: the add hit the library's
- * duplicate-title guard (HTTP 409). Three ways out — link the new provenance
+ * duplicate-title guard (HTTP 409). Three ways out - link the new provenance
  * to the tracked entry (recommended: one work, one entry, the failover
  * prefers the link), force a separate entry (genuinely different works
  * sharing a title), or cancel.

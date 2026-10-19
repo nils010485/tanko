@@ -19,7 +19,7 @@ const execFile = promisify(execFileCallback);
 const UPSTREAM_URL = 'https://github.com/manga-download/hakuneko.git';
 const UPSTREAM_PATH = 'src/web/mjs';
 const PINNED_COMMIT = process.env.CONNECTORS_COMMIT || '128f3c771c7d50bf4eec19638d480f133469eca8';
-/** Minimum plausible connector count — guards against a broken upstream checkout. */
+/** Minimum plausible connector count - guards against a broken upstream checkout. */
 const MIN_CONNECTORS = 1000;
 
 // CONNECTOR_OVERRIDES (patched connectors re-applied over the synced tree
@@ -30,7 +30,7 @@ export const CONNECTORS_UPDATE_KEY = 'connectors-update';
 
 export type { ConnectorsUpdateInfo, ConnectorsUpdateStatus };
 
-/** Clone step — injectable so tests can run against a local fixture. Returns the upstream commit hash. */
+/** Clone step - injectable so tests can run against a local fixture. Returns the upstream commit hash. */
 export type CloneUpstream = (destination: string) => Promise<string>;
 
 let running = false;
@@ -53,7 +53,7 @@ async function cloneUpstream(destination: string): Promise<string> {
     return stdout.trim();
 }
 
-/** sha256 manifest of the synced connectors — loadConnectors refuses to
+/** sha256 manifest of the synced connectors - loadConnectors refuses to
  *  import files that no longer match (truncated write, tampered data dir). */
 function writeConnectorsManifest(connectorsDir: string, commit: string): void {
     const files: Record<string, string> = {};
@@ -100,7 +100,7 @@ export async function syncConnectors(options: { dataDirectory: string; db: Datab
         try {
             fs.cpSync(path.join(tempDir, UPSTREAM_PATH, 'connectors'), path.join(vendorDir, 'connectors'), { recursive: true });
             fs.cpSync(path.join(tempDir, UPSTREAM_PATH, 'engine'), path.join(vendorDir, 'engine'), { recursive: true });
-            // re-apply our patched connectors over the synced tree — a missing
+            // re-apply our patched connectors over the synced tree - a missing
             // bundled override is a packaging error that must abort the sync
             // (rolled back below), never silently re-ship the broken upstream
             for (const file of CONNECTOR_OVERRIDES) {

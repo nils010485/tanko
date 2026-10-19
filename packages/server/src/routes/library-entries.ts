@@ -1,5 +1,5 @@
 /**
- * Library routes — entries: CRUD, hide/pause toggles, aliases, bulk actions,
+ * Library routes - entries: CRUD, hide/pause toggles, aliases, bulk actions,
  * dead-entry detection/pruning and disk resync. Extracted from routes/library.ts,
  * which registers the whole library API.
  */
@@ -39,9 +39,9 @@ export function requireFailover(reply: FastifyReply): FastifyReply {
 }
 
 /** Migrating under running downloads would orphan their files and
- *  double-queue the requeued chapters — let the jobs settle first. */
+ *  double-queue the requeued chapters - let the jobs settle first. */
 export function assertNoRunningDownloads(reply: FastifyReply): FastifyReply {
-    return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série — réessayez quand ils sont terminés' });
+    return reply.code(409).send({ error: 'Des téléchargements sont encore en cours pour cette série - réessayez quand ils sont terminés' });
 }
 
 /** Cooldown between two automatic AniList lookups for the same entry (the
@@ -94,7 +94,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
             return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
         }
         // duplicate guard: the same series already tracked under another
-        // source (or another id on the same source) — refuse unless forced;
+        // source (or another id on the same source) - refuse unless forced;
         // the dashboard surfaces the message so the user can decide
         const existing = store.findEntryByTitle(body.title);
         if (existing && body.force !== true) {
@@ -104,7 +104,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
             });
         }
         // the exact provenance is already tracked: forcing would hit the
-        // (source, manga) upsert and silently change nothing — there is no
+        // (source, manga) upsert and silently change nothing - there is no
         // "separate series" to create for one provenance
         const sameProvenance = store.findEntryByManga(body.sourceId, body.mangaId);
         if (sameProvenance) {
@@ -122,7 +122,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
             const backlog = body.backlog === 'ignore' || body.backlog === 'grab' ? body.backlog : undefined;
             const result = await store.addEntry({ ...body, backlog });
             // explicit grab: queue the freshly snapshotted backlog right away;
-            // a queueing failure must not fail the request — the entry exists
+            // a queueing failure must not fail the request - the entry exists
             let queued: number | undefined;
             if (backlog === 'grab') {
                 try {
@@ -295,7 +295,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
                     }
                     case 'rematch': {
                         if (!entry || !failover) {
-                            break; // vanished or failover unavailable — failed
+                            break; // vanished or failover unavailable - failed
                         }
                         // skip: the next rematch run picks the entry up again
                         if (queue.hasPendingJobs(id)) {
@@ -351,7 +351,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         try {
             let alternatives = await failover.listAlternatives({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
             // Nothing under the known names: the series is probably hosted under
-            // another title — ask AniList once, merge what it knows, retry the
+            // another title - ask AniList once, merge what it knows, retry the
             // crawl once (the failover re-reads the aliases from the store).
             let autoAliases: string[] | undefined;
             if (alternatives.length === 0 && Date.now() - (anilistTriedAt.get(entry.id) ?? 0) > ANILIST_RETRY_MS) {

@@ -96,7 +96,7 @@ export function migrateLibrarySchema(db: Database): void {
     addColumn(db, 'library', columns, 'paused', 'paused INTEGER NOT NULL DEFAULT 0');
     addColumn(db, 'library', columns, 'aliases', 'aliases TEXT');
     // canonical series folder ('/'-separated, relative to the data directory);
-    // NOT unique — legacy libraries can contain real shares, and the index
+    // NOT unique - legacy libraries can contain real shares, and the index
     // records reality instead of denying it (uniqueness is enforced at
     // allocation time)
     addColumn(db, 'library', columns, 'directory', 'directory TEXT');
@@ -104,7 +104,7 @@ export function migrateLibrarySchema(db: Database): void {
     db.db.exec('CREATE INDEX IF NOT EXISTS idx_library_directory ON library(directory)');
     // unknown last-new-chapter date (existing databases, imports, or rows
     // created between the ALTER and a crash): start from today so the
-    // auto-unfollow cannot fire right on startup — runs on every boot, a
+    // auto-unfollow cannot fire right on startup - runs on every boot, a
     // no-op once every row carries a date
     db.db.prepare('UPDATE library SET last_chapter_at = ? WHERE last_chapter_at IS NULL').run(new Date().toISOString());
     const chapterColumns = db.db.prepare('PRAGMA table_info(library_chapters)').all() as Array<{ name: string }>;
@@ -117,7 +117,7 @@ export function migrateLibrarySchema(db: Database): void {
         DELETE FROM library_chapters WHERE entry_id NOT IN (SELECT id FROM library);
     `);
     // one-shot data migration: the Asura Scans build code embedded in every
-    // series/chapter URL rotates on each site redeploy — ids are now stored
+    // series/chapter URL rotates on each site redeploy - ids are now stored
     // normalized (code stripped), rewrite existing rows once so they match
     // and drop the duplicates the rotations created
     if (!db.kvGet('schema.asuraIdsNormalized')) {

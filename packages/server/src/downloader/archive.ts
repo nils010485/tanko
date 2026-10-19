@@ -22,7 +22,7 @@ export async function spillArchiveToDirectory(events: EventBus, zip: JSZip, path
         category: 'system',
         code: 'system.cbzBudget',
         params: { jobId },
-        message: `Chapter exceeds the in-memory CBZ budget — saved as an image folder instead (job #${jobId})`
+        message: `Chapter exceeds the in-memory CBZ budget - saved as an image folder instead (job #${jobId})`
     });
     fs.mkdirSync(paths.directory, { recursive: true });
     for (const file of Object.values(zip.files)) {
@@ -40,7 +40,7 @@ export async function finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: s
     fs.writeFileSync(paths.cbzFile, buffer);
     // integrity check: the archive must hold every page. A corrupt file is
     // removed so a later run retries instead of treating it as "already
-    // downloaded". Only the zip central directory is read back — re-opening
+    // downloaded". Only the zip central directory is read back - re-opening
     // the whole file would copy it into RAM a third time.
     try {
         const entries = countZipEntries(paths.cbzFile, 'ComicInfo.xml');
@@ -59,7 +59,7 @@ export async function finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: s
 
 /** Count a zip's file entries by reading its central directory directly
  *  (EOCD at the tail, then the directory chunk itself): a few KB read
- *  instead of the whole archive. Any structural surprise throws — the
+ *  instead of the whole archive. Any structural surprise throws - the
  *  caller treats that as a corrupt file. */
 export function countZipEntries(file: string, ...exclude: string[]): number {
     const fd = fs.openSync(file, 'r');

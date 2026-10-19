@@ -24,7 +24,7 @@ const adapters: Record<string, ReturnType<typeof adapterWith>> = {
     current: adapterWith(8, 'Starved Series'),
     richer: adapterWith(120, 'Starved Series'),
     poorer: adapterWith(3, 'Starved Series'),
-    stranger: adapterWith(90, 'Starved Series — Official')
+    stranger: adapterWith(90, 'Starved Series - Official')
 };
 
 const sourceInfos: SourceInfo[] = [
@@ -86,7 +86,7 @@ describe('manual source picker (listAlternatives)', () => {
         // wave 1 must be full of natives so the crawl early-exits on the decoy
         // (MangaDex-like: perfect title, foreign-language rips only); the
         // rescue aggregator (legacy, preferred-language chapters) can then
-        // only be reached by round 2's exclusion set — the exact scenario
+        // only be reached by round 2's exclusion set - the exact scenario
         // the rounds exist for
         let rescueSearches = 0;
         const localAdapters: Record<string, unknown> = {
@@ -189,7 +189,7 @@ describe('opt-in stalled-source detection (suggestIfStalled)', () => {
         expect(store.getEntry(stalledId)?.migrationSuggestion).toBeUndefined();
     });
 
-    it('suggests a source with at least two more chapters — not twice as many', async () => {
+    it('suggests a source with at least two more chapters - not twice as many', async () => {
         stalledEnabled = true;
         expect(await stalledFailover.suggestIfStalled({ id: stalledId, sourceId: 'current', title: 'Stalled Series' }, 150)).toBe('suggested');
         const suggestion = store.getEntry(stalledId)?.migrationSuggestion;
@@ -270,7 +270,7 @@ describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () =>
         autoId = entry.id;
     });
 
-    it('stores a suggestion, never migrates, while the setting is off — even on an exact match', async () => {
+    it('stores a suggestion, never migrates, while the setting is off - even on an exact match', async () => {
         expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
         const entry = store.getEntry(autoId);
         expect(entry?.migrationSuggestion?.sourceId).toBe('richer'); // score 1
@@ -289,7 +289,7 @@ describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () =>
 
     it('still only suggests when the best match is not exact (score < 100 %)', async () => {
         // the entry now lives on 'richer'; the only alternative with ≥ 2×
-        // chapters is 'stranger' ("Starved Series — Official", score < 1)
+        // chapters is 'stranger' ("Starved Series - Official", score < 1)
         expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'richer', title: 'Starved Series' }, 8)).toBe('suggested');
         const entry = store.getEntry(autoId);
         expect(entry?.sourceId).toBe('richer');
@@ -303,7 +303,7 @@ describe('minimum match score (weak lookalikes)', () => {
         const weakAdapters = {
             current: adapterWith(8, 'Into the Light, Once Again'),
             lookalike: {
-                // 0.38 against the entry title — the KunManga case
+                // 0.38 against the entry title - the KunManga case
                 searchMangas: async () => [{ id: 'w1', title: 'Bait For Returning to The Cage' }],
                 getChapters: async () => {
                     probed++;
@@ -332,7 +332,7 @@ describe('minimum match score (weak lookalikes)', () => {
 });
 
 describe('outage failover (maybeMigrate)', () => {
-    it('stores the probed chapter count on the suggestion — never “0 chapters”', async () => {
+    it('stores the probed chapter count on the suggestion - never “0 chapters”', async () => {
         const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'om', title: 'Starved Series', backlog: 'ignore' });
         expect(await failover.maybeMigrate({ id: entry.id, sourceId: 'current', title: entry.title }, false)).toBe('suggested');
         const suggestion = store.getEntry(entry.id)?.migrationSuggestion;
@@ -343,12 +343,12 @@ describe('outage failover (maybeMigrate)', () => {
 
 describe('linked provenances (library_alternatives)', () => {
     it('are offered first by the picker, without crawling', async () => {
-        await store.addAlternative(entryId, { sourceId: 'stranger', mangaId: 'linked-1', title: 'Starved Series — Official' });
+        await store.addAlternative(entryId, { sourceId: 'stranger', mangaId: 'linked-1', title: 'Starved Series - Official' });
         const alternatives = await failover.listAlternatives({ id: entryId, sourceId: 'current', title: 'Starved Series' });
         // the linked provenance leads, ahead of any crawl hit
         expect(alternatives[0]).toMatchObject({ sourceId: 'stranger', mangaId: 'linked-1' });
         // consumed by a migration to it
-        await store.migrateEntry(entryId, { sourceId: 'stranger', sourceLabel: 'Stranger', mangaId: 'linked-1', mangaTitle: 'Starved Series — Official' });
+        await store.migrateEntry(entryId, { sourceId: 'stranger', sourceLabel: 'Stranger', mangaId: 'linked-1', mangaTitle: 'Starved Series - Official' });
         expect(store.listAlternatives(entryId)).toHaveLength(0);
     });
 

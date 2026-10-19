@@ -1,7 +1,7 @@
 /**
  * Source failover: when an entry's source repeatedly fails (dead site,
  * Cloudflare wall, removed manga), find the same series on another healthy,
- * language-compatible source and migrate the entry — downloaded chapters keep
+ * language-compatible source and migrate the entry - downloaded chapters keep
  * their local files (matched by chapter number) and a snapshot allows undo.
  *
  * High-confidence matches migrate automatically; ambiguous ones are stored as
@@ -15,7 +15,7 @@ import { chapterAllowed, sourceUsable } from '../languages.js';
 import { withTimeout } from '../util/timeout.js';
 import type { LibraryStore, MigrationTarget } from './store.js';
 
-/** Healthy sources first (natives outrank them anyway — see findAlternative). */
+/** Healthy sources first (natives outrank them anyway - see findAlternative). */
 function byHealth(a: SourceInfo, b: SourceInfo): number {
     return (a.health === 'ok' ? -1 : 1) - (b.health === 'ok' ? -1 : 1);
 }
@@ -27,7 +27,7 @@ function byKind(a: SourceInfo, b: SourceInfo): number {
 
 /** Validation budget for one candidate's chapter list. */
 const VALIDATION_TIMEOUT_MS = 20_000;
-/** Validation budget for a page-list probe — sequential per-page requests
+/** Validation budget for a page-list probe - sequential per-page requests
  * on long chapters legitimately take tens of seconds. */
 const PAGE_PROBE_TIMEOUT_MS = 90_000;
 /** Search results kept per source / candidates kept per round. */
@@ -41,18 +41,18 @@ const MAX_VALIDATIONS_PER_ROUND = 4;
  * and only wave STARTS are deadline-bound. */
 const CRAWL_CONCURRENCY = 24;
 /** Per-source search budget: a source that cannot answer a title search in
- * time is useless for a migration probe — its result is dropped, not awaited. */
+ * time is useless for a migration probe - its result is dropped, not awaited. */
 const SEARCH_TIMEOUT_MS = 10_000;
 /** Automatic failover hunts: wall-clock budget per crawl round. */
 const CRAWL_DEADLINE_MS = 60_000;
 /** Automatic failover hunts: sources crawled at most per round. */
 const CRAWL_SOURCES = 128;
 /** Manual source picker: crawl essentially every usable source, under a
- * stricter wall-clock budget — the user waited for an answer, not forever. */
+ * stricter wall-clock budget - the user waited for an answer, not forever. */
 const PICKER_SOURCES = 500;
 const PICKER_DEADLINE_MS = 60_000;
 /** Crawl-and-validate rounds: each round excludes the sources already
- * searched or rejected, going deeper — a perfect title match on a source
+ * searched or rejected, going deeper - a perfect title match on a source
  * without preferred-language chapters must not end the hunt. */
 const VALIDATION_ROUNDS = 4;
 
@@ -63,12 +63,12 @@ export const INCOMPLETE_SOURCE_CHAPTERS = 10;
  *  count to be worth suggesting. */
 const IMPROVEMENT_FACTOR = 2;
 /** Stalled-source detection: an alternative must offer at least this many
- *  MORE chapters than the current source to be worth suggesting — not a
+ *  MORE chapters than the current source to be worth suggesting - not a
  *  multiple: a series stalled at ch. 150 must be matched by ch. 152, never
  *  ch. 300. The margin absorbs sources counting prologues/.5/bonus
  *  chapters differently. */
 const STALLED_MARGIN_CHAPTERS = 2;
-/** Download failures after which a source failover is probed immediately —
+/** Download failures after which a source failover is probed immediately -
  *  without waiting for the next scheduler run (hours later). Content
  *  failures only (chapter gone server-side): infra failures feed the
  *  source-outage state instead and reach the failover through the
@@ -80,12 +80,12 @@ export const DOWNLOAD_FAILOVER_FAILURES = 1;
 const PROBE_COOLDOWN_MS = 15 * 60 * 1000;
 /** Distinct entries of one source failing inside this window means a
  *  source-wide outage: migration is suspended and the failed jobs
- *  auto-retry instead — until the outage is escalated (below), the source
+ *  auto-retry instead - until the outage is escalated (below), the source
  *  comes back, or the outage is closed by silence. */
 export const SOURCE_OUTAGE_ENTRIES = 3;
 export const SOURCE_OUTAGE_WINDOW_MS = 60 * 60 * 1000;
 /** A continuous outage older than this is escalated: per-entry failover
- *  probes are re-allowed (the source is probably dead for good — chapters
+ *  probes are re-allowed (the source is probably dead for good - chapters
  *  must be delivered through a migration instead of waiting forever). */
 export const OUTAGE_ESCALATION_MS = 3 * 60 * 60 * 1000;
 /** An outage whose last observed failure is older than this is closed: the
@@ -96,19 +96,19 @@ export const OUTAGE_SILENCE_MS = 2 * 60 * 60 * 1000;
  *  (float-safe 1.0). Suggestions below it always wait for confirmation. */
 const EXACT_MATCH_SCORE = 0.999;
 /** Title-match floor for automatic suggestions/migrations: below the import
- *  review threshold the match is not even worth reviewing — a 38 % lookalike
+ *  review threshold the match is not even worth reviewing - a 38 % lookalike
  *  must not burn a usability probe nor reach the dashboard. The manual
  *  source picker is exempt: the user browses and judges scores there. */
 const MIN_SUGGESTION_SCORE = REVIEW_THRESHOLD;
 
 /** Failure taxonomy for the failover policy. 'infra': the source (or its CDN,
- *  or the network) is unhealthy — waiting/retrying makes sense and a blind
+ *  or the network) is unhealthy - waiting/retrying makes sense and a blind
  *  migration probe must not fire on the first casualty. 'content': the
- *  chapter/series is gone server-side — retrying the same URL can never
+ *  chapter/series is gone server-side - retrying the same URL can never
  *  succeed, so a failover probe is armed immediately. */
 export type FailureClass = 'infra' | 'content';
-/** Deterministic server-side-removal signals. Everything else — non-image
- *  page (CDN error), HTTP 5xx, 429, timeouts, network errors — defaults to
+/** Deterministic server-side-removal signals. Everything else - non-image
+ *  page (CDN error), HTTP 5xx, 429, timeouts, network errors - defaults to
  *  'infra': the conservative choice (wait, don't migrate on ambiguity). */
 const CONTENT_FAILURES = [/HTTP 404/, /HTTP 410/, /not found/i, /Page list is empty/, /serves no images/];
 
@@ -129,7 +129,7 @@ function bestNameScore(names: string[], candidate: string): number {
 export class FailoverService {
     /** Entries currently probed by a suggestion detection (re-entry guard). */
     private readonly detectionRunning = new Set<number>();
-    /** Entries with a migration probe in flight — shared by the immediate
+    /** Entries with a migration probe in flight - shared by the immediate
      *  download-failure path (index.ts), the scheduler backstop and the
      *  rematch actions, so at most one probe crawls for a given entry. */
     private readonly probing = new Set<number>();
@@ -152,7 +152,7 @@ export class FailoverService {
             onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
             /** Webhook hook: an exact-match migration was applied automatically. */
             onAutoMigrate?: (entry: { id: number; title: string }, target: { sourceLabel: string }, kept: number, total: number) => void;
-            /** Structured log sink (Activity feed) — absent: diagnostics dropped. */
+            /** Structured log sink (Activity feed) - absent: diagnostics dropped. */
             log?: (message: string) => void;
         }
     ) {}
@@ -165,7 +165,7 @@ export class FailoverService {
     /**
      * One crawl round: search alternative sources in parallel waves until a
      * high-confidence match appears or the budget runs out. Returns the
-     * scored candidates (best first) plus every source id attempted — callers
+     * scored candidates (best first) plus every source id attempted - callers
      * exclude those from the next round.
      */
     async findAlternative(
@@ -177,7 +177,7 @@ export class FailoverService {
     }> {
         const preferred = this.opts.getPreferredLanguages();
         // natives (fast APIs) first, then healthy sources; the label tiebreak
-        // is arbitrary — the cap below, not this order, is the real bound
+        // is arbitrary - the cap below, not this order, is the real bound
         const sources = (await this.opts.listSources())
             .filter(source => !source.hidden && source.id !== entry.sourceId && !opts.excludeSources?.has(source.id) && sourceUsable(source.tags, preferred))
             .sort((a, b) => byKind(a, b) || byHealth(a, b) || a.label.localeCompare(b.label))
@@ -195,7 +195,7 @@ export class FailoverService {
         const searched: string[] = [];
         for (let index = 0; index < sources.length; index += CRAWL_CONCURRENCY) {
             if (index > 0 && Date.now() > deadline) {
-                break; // budget exhausted — never start another wave of dead sites
+                break; // budget exhausted - never start another wave of dead sites
             }
             const waveSources = sources.slice(index, index + CRAWL_CONCURRENCY);
             searched.push(...waveSources.map(source => source.id));
@@ -209,7 +209,7 @@ export class FailoverService {
                         const results: Array<{ id: string; title: string; url?: string }> = [];
                         for (const query of queries) {
                             if (Date.now() > deadline) {
-                                break; // budget exhausted — aliases must not multiply the per-source searches
+                                break; // budget exhausted - aliases must not multiply the per-source searches
                             }
                             const search = adapter.searchMangas(query);
                             // a losing race must not leave an orphaned rejection
@@ -254,7 +254,7 @@ export class FailoverService {
         const done = new Set<string>(); // attempted and/or rejected sources
         // linked provenances first: the user validated them, they outrank any
         // crawl hit and skip the search entirely (same-source links are not
-        // failover material — the source itself is the problem)
+        // failover material - the source itself is the problem)
         const linked = this.opts.store.listAlternatives(entry.id).filter(row => row.source_id !== entry.sourceId);
         if (linked.length > 0) {
             for (const row of linked) {
@@ -277,7 +277,7 @@ export class FailoverService {
                 done.add(id);
             }
             if (searched.length === 0) {
-                return; // no usable source left — deeper rounds are pointless
+                return; // no usable source left - deeper rounds are pointless
             }
             yield candidates;
         }
@@ -412,7 +412,7 @@ export class FailoverService {
         try {
             const alternatives = await this.listAlternatives(entry);
             // the probe takes seconds of network: the entry may have been
-            // migrated, suggested or deleted meanwhile — re-read and bail out
+            // migrated, suggested or deleted meanwhile - re-read and bail out
             const current = this.opts.store.getEntry(entry.id);
             if (!current || current.migrationSuggestion || current.sourceId !== entry.sourceId) {
                 return false;
@@ -499,7 +499,7 @@ export class FailoverService {
 
     /** Full usability probe: preferred-language chapters AND a working page
      * list (a connector can list chapters but serve broken pages, as the
-     * MangaHere war.jpg grab showed). Failures are logged and swallowed —
+     * MangaHere war.jpg grab showed). Failures are logged and swallowed -
      * the hunt simply moves to the next candidate. Returns the number of
      * preferred-language chapters, null when the candidate is unusable. */
     private async _usableChapterCount(entry: { title: string }, candidate: MigrationTarget, preferred: string[]): Promise<number | null> {

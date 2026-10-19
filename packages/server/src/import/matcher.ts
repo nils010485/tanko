@@ -1,7 +1,7 @@
 /**
  * Import matching: every pending series of a job is searched on the usable
  * sources (bounded concurrency, capped source list) and its best candidates
- * are persisted. Extracted from ImportService, which delegates — the job
+ * are persisted. Extracted from ImportService, which delegates - the job
  * state stays in SQLite (import_series).
  */
 import type { DatabaseSync } from 'node:sqlite';
@@ -19,7 +19,7 @@ const MAX_MATCH_SOURCES = 12;
 export interface MatcherContext {
     sql: DatabaseSync;
     registry: SourceRegistry;
-    /** Jobs whose cancel() was called — checked between series and between sources. */
+    /** Jobs whose cancel() was called - checked between series and between sources. */
     cancelRequested: Set<number>;
     getPreferredLanguages: () => string[];
     listSources: () => Promise<SourceInfo[]>;

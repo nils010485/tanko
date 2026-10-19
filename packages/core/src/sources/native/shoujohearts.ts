@@ -1,5 +1,5 @@
 /**
- * Native connector for Shoujo Hearts (http://shoujohearts.net — HTTP only,
+ * Native connector for Shoujo Hearts (http://shoujohearts.net - HTTP only,
  * the TLS certificate is self-signed). WordPress Madara reader under /reader/:
  * series from the projects page, chapters via the Madara ajax/chapters POST
  * (fallback: /reader/latest-releases/ filtered by series slug), pages as
