@@ -27,7 +27,7 @@ type ShimDocument = ReturnType<typeof parseHTML>['window']['document'];
  * querySelectorAll/querySelector. linkedom's detached-element innerHTML
  * parsing corrupts its internal node list on some pages (querySelectorAll
  * then throws "Cannot read properties of null (reading 'nodeType')"),
- * so parse with parseHTML() instead — far more robust.
+ * so parse with parseHTML() instead - far more robust.
  */
 class DOMContainer {
     private _document: ShimDocument | null = null;

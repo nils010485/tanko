@@ -118,7 +118,7 @@ export class MangaDexConnector implements SourceAdapter {
                 const chapter = attributes.chapter || '';
                 const language = attributes.translatedLanguage || undefined;
                 // dedupe on language+number (NOT title: scanlation groups name
-                // the same chapter differently) — titled chapters without a
+                // the same chapter differently) - titled chapters without a
                 // number (oneshots, extras) dedupe on their title instead
                 const key = chapter ? `${language}:c${chapter}` : `${language}:t:${attributes.title || item.id}`;
                 if (seen.has(key)) {
@@ -211,7 +211,7 @@ export class MangaDexConnector implements SourceAdapter {
         return fileName ? `https://uploads.mangadex.org/covers/${manga.id}/${fileName}.256.jpg` : undefined;
     }
 
-    /** "Vol.03 Ch.0012 - Title" — the number parser extracts volume/chapter markers. */
+    /** "Vol.03 Ch.0012 - Title" - the number parser extracts volume/chapter markers. */
     private _chapterTitle(attributes: MangadexChapterAttributes): string {
         let title = '';
         if (attributes.volume) {

@@ -43,7 +43,7 @@ export function getEntryRow(ctx: StoreContext, entryId: number): EntryRow | unde
 }
 
 /** Directory holding the entry's files: the most frequent parent directory
- *  of the downloaded chapter paths first (strongest signal — absolute paths
+ *  of the downloaded chapter paths first (strongest signal - absolute paths
  *  survive source migrations and imports from folders outside the data
  *  directory), then the stored canonical folder, falling back to the
  *  configured layout. */
@@ -86,7 +86,7 @@ export function seriesDirectory(ctx: StoreContext, entryId: number, row?: EntryR
     return path.dirname(target);
 }
 
-/** Whether a chapter file already exists on disk in the configured layout —
+/** Whether a chapter file already exists on disk in the configured layout -
  *  the entry's stored directory when it has one. */
 export function isDownloaded(
     ctx: StoreContext,

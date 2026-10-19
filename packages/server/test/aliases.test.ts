@@ -36,7 +36,7 @@ beforeAll(async () => {
         concurrencyPerSource: 1,
         throttleMs: 0
     };
-    // the alternative source answers only when searched by the alias — the
+    // the alternative source answers only when searched by the alias - the
     // current title (or an alias-less crawl) finds nothing on it
     const adapters = {
         s1: { label: 'Source One', searchMangas: async () => [], getChapters: async () => [] },
@@ -95,7 +95,7 @@ describe('alias storage (setAliases)', () => {
         expect(() => store.setAliases(999_999, ['Whatever'])).toThrow(/not found/i);
     });
 
-    it('rejects names outside 3–200 chars and dedupes accent variants', () => {
+    it('rejects names outside 3-200 chars and dedupes accent variants', () => {
         expect(store.setAliases(entryId, ['OR', 'A'.repeat(201), 'Café Name', 'Cafe Name', 'Cafe NAME'])).toEqual(['Café Name']);
     });
 });

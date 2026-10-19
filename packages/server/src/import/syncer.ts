@@ -1,7 +1,7 @@
 /**
  * Import sync: every confirmed series of a job is added to the library with
  * its local chapter files attached (number pairing, ordinal fallback for
- * re-numbered seasons). Extracted from ImportService, which delegates — the
+ * re-numbered seasons). Extracted from ImportService, which delegates - the
  * job state stays in SQLite (import_series).
  */
 import path from 'node:path';
@@ -18,12 +18,12 @@ export interface SyncerContext {
     sql: DatabaseSync;
     registry: SourceRegistry;
     store: LibraryStore;
-    /** Jobs whose cancel() was called — checked between series. */
+    /** Jobs whose cancel() was called - checked between series. */
     cancelRequested: Set<number>;
     getPreferredLanguages: () => string[];
-    /** Read a job row (its options) — the service's _job. */
+    /** Read a job row (its options) - the service's _job. */
     getJob(jobId: number): JobRow | undefined;
-    /** Persist a job status transition — the service's _setStatus. */
+    /** Persist a job status transition - the service's _setStatus. */
     setStatus(jobId: number, status: JobStatus): void;
     /** Notified after each settled series (Activity job progress). */
     onProgress?: (jobId: number) => void;
@@ -69,7 +69,7 @@ export async function syncAll(ctx: SyncerContext, jobId: number): Promise<void> 
 /**
  * One series: local files <-> source chapters, matched by chapter number.
  * When numbers barely match but both sides agree on the count (re-numbered
- * seasons), pairChapters falls back to positional alignment — flagged as
+ * seasons), pairChapters falls back to positional alignment - flagged as
  * 'ordinal'.
  */
 async function syncSeries(
@@ -91,14 +91,14 @@ async function syncSeries(
     }
     const local = localChapters(series);
     // duplicate guard: the series is already tracked (typically on another
-    // source — a re-import whose search matched differently): attach the
+    // source - a re-import whose search matched differently): attach the
     // local files to the existing entry instead of creating a duplicate
     const existing = ctx.store.findEntryByTitle(mangaTitle);
     if (existing) {
         const { attached, registered } = ctx.store.registerLocalChapters(existing.id, local.byNumber);
         const matched = attached + registered;
         console.log(
-            `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) — fichiers rattachés à l'entrée existante (${matched} chapitres, dont ${registered} locaux hors source)`
+            `[import] "${series.name}" déjà suivie via ${existing.source_label} (#${existing.id}) - fichiers rattachés à l'entrée existante (${matched} chapitres, dont ${registered} locaux hors source)`
         );
         return {
             matched,
@@ -160,7 +160,7 @@ async function sourceChapters(
     chapters: ChapterInfo[];
     byNumber: Map<number, ChapterInfo>;
 }> {
-    // the cancel flag is checked between series — a hanging connector would
+    // the cancel flag is checked between series - a hanging connector would
     // defeat it, so bound the call like the scheduler does
     const allChapters = await withTimeout(source.getChapters(manga, { languages: preferred }), 2 * 60 * 1000, `getChapters(${manga.title})`);
     const chapters = allChapters.filter(chapter => chapterAllowed(chapter.language, preferred));

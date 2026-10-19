@@ -1,5 +1,5 @@
 /**
- * Accessible confirmation modal — replaces window.confirm().
+ * Accessible confirmation modal - replaces window.confirm().
  * Closes on Escape and on backdrop click.
  */
 import type { ReactNode } from 'react';

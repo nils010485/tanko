@@ -1,7 +1,7 @@
 /**
  * Manual source picker dialog (Series view): linked provenances, the crawled
  * alternatives with their match scores, and the alias editor the failover
- * relies on. Pure presentation — state and actions stay in the view.
+ * relies on. Pure presentation - state and actions stay in the view.
  */
 import type { LibraryAlternativeDto, LibraryEntryDto, SourceAlternativeDto, SourceAlternativesResponseDto } from '@tanko/shared';
 import { useI18n } from '../../i18n/index.js';
@@ -75,7 +75,7 @@ export function SourcePickerDialog({
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm text-fg">
                                         {alternative.sourceLabel}
-                                        {alternative.title !== entry.title && <span className="ml-1 text-faint">— {alternative.title}</span>}
+                                        {alternative.title !== entry.title && <span className="ml-1 text-faint">- {alternative.title}</span>}
                                     </div>
                                 </div>
                                 <Button
@@ -168,7 +168,7 @@ export function SourcePickerDialog({
                             <div className="min-w-0 flex-1">
                                 <div className="truncate text-sm text-fg">
                                     {alternative.sourceLabel}
-                                    {alternative.mangaTitle !== entry.title && <span className="ml-1 text-faint">— {alternative.mangaTitle}</span>}
+                                    {alternative.mangaTitle !== entry.title && <span className="ml-1 text-faint">- {alternative.mangaTitle}</span>}
                                 </div>
                                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-faint">
                                     <span className="text-fg">{t('library.chaptersCount', { n: alternative.chapterCount })}</span>

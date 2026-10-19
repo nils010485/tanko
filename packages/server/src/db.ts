@@ -1,7 +1,7 @@
 /**
  * SQLite persistence (node:sqlite, no native build step).
  * The schema grows with the features; scaffolding starts with a KV settings
- * table — library/chapters/jobs/schedules tables are added by their modules.
+ * table - library/chapters/jobs/schedules tables are added by their modules.
  */
 import fs from 'node:fs';
 import path from 'node:path';

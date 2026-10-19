@@ -31,14 +31,14 @@ interface EngineGlobal {
 
 /** Human-readable page URL for error messages: 'connector://' payloads are
  *  opaque base64 blobs that bury the real (signed) image URL and wreck the
- *  dashboard layout — decode them and strip the query string instead. */
+ *  dashboard layout - decode them and strip the query string instead. */
 function describePageUrl(url: string): string {
     if (url.startsWith('connector://')) {
         try {
             const decoded = Buffer.from(new URL(url).searchParams.get('payload') ?? '', 'base64').toString('utf8');
             // createConnectorURI base64-encodes JSON.stringify(payload): most
             // connectors pass the plain image URL string, a few an object
-            // carrying it — decode both shapes.
+            // carrying it - decode both shapes.
             const parsed: unknown = JSON.parse(decoded);
             const real = typeof parsed === 'string' ? parsed : (parsed as { url?: unknown } | null)?.url;
             if (typeof real === 'string' && real.startsWith('http')) {
@@ -54,7 +54,7 @@ function describePageUrl(url: string): string {
 
 /**
  * Page lists can fail intermittently (protected chapter scripts, rate
- * limiting, transient anti-bot pages) — retry with backoff before
+ * limiting, transient anti-bot pages) - retry with backoff before
  * failing the whole job.
  */
 /** Same budget as the plain-HTTP branch's AbortSignal timeout. */
@@ -67,7 +67,7 @@ export async function getPageListWithRetries(
 ): Promise<Awaited<ReturnType<SourceAdapter['getPages']>>> {
     let lastError: unknown;
     for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt++) {
-        // throws Error('cancelled') — must propagate untouched (job status contract)
+        // throws Error('cancelled') - must propagate untouched (job status contract)
         checkCancel();
         try {
             const pages = await withTimeout(

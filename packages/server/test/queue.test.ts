@@ -59,7 +59,7 @@ const gatedA = gatedSource('gated-a', 'Gated A');
 const gatedB = gatedSource('gated-b', 'Gated B');
 // Signed-URL source: the first page list points at an expired token (the
 // server answers with an HTML error page); refreshed lists return a working
-// URL — exercises the mid-chapter page-list recovery.
+// URL - exercises the mid-chapter page-list recovery.
 let signedCalls = 0;
 const signedSource = {
     ...fakeSource,
@@ -71,7 +71,7 @@ const signedSource = {
     }
 };
 // connector:// source: the engine fetch-wrapper is not installed in tests, so
-// fetching the pseudo-protocol fails instantly — enough to assert the decoded
+// fetching the pseudo-protocol fails instantly - enough to assert the decoded
 // URL ends up in the error message.
 const connectorPayload = Buffer.from(JSON.stringify('https://s8.example.xyz/res/manga/solo/chapter-0/254886.webp?acc=abc&expires=1787453307')).toString(
     'base64'

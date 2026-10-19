@@ -49,7 +49,7 @@ export function statusTextClass(health: string | undefined): string {
 }
 
 /** Re-check every source's health, polling until the background probe
- *  settles — shared by the Sources admin view and Discover's picker so the
+ *  settles - shared by the Sources admin view and Discover's picker so the
  *  two cannot drift apart. */
 export async function recheckAllSources(options: {
     refreshSources: () => Promise<SourceDto[]>;
@@ -60,7 +60,7 @@ export async function recheckAllSources(options: {
     try {
         await api.checkSources();
         options.onStarted?.();
-        // sleeps first — the probes just started; bails out silently when
+        // sleeps first - the probes just started; bails out silently when
         // `cancelled` flips (component unmounted). Errors propagate.
         for (let attempt = 0; attempt < 40; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 3000));

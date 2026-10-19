@@ -4,7 +4,7 @@
  *
  * A legacy connector is skipped when its id is already taken by a native
  * connector, but also when it points at the same *site* as a native one
- * (compared on hostname) — so a site we curate natively stays ours even if
+ * (compared on hostname) - so a site we curate natively stays ours even if
  * Hakuneko later ships a connector for it under a different id.
  */
 

@@ -105,7 +105,7 @@ beforeAll(async () => {
     addChapter(entryFolder, 'Chapter 1', chapterDir);
 
     // entry whose chapters exist on disk but were never registered in the
-    // database (import whose source-based sync failed) — disk fallback
+    // database (import whose source-based sync failed) - disk fallback
     entryDisk = addEntry('Damn Reincarnation');
     const diskSeries = path.join(tmpDir, 'Source', 'Damn Reincarnation');
     fs.mkdirSync(diskSeries, { recursive: true });

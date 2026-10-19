@@ -97,7 +97,7 @@ export interface MigrationTarget {
      *  list has actually been fetched (picker, detection and outage flows). */
     chapterCount?: number;
     /** User-validated provenance (library_alternatives): exempt from the
-     *  per-round validation cap — it outranks any crawl hit. */
+     *  per-round validation cap - it outranks any crawl hit. */
     linked?: boolean;
 }
 
@@ -126,18 +126,18 @@ export interface StalledCandidate {
 }
 
 /** Case/punctuation/space-insensitive title key for cross-source duplicate
- *  detection (keeps letters of any script and digits, drops the rest —
+ *  detection (keeps letters of any script and digits, drops the rest -
  *  distinct from import/similarity's normalizeTitle, which keeps spaces). */
 export function normalizeTitleKey(title: string): string {
     return title
         .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks — "Café" == "Cafe"
+        .replace(/[\u0300-\u036f]/g, '') // combining diacritical marks - "Café" == "Cafe"
         .toLowerCase()
         .replace(/[\p{P}\p{S}\s]+/gu, '');
 }
 
 /** Aliases are stored as a JSON array; normalization mirrors titleSimilarity's
- *  expectations: trimmed, 3–200 chars, deduplicated case-insensitively, never
+ *  expectations: trimmed, 3-200 chars, deduplicated case-insensitively, never
  *  equal to the entry's own title, capped so a fat-fingered paste cannot
  *  multiply the failover's search queries. */
 export function normalizeAliases(title: string, aliases: ReadonlyArray<string>): string[] {

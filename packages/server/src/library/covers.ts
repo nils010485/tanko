@@ -172,7 +172,7 @@ export class CoverService {
     }
 
     /**
-     * Build the cover for one entry from its earliest chapter on disk —
+     * Build the cover for one entry from its earliest chapter on disk -
      * chapters registered in the database first, series-folder scan as a
      * fallback for entries the database knows nothing about. Resolves false
      * when no readable page exists (skipped).
@@ -212,7 +212,7 @@ export class CoverService {
             const image = sharp(page).rotate();
             const meta = await image.metadata();
             // Extremely tall pages (webtoon strips) would exceed WebP's 16383px
-            // per-dimension limit after the width-only resize — crop the top in a
+            // per-dimension limit after the width-only resize - crop the top in a
             // cover-like 2:3 ratio instead of shrinking the whole strip.
             const strip = (meta.height ?? 0) > (meta.width ?? 1) * 3;
             const webp = await image

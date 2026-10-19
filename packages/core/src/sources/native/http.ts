@@ -67,7 +67,7 @@ export async function fetchWithRetries(url: string, options: RetryingFetchOption
 }
 
 /**
- * Same-origin pin: manga/chapter URLs handed back by the API may be absolute —
+ * Same-origin pin: manga/chapter URLs handed back by the API may be absolute -
  * pin them to the connector's declared origin (plus explicit CDN exceptions)
  * so a crafted id cannot point the scraper (or the headless browser) at
  * internal addresses (SSRF). Relative ids resolve against base as usual.

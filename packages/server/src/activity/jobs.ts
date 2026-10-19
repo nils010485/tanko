@@ -4,12 +4,12 @@
  * history of finished runs.
  *
  * Two flavors share one registry:
- *  - `runBulk`: entry-loop tools (re-match, better-source scan) — the loop
+ *  - `runBulk`: entry-loop tools (re-match, better-source scan) - the loop
  *    runs here with one structured log per entry and 250 ms pacing;
  *  - custom jobs via `begin()`: the caller owns its loop and reports
  *    progress through the returned handle (covers, import, rescan).
  *
- * Concurrency: "crawl" jobs (bulk tools, import) query the source sites —
+ * Concurrency: "crawl" jobs (bulk tools, import) query the source sites -
  * only one crawls at a time. Local jobs (covers, rescan) only touch the
  * disk/database and always start, even while a crawl job runs.
  */
@@ -122,7 +122,7 @@ export class JobRunner {
     }
 
     /** Sequential loop: start log, one structured log per entry (code =
-     *  prefix + outcome), 250 ms pacing, recap — and a single-run guard so
+     *  prefix + outcome), 250 ms pacing, recap - and a single-run guard so
      *  two crawl jobs never hammer the sources concurrently. Returns
      *  immediately; the loop runs in the background. */
     runBulk(events: EventBus, opts: BulkAction): { started: boolean; count: number; reason?: string } {

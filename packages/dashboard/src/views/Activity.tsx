@@ -69,10 +69,10 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
     const [loadingMore, setLoadingMore] = useState(false);
     const nextOffset = useRef<number | null>(null);
 
-    /** t() with a dynamic key (event codes) — unknown keys render as-is. */
+    /** t() with a dynamic key (event codes) - unknown keys render as-is. */
     const tt = (key: string, params?: Record<string, string | number>) => t(key as Parameters<typeof t>[0], params);
 
-    /** Job display name — translated from `kind`, falling back to the server label. */
+    /** Job display name - translated from `kind`, falling back to the server label. */
     const jobLabel = (job: JobStatusDto) => {
         const key = `activity.jobKind.${job.kind}`;
         const translated = tt(key);
@@ -160,14 +160,14 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
         }
     };
 
-    /** Append the next (older) page — the WS stream keeps feeding the top. */
+    /** Append the next (older) page - the WS stream keeps feeding the top. */
     const loadMore = async () => {
         if (loadingMore) {
             return; // double click: one request at a time, the offset only advances once
         }
         setLoadingMore(true);
         if (nextOffset.current === null) {
-            // only persisted rows count towards the server-side offset —
+            // only persisted rows count towards the server-side offset -
             // ephemeral live rows (negative ids) would skip older pages
             nextOffset.current = logs.filter(log => log.id > 0).length;
         }

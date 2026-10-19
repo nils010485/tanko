@@ -9,7 +9,7 @@ import { persistQueueSettings } from './settings.js';
 const AUTO_CONFIRM_MODES = new Set<AutoConfirmMode>(['auto', 'all', 'none']);
 
 /** Shared body for resume/sync: run the action, 404 with the thrown message
- *  when the job is unknown — 409 when the single crawl slot is busy. */
+ *  when the job is unknown - 409 when the single crawl slot is busy. */
 async function runJobAction(reply: FastifyReply, id: string, action: (jobId: number) => Promise<void>) {
     try {
         await action(Number(id));
@@ -79,7 +79,7 @@ export function registerImportRoutes(app: FastifyInstance, importer: ImportServi
                 });
                 // an imported library is meant to be monitored from then on: adopt the
                 // scanned folder as storage (queued, not-yet-started downloads retarget
-                // too) — only after a successful start, so a rejected job changes nothing
+                // too) - only after a successful start, so a rejected job changes nothing
                 if (resolved !== path.resolve(queue.getSettings().dataDirectory)) {
                     persistQueueSettings(db, queue.updateSettings({ dataDirectory: resolved }));
                 }

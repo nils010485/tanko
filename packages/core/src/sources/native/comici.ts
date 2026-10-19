@@ -10,7 +10,7 @@
  * tiles floor(w/4) x floor(h/4)) is required for readable pages.
  *
  * LIMITATION (signed URLs): page images live on a CloudFront viewer host with
- * signed URLs (~30 min expiry, Expires/Signature/Key-Pair-Id) — always call
+ * signed URLs (~30 min expiry, Expires/Signature/Key-Pair-Id) - always call
  * getPages() again before downloading; and they REQUIRE Referer: {base}/
  * (403 without) hence fetchPageImage().
  *

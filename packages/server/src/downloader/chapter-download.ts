@@ -19,12 +19,12 @@ import type { DomainGate } from './rate-limiter.js';
 /** Hard budget for one chapter's pages (excludes paused time). */
 const CHAPTER_DEADLINE_MS = 20 * 60 * 1000;
 
-/** Everything the loop needs from the queue — explicit, so the download
+/** Everything the loop needs from the queue - explicit, so the download
  *  logic stays testable and free of queue invariants. */
 export interface ChapterDownloadContext {
     events: EventBus;
     gate: DomainGate;
-    /** throws Error('cancelled') — the tested abort contract */
+    /** throws Error('cancelled') - the tested abort contract */
     checkCancel: (jobId: number) => void;
     waitWhilePaused: () => Promise<void>;
     update: (jobId: number, patch: Partial<Pick<JobRow, 'status' | 'progress' | 'pages_total' | 'pages_done' | 'error' | 'path'>>) => void;

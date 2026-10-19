@@ -2,7 +2,7 @@
  * Native connector for ZeurelScan (https://www.zeurelscan.com): static Italian
  * site. Catalogue at /series (relative serie/<slug> links), chapters at
  * /serie/<slug> (/read/<slug>/<n> links), reader images in div.reader.
- * Quirk: the reader endpoint answers HTTP 400 with a fully valid body —
+ * Quirk: the reader endpoint answers HTTP 400 with a fully valid body -
  * the body must be read even when !response.ok.
  */
 

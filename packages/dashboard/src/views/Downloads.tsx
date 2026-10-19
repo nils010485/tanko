@@ -77,7 +77,7 @@ export default function Downloads({
     const [menuOpen, setMenuOpen] = useState(false);
     const [confirm, setConfirm] = useState<CleanAction | null>(null);
     const [retrying, setRetrying] = useState(false);
-    /** Consecutive poll failures — flips the stale-data banner past a threshold. */
+    /** Consecutive poll failures - flips the stale-data banner past a threshold. */
     const failStreak = useRef(0);
     const [stale, setStale] = useState(false);
     const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
@@ -97,7 +97,7 @@ export default function Downloads({
                 setStale(false);
             }
         } catch {
-            // transient — keep the last page, but flag staleness past a few misses
+            // transient - keep the last page, but flag staleness past a few misses
             if (requestSeq.current === seq) {
                 failStreak.current++;
                 setStale(failStreak.current >= 3);
@@ -126,7 +126,7 @@ export default function Downloads({
         return () => clearInterval(timer);
     }, [load]);
 
-    // total shrinking (dismiss, cleanup, retention) can leave the page beyond the last one — resync
+    // total shrinking (dismiss, cleanup, retention) can leave the page beyond the last one - resync
     useEffect(() => {
         const last = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
         if (page > last) {
@@ -286,7 +286,7 @@ export default function Downloads({
                             ) : (
                                 <span className="truncate text-sm font-medium">{job.mangaTitle}</span>
                             )}
-                            <span className="truncate text-sm text-faint">— {job.chapterTitle}</span>
+                            <span className="truncate text-sm text-faint">- {job.chapterTitle}</span>
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-faint">
                             {statusBadge(job.status, t)}

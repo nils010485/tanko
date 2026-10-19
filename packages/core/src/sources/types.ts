@@ -58,7 +58,7 @@ export interface SourceAdapter {
     searchMangas(query: string): Promise<MangaInfo[]>;
 
     /** List chapters for a manga. `options.languages` lets sites that can
-     *  filter server-side (MangaDex) fetch only the preferred languages — a
+     *  filter server-side (MangaDex) fetch only the preferred languages - a
      *  pure optimization, results stay filtered downstream either way. */
     getChapters(manga: MangaInfo, options?: ChapterOptions): Promise<ChapterInfo[]>;
 

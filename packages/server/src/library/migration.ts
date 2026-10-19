@@ -46,7 +46,7 @@ export async function migrateEntry(ctx: StoreContext, entryId: number, target: M
     const downloaded = downloadedByNumber(ctx, entryId);
     // local files matter as much as DB rows: an entry imported from a
     // starved source (a handful of chapters listed) has barely any
-    // 'downloaded' row to carry — rebuilding on a richer source must not
+    // 'downloaded' row to carry - rebuilding on a richer source must not
     // mark those files missing just because the old source ignored them
     const disk = diskByNumber(seriesDirectory(ctx, entryId));
     const result = await rebuildChapters(ctx, entryId, target, source, downloaded, disk);
@@ -138,7 +138,7 @@ async function rebuildChapters(
     downloadedByNumber: Map<number, ChapterRow>,
     diskByNumber: Map<number, string>
 ): Promise<{ kept: number; total: number }> {
-    // the validation probe is already bounded — the commit re-fetch must be
+    // the validation probe is already bounded - the commit re-fetch must be
     // too, or a hanging connector strands the entry in `probing` forever
     const preferred = ctx.getPreferredLanguages?.() || [];
     const chapters = await withTimeout(
@@ -187,7 +187,7 @@ async function rebuildChapters(
         }
     }
     // files with no counterpart on the new source stay visible as
-    // local-only rows — the disk is the truth, not the chapter list
+    // local-only rows - the disk is the truth, not the chapter list
     for (const [number, localPath] of diskByNumber) {
         if (!listedNumbers.has(number)) {
             insert.run(entryId, `local:${number}`, path.basename(localPath).replace(/\.cbz$/i, ''), null, 'downloaded', localPath, now, now);
@@ -203,14 +203,14 @@ export function rollbackMigration(ctx: StoreContext, entryId: number): boolean {
     if (!snapshot) {
         return false;
     }
-    // a corrupted snapshot (interrupted write) must not 500 the route — and
+    // a corrupted snapshot (interrupted write) must not 500 the route - and
     // must not stay in place blocking every later rollback either
     let data: { entry: EntryRow; chapters: ChapterRow[] };
     try {
         data = JSON.parse(snapshot.data) as { entry: EntryRow; chapters: ChapterRow[] };
     } catch {
         ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE id = ?').run(snapshot.id);
-        throw new Error('Snapshot de migration corrompu — il a été supprimé, réessayez');
+        throw new Error('Snapshot de migration corrompu - il a été supprimé, réessayez');
     }
     ctx.db.db
         .prepare(

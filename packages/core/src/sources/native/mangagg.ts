@@ -1,5 +1,5 @@
 /**
- * Native MangaGG (mangagg.com) connector — Madara (WordPress) variant:
+ * Native MangaGG (mangagg.com) connector - Madara (WordPress) variant:
  * comics live under /comic/<slug>/, the theme search only indexes blog posts,
  * so comic search uses the native WP query with the theme's hidden
  * post_type=wp-manga (the exact value the site's own header form injects).
@@ -15,7 +15,7 @@
  * through fetchPageImage().
  *
  * LIMITATION (chapter list): the ajax endpoint only returns the ~24 most
- * recent chapters — that is all the site itself exposes in its reader UI
+ * recent chapters - that is all the site itself exposes in its reader UI
  * (older chapters stay reachable by URL but are not listed anywhere).
  */
 

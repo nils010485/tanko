@@ -65,7 +65,7 @@ const database = new Database(config.dataDirectory);
 const events = new EventBus();
 
 // last-resort handlers: log (and surface in Activity) instead of dying
-// silently — the downloader owns long-running state that must not vanish
+// silently - the downloader owns long-running state that must not vanish
 process.on('unhandledRejection', reason => {
     console.error('[server] unhandled rejection:', reason);
     events.publishLog({
@@ -99,7 +99,7 @@ const queueSettings: QueueSettings = {
     dataDirectory: persistedQueueSettings.dataDirectory || config.dataDirectory,
     directoryLayout: persistedQueueSettings.directoryLayout || 'series',
     chapterFormat: persistedQueueSettings.chapterFormat || 'cbz',
-    // NB: || (not ??) on the concurrency fields is intentional — a persisted 0
+    // NB: || (not ??) on the concurrency fields is intentional - a persisted 0
     // must not override the default, while throttleMs 0 is a valid value (hence ??).
     // Old installs only knew "concurrency": it becomes the per-source cap.
     parallelSources: persistedQueueSettings.parallelSources || 2,
@@ -107,12 +107,12 @@ const queueSettings: QueueSettings = {
     throttleMs: persistedQueueSettings.throttleMs ?? 250,
     historyRetentionDays: persistedQueueSettings.historyRetentionDays ?? 30
 };
-// NB: queueSettings stays shared by reference with LibraryStore/failover —
+// NB: queueSettings stays shared by reference with LibraryStore/failover -
 // queue.updateSettings() mutates it in place so retargeting propagates live.
 const preferredLanguages = createLanguagePreference(database);
 const hideAdultSourcesPref = createHideAdultSourcesPref(database);
 const library = new LibraryStore({ db: database, registry: sourceRegistry, queueSettings, getPreferredLanguages: preferredLanguages });
-// instantiated before the services that report to it (covers, import) — the registry has no dependencies
+// instantiated before the services that report to it (covers, import) - the registry has no dependencies
 const jobs = new JobRunner();
 const covers = new CoverService({ db: database, events, jobs, directoryOf: entryId => library.seriesDirectory(entryId) });
 const healthService = new SourceHealthService({
@@ -152,18 +152,18 @@ const failover = new FailoverService({
     isDetectionEnabled: createIncompleteDetectionPref(database),
     isStalledDetectionEnabled: createStalledDetectionPref(database),
     isAutoMigrateExactEnabled: createAutoMigrateExactPref(database),
-    // late-bound: `scheduler` is declared below — suggestions only fire long after init
+    // late-bound: `scheduler` is declared below - suggestions only fire long after init
     onSuggestion: (entry, target, currentChapters) =>
         scheduler.notify(
             'migrations',
             'Migration suggérée',
-            `« ${entry.title} » : ${target.sourceLabel} propose ${target.chapterCount ?? '?'} chapitres (contre ${currentChapters}) — à confirmer dans la Librairie`
+            `« ${entry.title} » : ${target.sourceLabel} propose ${target.chapterCount ?? '?'} chapitres (contre ${currentChapters}) - à confirmer dans la Librairie`
         ),
     onAutoMigrate: (entry, target, kept, total) =>
         scheduler.notify(
             'migrations',
             'Migration automatique',
-            `« ${entry.title} » migré vers ${target.sourceLabel} (correspondance exacte, ${kept}/${total} chapitres conservés) — annulable depuis la fiche de la série`
+            `« ${entry.title} » migré vers ${target.sourceLabel} (correspondance exacte, ${kept}/${total} chapitres conservés) - annulable depuis la fiche de la série`
         )
 });
 
@@ -190,10 +190,10 @@ const queue = new DownloadQueue({
             handleDownloadFailure(job);
         }
         // a download succeeded on a source with an open outage: the source
-        // healed — close the outage and fast-track the failed jobs' retries
+        // healed - close the outage and fast-track the failed jobs' retries
         if (job.status === 'completed' && library.closeSourceOutage(job.sourceId)) {
             queue.resetRetryLadder(job.sourceId);
-            const recovered = `La source ${job.sourceId} semble rétablie — nouvelle tentative rapide des téléchargements en échec`;
+            const recovered = `La source ${job.sourceId} semble rétablie - nouvelle tentative rapide des téléchargements en échec`;
             events.publishLog({
                 level: 'info',
                 category: 'source',
@@ -213,7 +213,7 @@ const queue = new DownloadQueue({
             events.publish({ type: 'library.updated', entry });
         }
     },
-    /** "Clear queue" drops the jobs without finishing them — put the chapters back. */
+    /** "Clear queue" drops the jobs without finishing them - put the chapters back. */
     onJobsCleared: pairs => library.revertClearedChapters(pairs)
 });
 
@@ -230,7 +230,7 @@ function handleDownloadFailure(job: DownloadJobDto): void {
     if (entryId == null) {
         return;
     }
-    // the entry may have been deleted since its downloads were queued —
+    // the entry may have been deleted since its downloads were queued -
     // recordDownloadFailure must not run against a missing row
     const entry = library.getEntry(entryId);
     if (!entry) {
@@ -239,12 +239,12 @@ function handleDownloadFailure(job: DownloadJobDto): void {
 
     // failure accounting ALWAYS runs, outage or not: the scheduler backstop
     // (listDownloadFailing) must keep seeing these entries once the outage
-    // closes or escalates — the old code skipped this while suspended, which
+    // closes or escalates - the old code skipped this while suspended, which
     // left entries invisible after their auto-retries ran out
     const failures = library.recordDownloadFailure(entryId);
 
     // infra failure (non-image CDN page, 5xx, timeout): feed the source
-    // outage state and never probe blind — a fresh outage suspends migration
+    // outage state and never probe blind - a fresh outage suspends migration
     // until escalation. Content failure (404, removed): probe at once, the
     // same URL can never succeed again.
     if (classifyFailure(job.error) === 'infra') {
@@ -257,7 +257,7 @@ function handleDownloadFailure(job: DownloadJobDto): void {
             const lastWarnAt = sourceOutageWarnAt.get(entry.sourceId) ?? 0;
             if (outage?.escalatedAt === null && Date.now() - lastWarnAt > SOURCE_OUTAGE_LOG_MS) {
                 sourceOutageWarnAt.set(entry.sourceId, Date.now());
-                const outageText = `Panne de la source ${entry.sourceLabel} — migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`;
+                const outageText = `Panne de la source ${entry.sourceLabel} - migration suspendue ${Math.round(OUTAGE_ESCALATION_MS / 60000)} min, téléchargements retentés automatiquement`;
                 events.publishLog({
                     level: 'warn',
                     category: 'source',
@@ -351,7 +351,7 @@ registerCoverRoutes(app, covers);
 registerImageRoutes(app);
 registerImportRoutes(app, importer, queue, database);
 
-// WebSocket endpoint: dashboard live events (token via query — WebSocket cannot carry headers)
+// WebSocket endpoint: dashboard live events (token via query - WebSocket cannot carry headers)
 app.register(async fastify => {
     fastify.get<{ Querystring: { token?: string } }>('/ws', { websocket: true }, (socket: WebSocket, request) => {
         if (request.query.token !== apiToken) {
@@ -368,7 +368,7 @@ if (config.importPath) {
     const previous = importer.status();
     const alreadyDone = previous.job && previous.job.root === config.importPath && previous.job.status === 'done';
     if (alreadyDone) {
-        console.log(`[import] ${config.importPath} déjà importé (job #${previous.job.id}) — saut de l'auto-import`);
+        console.log(`[import] ${config.importPath} déjà importé (job #${previous.job.id}) - saut de l'auto-import`);
     } else {
         console.log(`[import] auto-import of ${config.importPath} (confirm=${config.importAutoConfirm}, autoDownload=${config.importAutoDownload})`);
         importer
@@ -393,7 +393,7 @@ if (fs.existsSync(config.dashboardDirectory)) {
         return reply.code(404).send({ error: 'Not found' });
     });
 } else {
-    console.warn('[server] dashboard build not found — run the dashboard build to enable the web UI');
+    console.warn('[server] dashboard build not found - run the dashboard build to enable the web UI');
 }
 
 // Background health probe for the (few) native sources at startup

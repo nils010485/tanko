@@ -16,7 +16,7 @@ import { EventBus } from '../src/ws.js';
 describe('isAntiBotShell', () => {
     it('detects localized Cloudflare challenge titles', () => {
         expect(isAntiBotShell('<html><head><title>Un instant…</title></head><body>x</body></html>')).toBe(true);
-        expect(isAntiBotShell('<html><head><title>Raijin Scans — Vérification de sécurité</title></head></html>')).toBe(true);
+        expect(isAntiBotShell('<html><head><title>Raijin Scans - Vérification de sécurité</title></head></html>')).toBe(true);
         expect(isAntiBotShell('<html><head><title>Just a moment...</title></head></html>')).toBe(true);
     });
 

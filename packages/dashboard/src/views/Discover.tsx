@@ -208,7 +208,7 @@ export default function Discover({
             .catch(() => undefined);
     }, []);
 
-    // rolling health re-checks push sources.updated — refresh the statuses live
+    // rolling health re-checks push sources.updated - refresh the statuses live
     const seenSourcesVersion = useRef(sourcesVersion);
     useEffect(() => {
         if (sourcesVersion === seenSourcesVersion.current) {
@@ -581,7 +581,7 @@ export default function Discover({
     };
 
     /** Link the duplicate provenance to the tracked entry instead of creating
-     *  a second one: one work, one entry — the failover prefers the link. */
+     *  a second one: one work, one entry - the failover prefers the link. */
     const linkDuplicate = async () => {
         if (duplicate === null) {
             return;
@@ -719,7 +719,7 @@ export default function Discover({
                         )}
                     </div>
 
-                    {/* scope: this source vs everywhere — compact segmented control */}
+                    {/* scope: this source vs everywhere - compact segmented control */}
                     <div className="flex h-10 items-center rounded-lg border border-line bg-canvas/60 p-0.5 text-xs">
                         <button
                             type="button"
@@ -739,7 +739,7 @@ export default function Discover({
                         </button>
                     </div>
 
-                    {/* compact icon button — search, or stop while one is running (Enter also runs the search) */}
+                    {/* compact icon button - search, or stop while one is running (Enter also runs the search) */}
                     {searching || globalSearching ? (
                         <button
                             type="button"

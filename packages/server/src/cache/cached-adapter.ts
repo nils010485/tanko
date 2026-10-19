@@ -1,7 +1,7 @@
 /**
  * Caching decorator around a SourceAdapter:
  *  - legacy sources: the full manga list is cached (24h) and searches are
- *    filtered locally — catalog-scanning connectors (e.g. 11toon) go from
+ *    filtered locally - catalog-scanning connectors (e.g. 11toon) go from
  *    minutes to instant after the first fetch
  *  - native sources: search results are cached shortly (10 min) so repeated
  *    global searches don't re-hit the site's search endpoint

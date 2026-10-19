@@ -24,7 +24,7 @@ export type JobStatus = ImportJobPhase;
 export type { AutoConfirmMode };
 export type ImportOptions = ImportOptionsDto;
 /** Thrown when an import would double-crawl the sources (the Activity registry allows a single crawl job). */
-export const CRAWL_BUSY_ERROR = 'Un scan de sources est déjà en cours (re-match, meilleures sources ou import) — attendez sa fin';
+export const CRAWL_BUSY_ERROR = 'Un scan de sources est déjà en cours (re-match, meilleures sources ou import) - attendez sa fin';
 
 export interface SourceInfo {
     id: string;
@@ -120,7 +120,7 @@ export class ImportService {
              WHERE status IN ('scanning', 'matching', 'syncing')`
             )
             .run(this.now());
-        // a crash mid-match leaves rows in 'matching' — make them eligible again
+        // a crash mid-match leaves rows in 'matching' - make them eligible again
         this.sql.exec(`UPDATE import_series SET status = 'pending' WHERE status = 'matching'`);
     }
 
@@ -360,7 +360,7 @@ export class ImportService {
             this._failJob(jobId, error);
         } finally {
             this.running.delete(jobId);
-            // a failed run is a failure, not a cancellation — _failJob already logged the terminal line
+            // a failed run is a failure, not a cancellation - _failJob already logged the terminal line
             const cancelled = !failed && this.cancelRequested.has(jobId);
             this.cancelRequested.delete(jobId);
             if (cancelled) {

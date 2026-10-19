@@ -7,7 +7,7 @@ import type { ActivityLogDto, LibraryEntryDto, QueueStatusDto, ScheduleStatusDto
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, getBootToken, resetBootToken } from './api.js';
 
-/** One Activity tab line — structured event (WS `log` + REST history). */
+/** One Activity tab line - structured event (WS `log` + REST history). */
 export type LogLine = ActivityLogDto;
 
 export interface LiveState {
@@ -21,9 +21,9 @@ export interface LiveState {
     logs: LogLine[];
     /** error-level events since the last Activity visit (sidebar badge). */
     unreadErrors: number;
-    /** Bumped on every WS sources.updated — Discover refetches source health when it changes. */
+    /** Bumped on every WS sources.updated - Discover refetches source health when it changes. */
     sourcesVersion: number;
-    /** Bumped on every WS job.updated / job.removed — Downloads refetches its page when it changes. */
+    /** Bumped on every WS job.updated / job.removed - Downloads refetches its page when it changes. */
     downloadsVersion: number;
     markActivitySeen: () => void;
     refreshLibrary: () => Promise<void>;
@@ -50,10 +50,10 @@ export function useLiveState(): LiveState {
     const [logs, setLogs] = useState<LogLine[]>([]);
     const [sourcesVersion, setSourcesVersion] = useState(0);
     const [unreadErrors, setUnreadErrors] = useState(0);
-    /** Bumped on every WS job transition — drives the Downloads view's refresh. */
+    /** Bumped on every WS job transition - drives the Downloads view's refresh. */
     const [downloadsVersion, setDownloadsVersion] = useState(0);
     const logSeq = useRef(0);
-    /** Row ids already known (REST load or previous frames) — WS replay dedupe. */
+    /** Row ids already known (REST load or previous frames) - WS replay dedupe. */
     const seenLogIds = useRef<Set<number>>(new Set());
 
     const refreshLibrary = useCallback(async () => {
@@ -86,7 +86,7 @@ export function useLiveState(): LiveState {
 
     const refreshActivity = useCallback(async () => {
         try {
-            // persisted history (newest first) — replayed WS frames dedupe against these ids
+            // persisted history (newest first) - replayed WS frames dedupe against these ids
             const fresh = await api.activity().then(result => result.logs);
             seenLogIds.current = new Set(fresh.map(log => log.id));
             setLogs(fresh);
@@ -135,7 +135,7 @@ export function useLiveState(): LiveState {
             socket = ws;
             ws.onopen = () => {
                 setConnected(true);
-                // missed events while disconnected (queue cleared, jobs finished…) — resync
+                // missed events while disconnected (queue cleared, jobs finished…) - resync
                 refreshLibrary();
                 refreshSchedule();
                 refreshQueueStatus();
@@ -181,7 +181,7 @@ export function useLiveState(): LiveState {
                             break;
                         case 'log':
                             // replayed frames (reconnect) carry ids the REST load already
-                            // returned — skipping them keeps the unread counter honest
+                            // returned - skipping them keeps the unread counter honest
                             if (message.id !== undefined && seenLogIds.current.has(message.id)) {
                                 break;
                             }

@@ -1,5 +1,5 @@
 /**
- * Path & naming helpers — keep the same on-disk layout as Hakuneko:
+ * Path & naming helpers - keep the same on-disk layout as Hakuneko:
  *   <base>/<Source label>/<Manga title>/<Chapter title>/{01.jpg,...}   (folder)
  *   <base>/<Source label>/<Manga title>/<Chapter title>.cbz            (cbz)
  * With directoryLayout 'series', the source level is dropped so downloads
@@ -46,7 +46,7 @@ function normalizeChapterTitle(title: string): string {
 
 /**
  * Accepted file names for one chapter: the (normalized) full title, plus the
- * short « Chapter <number> » form — sources suffix chapter names with titles
+ * short « Chapter <number> » form - sources suffix chapter names with titles
  * (« Ch.2 - Let Her Go! ») while an existing library usually stores the bare
  * number, and both spellings mean the same chapter on disk.
  */
@@ -54,7 +54,7 @@ export function chapterFileNames(chapterTitle: string): string[] {
     const normalized = sanitizeName(normalizeChapterTitle(chapterTitle));
     const names = [normalized];
     // legacy spelling straight from the source (« Ch.01 »), for files written
-    // before the normalization landed — without it they'd look missing
+    // before the normalization landed - without it they'd look missing
     const raw = sanitizeName(chapterTitle.trim());
     if (raw && raw !== normalized && !names.includes(raw)) {
         names.push(raw);
@@ -75,7 +75,7 @@ export function chapterFileNames(chapterTitle: string): string[] {
 }
 
 /** Resolve the series folder: keep the exact sanitized spelling, but accept
- *  a folder spelled with the other apostrophe — sources title series with a
+ *  a folder spelled with the other apostrophe - sources title series with a
  *  typographic « Can’t » while NAS folders are usually ASCII « Can't » (and
  *  vice versa). Downloads, counts and deletions then share the real folder. */
 export function resolveSeriesDirectory(directory: string, isOwned?: (directory: string) => boolean): string {
@@ -89,7 +89,7 @@ export function resolveSeriesDirectory(directory: string, isOwned?: (directory: 
     }
     // last resort: a sibling folder whose name differs only by case or
     // punctuation (« Into the light once again » on disk for a source titled
-    // « Into the Light, Once Again ») — without it the disk pass scans a
+    // « Into the Light, Once Again ») - without it the disk pass scans a
     // folder that does not exist and local chapters stay invisible.
     // `isOwned` rejects candidates another entry owns, so two entries never
     // converge on one folder through a spelling variant.
@@ -253,7 +253,7 @@ export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz', expecte
 /**
  * Chapter entries of a series folder on disk: CBZ files plus image-folder
  * chapters (sub-directories), dot-files excluded. Empty when the folder is
- * missing. Purely local — no source involved.
+ * missing. Purely local - no source involved.
  */
 export function listChapterEntries(seriesDirectory: string): string[] {
     let entries: fs.Dirent[];
@@ -268,7 +268,7 @@ export function listChapterEntries(seriesDirectory: string): string[] {
 }
 
 /**
- * Chapter count of a series folder on disk — used to display counts for
+ * Chapter count of a series folder on disk - used to display counts for
  * entries whose chapters were never registered in the database.
  */
 export function countLocalChapters(seriesDirectory: string): number {

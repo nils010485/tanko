@@ -1,5 +1,5 @@
 /**
- * Memory probe — measures where the scheduled run actually spends memory.
+ * Memory probe - measures where the scheduled run actually spends memory.
  *
  * Phase 1: engine + connector load baseline (1309 legacy connectors)
  * Phase 2: legacy catalog search (failover path, searchMangas = full catalog)

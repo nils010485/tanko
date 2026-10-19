@@ -15,7 +15,7 @@ function handleSourceError(reply: FastifyReply, error: unknown) {
 }
 
 /** Wall-clock budget for one direct source search: legacy connectors may crawl
- *  their whole catalog — the dashboard must get its UI back after this. */
+ *  their whole catalog - the dashboard must get its UI back after this. */
 const SEARCH_TIMEOUT_MS = 30_000;
 /** Display cap for one direct search: the response reports the true total. */
 const SEARCH_RESULTS_CAP = 50;
@@ -133,7 +133,7 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
         const legacyRequest = new Request(url, connector?.requestOptions);
         const response = await (globalThis as EngineGlobal).Engine.Request.fetch(legacyRequest);
         // the legacy engine follows redirects internally and cannot be
-        // hop-checked: the final URL is the last guard available — refuse to
+        // hop-checked: the final URL is the last guard available - refuse to
         // serve bodies that ended up on a private address
         await assertPublicHttpUrl(response.url || url);
         return response;
@@ -192,7 +192,7 @@ export function registerSourceRoutes(
         return withSource(reply, sourceRegistry, sourceId, async source => {
             const mangas = await timedSourceSearch(source, sourceId, query);
             // drop titles known (native MangaDex metadata) to lack chapters in
-            // the preferred languages — they would list 0 chapters later
+            // the preferred languages - they would list 0 chapters later
             const allowed = mangas.filter(manga => mangaLanguagesAllowed(manga.languages, getPreferredLanguages()));
             // native MangaDex emits one entry per title/alt-title (import matching
             // relies on it): display keeps a single card per manga

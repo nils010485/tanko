@@ -55,7 +55,7 @@ describe('chapterPaths', () => {
     });
 
     it('accepts a series folder spelled with the other apostrophe', () => {
-        // sources title with a typographic apostrophe, the NAS folder is ASCII — and vice versa
+        // sources title with a typographic apostrophe, the NAS folder is ASCII - and vice versa
         for (const [folderTitle, entryTitle] of [
             ["Can't Level Up", 'Can’t Level Up'],
             ['Can’t Level Up', "Can't Level Up"]

@@ -83,7 +83,7 @@ function failedJob(entryId: number | null, chapterId: string, autoRetries: numbe
 const jobStatus = (id: number) =>
     (database.db.prepare('SELECT status, auto_retries AS retries FROM download_jobs WHERE id = ?').get(id) as any) ?? { status: 'gone', retries: 0 };
 
-describe('sweepFailedJobs — slow revalidation tier', () => {
+describe('sweepFailedJobs - slow revalidation tier', () => {
     it('requeues an exhausted job past its 24h cooldown and steps the counter', async () => {
         const { entry } = await store.addEntry({ sourceId: 'src-r1', mangaId: 'm', title: 'Revalidating', backlog: 'ignore' });
         const id = failedJob(entry.id, 'c-exhausted', AUTO_RETRY_MAX, 25 * HOUR_MS, 'src-r1');
@@ -169,7 +169,7 @@ describe('sweepFailedJobs — slow revalidation tier', () => {
     });
 });
 
-describe('checkForNewChapters — failed/lost reconciliation', () => {
+describe('checkForNewChapters - failed/lost reconciliation', () => {
     it('marks unlisted failed chapters lost and revives listed lost ones', async () => {
         const { entry } = await store.addEntry({ sourceId: 'src-b', mangaId: 'm', title: 'Reconcile', backlog: 'ignore' });
         const insert = database.db.prepare(
@@ -217,7 +217,7 @@ describe('checkForNewChapters — failed/lost reconciliation', () => {
     });
 });
 
-describe('listChapters — retryExhausted badge flag', () => {
+describe('listChapters - retryExhausted badge flag', () => {
     it('flags chapters whose job exhausted the fast ladder', async () => {
         const { entry } = await store.addEntry({ sourceId: 'src-d', mangaId: 'm', title: 'Exhausted', backlog: 'ignore' });
         const insert = database.db.prepare(

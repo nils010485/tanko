@@ -1,7 +1,7 @@
 /**
  * Routes for the sources updater:
- *   GET  /api/sources/update — updater status (lock, last sync, active count, pack)
- *   POST /api/sources/update — sync legacy connectors (pinned commit) + sources
+ *   GET  /api/sources/update - updater status (lock, last sync, active count, pack)
+ *   POST /api/sources/update - sync legacy connectors (pinned commit) + sources
  *   pack (hot-applied); restarts only when the legacy tree changed
  */
 import type { SourceRegistry } from '@tanko/core';

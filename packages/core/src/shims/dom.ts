@@ -13,7 +13,7 @@ export function parseDocument(html: string): Document {
 
 /**
  * Apply every linkedom compatibility patch to a freshly parsed document
- * (cheap and idempotent — safe to call on every parse point).
+ * (cheap and idempotent - safe to call on every parse point).
  */
 export function patchLinkedomDocument(document: Document): void {
     patchAnchorPathname(document);

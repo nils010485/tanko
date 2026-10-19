@@ -41,7 +41,7 @@ Measured on the shipped Docker image:
   resident. 1 GB works; 2 GB is comfortable.
 - **Disk**: ~1.4 GB image + your library.
 - **Docker or Podman**; or Node.js >= 22 to run outside a container (Chromium
-  is optional there — only used if a system binary is present).
+  is optional there - only used if a system binary is present).
 
 
 ```bash

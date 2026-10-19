@@ -11,7 +11,7 @@ export interface ServerConfig {
     dashboardDirectory: string;
     /** When set, an import job (scan+match+sync) runs automatically at startup. */
     importPath?: string;
-    /** 'auto' (default) | 'all' | 'none' — which match tiers are confirmed without user review. */
+    /** 'auto' (default) | 'all' | 'none' - which match tiers are confirmed without user review. */
     importAutoConfirm: 'auto' | 'all' | 'none';
     /** IMPORT_AUTO_DOWNLOAD=1: imported entries auto-download future new chapters. */
     importAutoDownload: boolean;

@@ -98,7 +98,7 @@ export class LegacySourceAdapter implements SourceAdapter {
             const legacyManga = { connector: this.connector, id: manga.id, title: manga.title };
             const legacyChapter = { manga: legacyManga, id: chapter.id, title: chapter.title };
             const pages: unknown = await this._promisify<unknown>(callback => this.connector._getPageList(legacyManga, legacyChapter, callback));
-            // Anime chapters return { mirrors | video } objects — only image lists are supported.
+            // Anime chapters return { mirrors | video } objects - only image lists are supported.
             if (!Array.isArray(pages)) {
                 throw new SourceError(`Chapter "${chapter.title}" is not an image chapter (anime/media not supported)`, this.id);
             }
@@ -125,7 +125,7 @@ export class LegacySourceAdapter implements SourceAdapter {
         try {
             const request = new Request(this.connector.url, this.connector.requestOptions);
             // the bridge enforces its own 20s deadline (backoff waits included),
-            // so no outer race is needed — one that is never cleared would
+            // so no outer race is needed - one that is never cleared would
             // instead stack live timers across a full source sweep
             const response: Response = await globalThis.Engine.Request.fetch(request, 20000);
             if (response.status >= 500) {
@@ -134,7 +134,7 @@ export class LegacySourceAdapter implements SourceAdapter {
             const body = await response.text();
             if (isAntiBotShell(body)) {
                 // the catalog operations (fetchUI) retry anti-bot shells in a
-                // real browser — the health check must agree or protected
+                // real browser - the health check must agree or protected
                 // sources look dead while they actually work
                 if (browserEnabled()) {
                     const rendered = await getPageHTML(this.connector.url, { timeoutMs: 30_000 }).catch(() => undefined);

@@ -2,7 +2,7 @@
  * Structural types for the untyped legacy HakuNeko objects (vendored .mjs
  * connectors, manga/chapter records) flowing through the engine, the shims
  * and the legacy adapter. Only the surface Tanko actually touches is
- * described — everything else stays invisible to the type system.
+ * described - everything else stays invisible to the type system.
  */
 
 /** A manga record as passed around by legacy connectors. */

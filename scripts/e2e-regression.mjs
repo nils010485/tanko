@@ -9,10 +9,10 @@ let passed = 0;
 function check(name, ok, detail = '') {
     if (ok) {
         passed++;
-        console.log(`  PASS  ${name}${detail ? ` — ${detail}` : ''}`);
+        console.log(`  PASS  ${name}${detail ? ` - ${detail}` : ''}`);
     } else {
         failures++;
-        console.error(`  FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
+        console.error(`  FAIL  ${name}${detail ? ` - ${detail}` : ''}`);
     }
 }
 
@@ -47,7 +47,7 @@ console.log(`E2E regression suite → ${BASE}\n`);
     const page = await fetch(`${BASE}/`);
     const html = await page.text();
     check('GET / serves dashboard HTML', page.status === 200 && html.includes('<div id="root"'));
-    // commit 3f73c37: settings moved into Manage nav — bundle must reference it
+    // commit 3f73c37: settings moved into Manage nav - bundle must reference it
     const bundle = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
     const js = bundle ? await (await fetch(`${BASE}${bundle}`)).text() : '';
     check('dashboard bundle built & reachable', Boolean(bundle) && js.length > 10000, bundle ?? 'no bundle');
@@ -194,7 +194,7 @@ if (entry) {
     check('cleanup: delete test entry + files', del.status === 200 || del.status === 204, `HTTP ${del.status}`);
 }
 
-// 7. per-host rate-limit backoff (f4bce06) — smoke via mangapill chapters ---
+// 7. per-host rate-limit backoff (f4bce06) - smoke via mangapill chapters ---
 {
     console.log('\n[7] Rate-limit backoff smoke (parallel same-host fetches)');
     const results = await Promise.allSettled(Array.from({ length: 3 }, () => api('GET', '/api/sources/mangapill/search?q=one%20piece')));

@@ -1,6 +1,6 @@
 /**
  * Native connector for Assorted Scans (https://assortedscans.com), formerly
- * Helvetica Scans (report scripts/casework/helveticascans.md — the site left
+ * Helvetica Scans (report scripts/casework/helveticascans.md - the site left
  * FoolSlide for a MangAdventure v0.9.6 install).
  *
  * MangAdventure JSON API v2 (beware: a trailing slash on the series list

@@ -2,7 +2,7 @@
  * Re-identification guard: when a source rotates the ids of its whole
  * catalogue (Asura Scans rotates a shared build code embedded in every
  * URL), the listing looks entirely unknown while the chapter numbers
- * still match the stored rows — the existing rows must be re-identified
+ * still match the stored rows - the existing rows must be re-identified
  * in place instead of the whole series being treated as brand new.
  */
 import fs from 'node:fs';
@@ -47,7 +47,7 @@ afterAll(() => {
 const rows = (entryId: number) =>
     database.db.prepare('SELECT chapter_id, title, status, path FROM library_chapters WHERE entry_id = ? ORDER BY id').all(entryId);
 
-describe('checkForNewChapters — re-identification guard', () => {
+describe('checkForNewChapters - re-identification guard', () => {
     it('re-ids stored rows on an overwhelming id rotation instead of re-adding everything', async () => {
         const { entry } = await store.addEntry({ sourceId: 'src-reid1', mangaId: 'm', title: 'Rotated Ids', backlog: 'ignore' });
         const insert = database.db.prepare(
@@ -112,7 +112,7 @@ describe('checkForNewChapters — re-identification guard', () => {
     });
 });
 
-describe('schema migration — asura id normalization', () => {
+describe('schema migration - asura id normalization', () => {
     it('strips the build code and merges rotation duplicates once', async () => {
         listing = [];
         const { entry } = await store.addEntry({ sourceId: 'asurascans', mangaId: '/comics/murim-login-08677664', title: 'Murim Login', backlog: 'ignore' });

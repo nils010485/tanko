@@ -1,6 +1,6 @@
 /**
  * Tasks view: scheduled checks (cron, auto-download, auto-unfollow),
- * notifications, manual run and the maintenance tools — covers cache,
+ * notifications, manual run and the maintenance tools - covers cache,
  * internal source cache, failed-source rematch and the better-source scan.
  */
 import type { LibraryEntryDto, ScheduleSettingsDto, ScheduleStatusDto } from '@tanko/shared';
@@ -161,7 +161,7 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
         }
     };
 
-    /** Bulk 'download missing' across the whole library — same sweep as the
+    /** Bulk 'download missing' across the whole library - same sweep as the
      *  per-series action: everything not on disk ('new' + 'missing' + 'failed'). */
     const runDownloadMissing = async () => {
         setConfirmMissing(false);
@@ -232,9 +232,9 @@ export default function Tasks({ schedule, library }: { schedule: ScheduleStatusD
             {/* next / last run at a glance */}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-xl border border-line bg-surface/60 px-4 py-3 text-xs text-muted">
                 {[
-                    [t('schedule.nextRun'), schedule?.nextRunAt ? formatDate(schedule.nextRunAt) : '—'],
+                    [t('schedule.nextRun'), schedule?.nextRunAt ? formatDate(schedule.nextRunAt) : '-'],
                     [t('schedule.lastRun'), formatDate(schedule?.lastRunAt)],
-                    [t('schedule.result'), schedule?.lastRunResult || '—']
+                    [t('schedule.result'), schedule?.lastRunResult || '-']
                 ].map(([label, value]) => (
                     <span key={label}>
                         {label} <span className="font-medium text-fg">{value}</span>

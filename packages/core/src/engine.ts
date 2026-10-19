@@ -34,8 +34,8 @@ export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
  * Connectors we patch on top of the upstream Hakuneko tree. Sites change
  * under upstream's feet and its connectors break (e.g. mangahere removed
  * the newImgs global from its webtoon reader); our bundled version carries
- * the fix. These files are ALWAYS loaded from the bundled vendor — even
- * when a previously synced copy shadows it — and the sources updater
+ * the fix. These files are ALWAYS loaded from the bundled vendor - even
+ * when a previously synced copy shadows it - and the sources updater
  * re-applies them over every new sync. Drop an entry once upstream ships
  * the same fix.
  */
@@ -45,7 +45,7 @@ const connectorRegistry = new Map<string, LegacyConnector>();
 let fetchWrapped = false;
 /**
  * The global fetch wrapper is installed once but must delegate to the
- * CURRENT engine's session (cookie jar, gate) — a second createEngine with
+ * CURRENT engine's session (cookie jar, gate) - a second createEngine with
  * another dataDirectory would otherwise silently keep the first jar.
  */
 let activeRequest: HeadlessRequest | undefined;
@@ -89,7 +89,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     const syncedConnectors = path.join(syncedVendor, 'connectors');
     activeVendorPath = directoryHasConnectors(syncedConnectors) ? syncedVendor : VENDOR_PATH;
     // Self-heal an already-synced tree: re-apply the patched connectors over
-    // it (the updater does the same after each sync) — otherwise an old synced
+    // it (the updater does the same after each sync) - otherwise an old synced
     // copy shadows bundled fixes, including for subclasses that import their
     // base connector with a relative path.
     if (activeVendorPath !== VENDOR_PATH) {
@@ -121,13 +121,13 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             // Legacy connectors stash the real destination headers as x-* (x-referer,
             // x-cookie, ...) on the Request object; the Electron main process used to
             // translate them before sending. Route those through HeadlessRequest so the
-            // transformation happens headless — otherwise CDNs receive literal x-*
+            // transformation happens headless - otherwise CDNs receive literal x-*
             // headers and serve hotlink-protection HTML instead of the image.
             if (input instanceof Request && [...input.headers.keys()].some(name => name.toLowerCase().startsWith('x-'))) {
                 const bridge = activeRequest as HeadlessRequest;
                 // the legacy bridge cannot take a signal: race it so an aborted
                 // crawl stops waiting (the bridge's own deadline reclaims the
-                // socket) — mirrors the signal merge of the native branch below
+                // socket) - mirrors the signal merge of the native branch below
                 const scope = currentAbortSignal();
                 const own = init?.signal ?? input.signal;
                 const signal = scope && own ? AbortSignal.any([scope, own]) : (scope ?? own);
@@ -141,7 +141,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             }
             // Kill the whole crawl when the owning operation is aborted (see
             // shims/abort-scope.ts): the scope signal rides along every fetch.
-            // init.signal (or the Request's own) still applies — combine them.
+            // init.signal (or the Request's own) still applies - combine them.
             const scope = currentAbortSignal();
             const own = init?.signal ?? (input instanceof Request ? input.signal : undefined);
             const signal = scope && own ? AbortSignal.any([scope, own]) : (scope ?? own);
@@ -164,7 +164,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
 
 /**
  * Synced copies ship a sha256 manifest (written by the updater at sync time);
- * the built-in vendor has none — integrity checking is skipped there. A file
+ * the built-in vendor has none - integrity checking is skipped there. A file
  * failing its hash (truncated write, tampered data directory) is never imported.
  */
 function readManifest(directory: string): Record<string, string> | null {
@@ -206,7 +206,7 @@ export async function loadConnectors(): Promise<LoadResult> {
         try {
             if (manifest && !manifestMatches(manifest, directory, file)) {
                 failures++;
-                console.warn(`[engine] connector "${file}" failed the integrity check — skipped (resync to fix)`);
+                console.warn(`[engine] connector "${file}" failed the integrity check - skipped (resync to fix)`);
                 continue;
             }
             const module = await import(pathToFileURL(path.join(directory, file)).href);

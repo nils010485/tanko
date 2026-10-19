@@ -58,7 +58,7 @@ export class HeadlessSettings extends EventTarget {
         try {
             raw = fs.readFileSync(this.file, 'utf8');
         } catch {
-            /* no persisted settings yet — defaults apply */
+            /* no persisted settings yet - defaults apply */
         }
         if (raw !== undefined) {
             try {

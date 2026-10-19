@@ -1,13 +1,13 @@
 /**
  * Triage of broken sources: re-probes every id from broken-ids.json through
  * the real adapters, captures the raw error, and classifies it:
- *   dead      — DNS/connection failure (domain gone) -> forget it
- *   antibot   — site up, protected (Cloudflare/JS) -> fixable via browser
- *   http_*    — site answers with 4xx/5xx -> maybe moved, needs URL fix
- *   empty     — root OK but catalog empty/broken -> connector rot (fixable)
- *   timeout   — too slow to tell -> re-check manually
- *   other     — anything else
- * Writes triage-results.json next to this script. Network script — run manually:
+ *   dead      - DNS/connection failure (domain gone) -> forget it
+ *   antibot   - site up, protected (Cloudflare/JS) -> fixable via browser
+ *   http_*    - site answers with 4xx/5xx -> maybe moved, needs URL fix
+ *   empty     - root OK but catalog empty/broken -> connector rot (fixable)
+ *   timeout   - too slow to tell -> re-check manually
+ *   other     - anything else
+ * Writes triage-results.json next to this script. Network script - run manually:
  *   node scripts/triage-broken.mjs
  */
 import fs from 'node:fs';

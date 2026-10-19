@@ -4,7 +4,7 @@
  * control to any non-browser client, so search falls back to the server
  * rendered homepage and chapters/reader go through headless Chromium. Chapter
  * image URLs are short-lived signed CDN links captured from the rendered
- * reader DOM (best effort — the official flow signs urls per session).
+ * reader DOM (best effort - the official flow signs urls per session).
  */
 
 import { parseDocument } from '../../shims/dom.js';

@@ -16,7 +16,7 @@ const schedulers: Scheduler[] = [];
 
 /** Store contract with inert defaults: each test's store (mock or real
  *  instance) is wrapped so that any method it does not provide falls back to
- * an inert default — a run must never crash because a mock lacks a method
+ * an inert default - a run must never crash because a mock lacks a method
  * the scheduler started calling (the crash would be swallowed by runNow's
  * catch and the assertions would pass vacuously). */
 type FailoverLike = NonNullable<ConstructorParameters<typeof Scheduler>[0]['failover']>;
@@ -325,7 +325,7 @@ describe('scheduler stalled-source detection pass', () => {
             recordStalenessProbe
         };
         await buildScheduler(store, { suggestIfStalled, tryBeginProbe: () => true, endProbe: () => {} } as unknown as FailoverLike).runNow();
-        // 12 candidates — more than DETECTION_PROBES — yet 'skipped' costs nothing
+        // 12 candidates - more than DETECTION_PROBES - yet 'skipped' costs nothing
         await vi.waitFor(() => expect(suggestIfStalled).toHaveBeenCalledTimes(12), { timeout: 4000 });
         expect(recordStalenessProbe).not.toHaveBeenCalled();
     });
@@ -344,7 +344,7 @@ describe('scheduler stalled-source detection pass', () => {
 
     it('does not let a disabled starved pass burn the shared probe budget', async () => {
         // 12 entries are eligible for the starved regime, but its toggle is
-        // off: every call is 'skipped' and must cost nothing — the stalled
+        // off: every call is 'skipped' and must cost nothing - the stalled
         // candidates still get their probes (regression: the shared budget
         // used to be drained by probes that never crawled)
         const suggestIfIncomplete = vi.fn().mockResolvedValue('skipped');

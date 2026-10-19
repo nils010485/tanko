@@ -11,7 +11,7 @@ import { Scheduler } from '../src/scheduler/scheduler.js';
 import { EventBus } from '../src/ws.js';
 
 // POST /api/library/:id/migrate must refuse to run while the entry still has
-// queued/downloading jobs — the same guard as /rematch/confirm. Migrating
+// queued/downloading jobs - the same guard as /rematch/confirm. Migrating
 // under running downloads orphans their files (written to the old source's
 // folder, never attached to the rebuilt chapter rows).
 let tmpDir: string;

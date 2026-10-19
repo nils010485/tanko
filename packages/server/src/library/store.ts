@@ -133,7 +133,7 @@ export class LibraryStore {
         return { entry: created, snapshot };
     }
 
-    /** Remove the entry from Tanko; with `disk`, also delete its files — the
+    /** Remove the entry from Tanko; with `disk`, also delete its files - the
      *  whole series folder when no other entry shares it, else only the files
      *  this entry has recorded (a shared folder must survive its co-tenants). */
     removeEntry(entryId: number, options: { disk?: boolean } = {}): { ok: boolean; deletedPath?: string; deletedFiles?: number } {
@@ -158,7 +158,7 @@ export class LibraryStore {
         return shared ? this._deleteSharedFiles(recordedPaths, entryId) : this._deleteSeriesFolder(directory);
     }
 
-    /** Delete the files this entry recorded in a shared folder — only those no
+    /** Delete the files this entry recorded in a shared folder - only those no
      *  other entry also claims, and never outside the data directory. */
     private _deleteSharedFiles(recordedPaths: string[], entryId: number): { ok: boolean; deletedFiles: number } {
         const base = path.resolve(this.ctx.queueSettings.dataDirectory);
@@ -253,7 +253,7 @@ export class LibraryStore {
                     await chapters.checkForNewChapters(this.ctx, row.id);
                     checked++;
                 } catch {
-                    // source unreachable: keep the disk-only pass — the
+                    // source unreachable: keep the disk-only pass - the
                     // display counts local files even without DB rows
                 }
             }
@@ -284,7 +284,7 @@ export class LibraryStore {
 
     /** Remove entries identified by findDeadEntries(); nothing is deleted on
      *  disk (the files are already gone). Each id is re-validated against the
-     *  current disk state — a download completed since the dry-run keeps its
+     *  current disk state - a download completed since the dry-run keeps its
      *  entry. Returns the number of entries removed. */
     pruneEntries(ids: number[]): number {
         let removed = 0;
@@ -345,7 +345,7 @@ export class LibraryStore {
         return Number(result.changes) > 0;
     }
 
-    /** Pause (or resume) monitoring: a paused entry stays visible — hiding is
+    /** Pause (or resume) monitoring: a paused entry stays visible - hiding is
      *  a manual, visual decision only. Resuming refreshes the last-new-chapter
      *  date (fresh stale period) and clears the stalled-probe back-off. */
     setPaused(entryId: number, paused: boolean): boolean {
@@ -389,7 +389,7 @@ export class LibraryStore {
         return this.ctx.q.all<EntryRow>('SELECT * FROM library').find(row => normalizeTitleKey(row.title) === needle) ?? null;
     }
 
-    /** Record an alternative provenance for the entry's work — the same
+    /** Record an alternative provenance for the entry's work - the same
      *  series on another source, or another manga id on the same source
      *  (second team, retranslation). The failover prefers these candidates
      *  and the dashboard offers a manual migration to one. The alternative's
@@ -429,7 +429,7 @@ export class LibraryStore {
 
     /** Point the entry at an existing folder (import adoption): the scanned
      *  path becomes its canonical directory when it lies inside the data
-     *  directory — downloads then complete the imported folder in place.
+     *  directory - downloads then complete the imported folder in place.
      *  Returns the stored directory, null when the folder is outside. */
     adoptDirectory(entryId: number, folder: string): string | null {
         const rel = directories.relativeOrNull(this.ctx.queueSettings.dataDirectory, folder);
@@ -460,7 +460,7 @@ export class LibraryStore {
     }
 
     /** Note a failure on the source-outage record; arms the escalation stamp
-     *  when the outage has lasted long enough — idempotent. */
+     *  when the outage has lasted long enough - idempotent. */
     noteSourceFailure(sourceId: string, open: boolean): SourceOutage | undefined {
         return outages.noteSourceFailure(this.ctx, sourceId, open);
     }
