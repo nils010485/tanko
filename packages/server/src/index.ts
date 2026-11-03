@@ -42,6 +42,7 @@ import {
     createLanguagePreference,
     createStalledDetectionPref,
     loadPersistedQueueSettings,
+    readProxySettings,
     registerSettingsRoutes
 } from './routes/settings.js';
 import { registerSourceHealthRoutes } from './routes/source-health.js';
@@ -52,16 +53,24 @@ import { Scheduler } from './scheduler/scheduler.js';
 import { GlobalSearchService } from './sources/global-search.js';
 import { SourceHealthService } from './sources/health.js';
 import { startPackPolling, stopPackPolling } from './sources/pack-updater.js';
+import { activeProxy, applyProxy, installProxyFetch } from './util/proxy.js';
 import { apiToken, registerTokenGuard } from './util/token-guard.js';
 import { EventBus } from './ws.js';
 
 const config = loadConfig();
 
+// the database comes first: it holds the persisted proxy, which must be live
+// before the first outbound request (connector pack download)
+const database = new Database(config.dataDirectory);
+installProxyFetch();
+await applyProxy(readProxySettings(database));
+// credentials stay out of the startup log
+console.log(`[server] outbound proxy: ${activeProxy()?.replace(/\/\/[^@]*@/, '//***@') ?? 'direct connection'}`);
+
 await createEngine({ dataDirectory: config.dataDirectory });
 const { connectors, failures } = await loadConnectors();
 console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed)`);
 
-const database = new Database(config.dataDirectory);
 const events = new EventBus();
 
 // last-resort handlers: log (and surface in Activity) instead of dying

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import type { ProxySettingsDto } from '@tanko/shared';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.js';
 import type { DownloadQueue, QueueSettings } from '../downloader/queue.js';
 import { parseLanguageList } from '../languages.js';
 import type { CoverService } from '../library/covers.js';
+import { applyProxy, parseProxyUrl, testProxy } from '../util/proxy.js';
 
 const QUEUE_SETTINGS_KEY = 'queue-settings';
 const LANGUAGES_KEY = 'preferred-languages';
@@ -14,6 +16,7 @@ const INCOMPLETE_DETECTION_KEY = 'incomplete-detection';
 const STALLED_DETECTION_KEY = 'stalled-detection';
 const AUTO_MIGRATE_EXACT_KEY = 'auto-migrate-exact';
 const HIDE_ADULT_SOURCES_KEY = 'hide-adult-sources';
+const PROXY_KEY = 'proxy';
 
 /** Opt-in boolean flags sharing the same validate/persist/read logic:
  *  PATCH body field → KV store key. */
@@ -93,6 +96,14 @@ export function readUiLanguage(db: Database): UiLanguage {
     return db.kvGet(UI_LANGUAGE_KEY) === 'fr' ? 'fr' : 'en';
 }
 
+/** Outbound proxy applied to every request the server makes (sources, cover
+ *  fetching, webhooks, pack update). Applied through applyProxy() so a saved
+ *  setting takes effect without a restart. */
+export function readProxySettings(db: Database): ProxySettingsDto {
+    const stored = readJsonSetting<Partial<ProxySettingsDto>>(db, PROXY_KEY, {});
+    return { enabled: stored.enabled === true, url: typeof stored.url === 'string' ? stored.url : '' };
+}
+
 /** Disk usage moves slowly and the walk is expensive (tens of thousands of
  *  CBZ) - serve the last result for a minute instead of walking repeatedly. */
 const SIZE_CACHE_TTL_MS = 60 * 1000;
@@ -142,8 +153,14 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
+            proxy: readProxySettings(db),
             ...readBooleanFlags(db)
         };
+    });
+
+    /** Probe a proxy without saving it (or the active one when `url` is omitted). */
+    app.post<{ Body: { url?: string } }>('/api/settings/proxy/test', async request => {
+        return testProxy(typeof request.body?.url === 'string' ? request.body.url : undefined);
     });
 
     app.patch<{
@@ -155,6 +172,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             stalledSourceDetection?: boolean;
             autoMigrateExactMatch?: boolean;
             hideAdultSources?: boolean;
+            proxy?: Partial<ProxySettingsDto>;
         };
     }>('/api/settings', async (request, reply) => {
         const body = request.body;
@@ -179,6 +197,24 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
         for (const { field } of BOOLEAN_FLAGS) {
             if (body[field] !== undefined && typeof body[field] !== 'boolean') {
                 return reply.code(400).send({ error: `${field} must be a boolean` });
+            }
+        }
+        if (body.proxy !== undefined) {
+            if (typeof body.proxy !== 'object' || body.proxy === null) {
+                return reply.code(400).send({ error: 'proxy must be an object' });
+            }
+            if (body.proxy.enabled !== undefined && typeof body.proxy.enabled !== 'boolean') {
+                return reply.code(400).send({ error: 'proxy.enabled must be a boolean' });
+            }
+            if (body.proxy.url !== undefined && typeof body.proxy.url !== 'string') {
+                return reply.code(400).send({ error: 'proxy.url must be a string' });
+            }
+            if (body.proxy.enabled === true) {
+                try {
+                    parseProxyUrl(body.proxy.url ?? readProxySettings(db).url);
+                } catch (error) {
+                    return reply.code(400).send({ error: (error as Error).message });
+                }
             }
         }
         if (body.dataDirectory !== undefined) {
@@ -212,6 +248,13 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
                 covers.clear();
             }
         }
+        if (body.proxy !== undefined) {
+            const current = readProxySettings(db);
+            const url = body.proxy.url === undefined ? current.url : body.proxy.url.trim();
+            const merged: ProxySettingsDto = { ...current, ...body.proxy, url };
+            db.kvSet(PROXY_KEY, JSON.stringify(merged));
+            await applyProxy(merged);
+        }
         const settings = queue.updateSettings(body);
         persistQueueSettings(db, settings);
         return {
@@ -219,6 +262,7 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             preferredLanguages: getLanguages(),
             uiLanguage: readUiLanguage(db),
             useFirstChapterCovers: covers?.isEnabled() ?? false,
+            proxy: readProxySettings(db),
             ...readBooleanFlags(db)
         };
     });

@@ -320,6 +320,25 @@ export interface QueueSettingsDto {
     historyRetentionDays: number;
 }
 
+/** Outbound proxy used by every request the server makes (sources, downloads,
+ *  covers, webhooks). Disabled or empty URL = direct connection. */
+export interface ProxySettingsDto {
+    enabled: boolean;
+    /** socks5://, socks5h://, http://, https://, http2:// (gost h2 listener),
+     *  with optional user:password@ credentials. */
+    url: string;
+}
+
+/** Response of POST /api/settings/proxy/test. */
+export interface ProxyTestResultDto {
+    ok: boolean;
+    /** Round-trip time of the probe request, in milliseconds. */
+    ms: number;
+    /** Public IP the probe appeared to come from (the proxy's exit IP). */
+    ip?: string;
+    error?: string;
+}
+
 /** Response of GET /api/settings (diskUsedBytes is absent on PATCH). */
 export interface AppSettingsResponseDto {
     queue: QueueSettingsDto;
@@ -341,6 +360,7 @@ export interface AppSettingsResponseDto {
     autoMigrateExactMatch: boolean;
     /** Hide adult sources (tags 'hentai'/'porn'/'adult') from search and lists. */
     hideAdultSources: boolean;
+    proxy: ProxySettingsDto;
     diskUsedBytes: number;
 }
 

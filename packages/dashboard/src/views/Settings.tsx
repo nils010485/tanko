@@ -1,10 +1,10 @@
 /**
  * Settings view organized in tabbed sections: general, downloads, languages,
- * data & storage, sources. Edits go through a single sticky save bar;
+ * network, data & storage, sources. Edits go through a single sticky save bar;
  * interface language and cover cache apply instantly.
  */
 
-import type { QueueSettingsDto, SourcesUpdateStatus } from '@tanko/shared';
+import type { ProxySettingsDto, ProxyTestResultDto, QueueSettingsDto, SourcesUpdateStatus } from '@tanko/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '../components/confirm.js';
 import { useToast } from '../components/toast.js';
@@ -19,16 +19,19 @@ function toNonNegative(value: string): number {
     return Math.max(0, Number(value) || 0);
 }
 
-type Section = 'general' | 'downloads' | 'languages' | 'data' | 'sources';
+type Section = 'general' | 'downloads' | 'languages' | 'network' | 'data' | 'sources';
 type SettingsKey = Parameters<TFunction>[0];
 
 const SECTIONS: Array<{ id: Section; labelKey: SettingsKey; descKey: SettingsKey }> = [
     { id: 'general', labelKey: 'settings.sectionGeneral', descKey: 'settings.sectionGeneralDesc' },
     { id: 'downloads', labelKey: 'settings.downloads', descKey: 'settings.sectionDownloadsDesc' },
     { id: 'languages', labelKey: 'settings.languages', descKey: 'settings.sectionLanguagesDesc' },
+    { id: 'network', labelKey: 'settings.network', descKey: 'settings.sectionNetworkDesc' },
     { id: 'data', labelKey: 'settings.sectionData', descKey: 'settings.sectionDataDesc' },
     { id: 'sources', labelKey: 'settings.sources', descKey: 'settings.sectionSourcesDesc' }
 ];
+
+const DIRECT_PROXY: ProxySettingsDto = { enabled: false, url: '' };
 
 /** Content languages offered as filter chips (ISO codes). */
 const CONTENT_LANGUAGES: Array<{ code: string; key: SettingsKey }> = [
@@ -56,6 +59,10 @@ export default function Settings() {
     const [detectStalled, setDetectStalled] = useState(false);
     const [autoMigrateExact, setAutoMigrateExact] = useState(false);
     const [hideAdult, setHideAdult] = useState(false);
+    const [proxy, setProxy] = useState<ProxySettingsDto>(DIRECT_PROXY);
+    const [savedProxy, setSavedProxy] = useState<ProxySettingsDto>(DIRECT_PROXY);
+    const [proxyTest, setProxyTest] = useState<ProxyTestResultDto | null>(null);
+    const [testingProxy, setTestingProxy] = useState(false);
     const [confirmHideAdult, setConfirmHideAdult] = useState(false);
     const [section, setSection] = useState<Section>('general');
     const [confirmClear, setConfirmClear] = useState(false);
@@ -77,6 +84,8 @@ export default function Settings() {
         setDetectStalled(data.stalledSourceDetection ?? false);
         setAutoMigrateExact(data.autoMigrateExactMatch ?? false);
         setHideAdult(data.hideAdultSources ?? false);
+        setProxy(data.proxy ?? DIRECT_PROXY);
+        setSavedProxy(data.proxy ?? DIRECT_PROXY);
         setUpdateStatus(await api.sourcesUpdateStatus());
     }, []);
 
@@ -87,9 +96,10 @@ export default function Settings() {
     /** One save for the whole view: queue settings + language filter. */
     const save = async () => {
         try {
-            const data = await api.updateSettings({ ...draft, preferredLanguages: languages });
+            const data = await api.updateSettings({ ...draft, preferredLanguages: languages, proxy });
             setSettings(data.queue);
             setSavedLanguages(data.preferredLanguages || []);
+            setSavedProxy(data.proxy ?? proxy);
             toast.success(t('settings.saved'));
             await load();
         } catch (error) {
@@ -101,6 +111,7 @@ export default function Settings() {
     const cancel = () => {
         setDraft(settings);
         setLanguages(savedLanguages);
+        setProxy(savedProxy);
     };
 
     const applyToggle = async (
@@ -133,6 +144,25 @@ export default function Settings() {
     const toggleStalledDetection = (value: boolean) => applyToggle(detectStalled, value, { stalledSourceDetection: value }, setDetectStalled);
 
     const toggleAutoMigrateExact = (value: boolean) => applyToggle(autoMigrateExact, value, { autoMigrateExactMatch: value }, setAutoMigrateExact);
+
+    /** Any edit invalidates the last probe: it tested the previous tunnel. */
+    const updateProxy = (next: ProxySettingsDto) => {
+        setProxy(next);
+        setProxyTest(null);
+    };
+
+    /** Probe the proxy as typed (saved or not): reports the exit IP and the round-trip time. */
+    const testProxyConnection = async () => {
+        setProxyTest(null);
+        setTestingProxy(true);
+        try {
+            setProxyTest(await api.testProxy(proxy.url));
+        } catch (error) {
+            setProxyTest({ ok: false, ms: 0, error: (error as Error).message });
+        } finally {
+            setTestingProxy(false);
+        }
+    };
 
     /** Turning the filter on asks for confirmation: mixed sources reduce search coverage. */
     const requestHideAdult = (value: boolean) => {
@@ -229,7 +259,10 @@ export default function Settings() {
     /** Merge one field change into the draft queue settings. */
     const patchDraft = (patch: Partial<QueueSettingsDto>) => setDraft({ ...draft, ...patch });
 
-    const dirty = JSON.stringify(draft) !== JSON.stringify(settings) || JSON.stringify(languages) !== JSON.stringify(savedLanguages);
+    const dirty =
+        JSON.stringify(draft) !== JSON.stringify(settings) ||
+        JSON.stringify(languages) !== JSON.stringify(savedLanguages) ||
+        JSON.stringify(proxy) !== JSON.stringify(savedProxy);
     const active = SECTIONS.find(item => item.id === section) ?? SECTIONS[0];
 
     return (
@@ -358,6 +391,35 @@ export default function Settings() {
                                 })}
                             </div>
                         </div>
+                    )}
+
+                    {section === 'network' && (
+                        <>
+                            <SettingRow label={t('settings.proxyEnabled')} hint={t('settings.proxyEnabledHint')}>
+                                <Toggle checked={proxy.enabled} onChange={enabled => updateProxy({ ...proxy, enabled })} />
+                            </SettingRow>
+                            <SettingRow label={t('settings.proxyUrl')} hint={t('settings.proxyUrlHint')}>
+                                <div className="flex items-center gap-2">
+                                    <Input
+                                        className="w-72"
+                                        value={proxy.url}
+                                        placeholder="socks5h://user:pass@host:1080"
+                                        onChange={url => updateProxy({ ...proxy, url })}
+                                        onEnter={testProxyConnection}
+                                    />
+                                    <Button small variant="ghost" loading={testingProxy} onClick={testProxyConnection} disabled={testingProxy}>
+                                        {testingProxy ? t('settings.proxyTesting') : t('settings.proxyTest')}
+                                    </Button>
+                                </div>
+                            </SettingRow>
+                            {proxyTest && (
+                                <div className={`pb-4 text-xs ${proxyTest.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {proxyTest.ok
+                                        ? t('settings.proxyTestOk', { ms: proxyTest.ms, ip: proxyTest.ip ?? '?' })
+                                        : t('settings.proxyTestFailed', { msg: proxyTest.error ?? '' })}
+                                </div>
+                            )}
+                        </>
                     )}
 
                     {section === 'data' && (
