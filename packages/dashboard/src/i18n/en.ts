@@ -650,6 +650,18 @@ export const en = {
     'settings.historyCleared': '{n} job(s) removed from history',
     'settings.languages': 'Languages',
     'settings.sectionLanguagesDesc': 'Content filter applied at import and on multilingual sources',
+    'settings.network': 'Network',
+    'settings.sectionNetworkDesc': 'Outbound connection used by sources, page downloads, covers and notifications',
+    'settings.proxyEnabled': 'Use a proxy',
+    'settings.proxyEnabledHint':
+        'Sends every outgoing request (searches, page downloads, cover fetches, webhooks, source pack) through this proxy. Applied on save',
+    'settings.proxyUrl': 'Proxy URL',
+    'settings.proxyUrlHint':
+        'socks5:// or socks5h:// (SOCKS5, name resolved by the proxy), http:// or https:// (CONNECT), http2:// for a gost HTTP/2 listener - credentials as user:pass@host:port',
+    'settings.proxyTest': 'Test',
+    'settings.proxyTesting': 'Testing…',
+    'settings.proxyTestOk': 'Tunnel OK: {ms} ms, exit IP {ip}',
+    'settings.proxyTestFailed': 'Tunnel failed: {msg}',
     'settings.languagesHint':
         'Only these languages are kept: they filter sources on import and chapters offered by multilingual sources (MangaDex…). Unchecking everything means no filter.',
     'settings.useFirstChapterCovers': 'Use the first chapter as thumbnail',

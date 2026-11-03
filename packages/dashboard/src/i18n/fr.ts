@@ -653,6 +653,18 @@ export const fr: typeof import('./en.js').en = {
     'settings.historyCleared': '{n} job(s) retiré(s) de l’historique',
     'settings.languages': 'Langues',
     'settings.sectionLanguagesDesc': 'Filtre de contenu appliqué à l’import et aux sources multi-langues',
+    'settings.network': 'Réseau',
+    'settings.sectionNetworkDesc': 'Connexion sortante utilisée par les sources, les téléchargements, les couvertures et les notifications',
+    'settings.proxyEnabled': 'Utiliser un proxy',
+    'settings.proxyEnabledHint':
+        'Fait passer toutes les requêtes sortantes (recherches, téléchargement des pages, couvertures, webhooks, pack de sources) par ce proxy. Appliqué à l’enregistrement',
+    'settings.proxyUrl': 'URL du proxy',
+    'settings.proxyUrlHint':
+        'socks5:// ou socks5h:// (SOCKS5, nom résolu par le proxy), http:// ou https:// (CONNECT), http2:// pour un listener HTTP/2 gost - identifiants en user:pass@host:port',
+    'settings.proxyTest': 'Tester',
+    'settings.proxyTesting': 'Test en cours…',
+    'settings.proxyTestOk': 'Tunnel OK : {ms} ms, IP de sortie {ip}',
+    'settings.proxyTestFailed': 'Échec du tunnel : {msg}',
     'settings.languagesHint':
         'Seules ces langues sont gardées : elles filtrent les sources lors de l’import et les chapitres proposés par les sources multi-langues (MangaDex…). Tout décocher = aucun filtre.',
     'settings.languageEn': 'Anglais',

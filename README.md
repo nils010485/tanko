@@ -29,6 +29,8 @@ you ever managing source outages.
 - Dark web dashboard (English/French) with live updates
 - Optional first-chapter thumbnails cached locally
 - Cron scheduler with Discord/ntfy notifications
+- Optional outbound proxy for every request: SOCKS5 (with auth), HTTP/HTTPS
+  CONNECT or a gost HTTP/2 tunnel, with a built-in connectivity test
 - Existing library import and source failover
 
 ## Quickstart (Docker)

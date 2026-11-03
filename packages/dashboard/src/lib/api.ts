@@ -20,6 +20,8 @@ import type {
     LibraryChapterDto,
     LibraryEntryDto,
     NotificationSettingsDto,
+    ProxySettingsDto,
+    ProxyTestResultDto,
     QueueSettingsDto,
     QueueStatusDto,
     ScheduleSettingsDto,
@@ -286,6 +288,7 @@ export const api = {
             stalledSourceDetection?: boolean;
             autoMigrateExactMatch?: boolean;
             hideAdultSources?: boolean;
+            proxy?: Partial<ProxySettingsDto>;
         }
     ) =>
         request<{
@@ -297,10 +300,13 @@ export const api = {
             stalledSourceDetection: boolean;
             autoMigrateExactMatch: boolean;
             hideAdultSources: boolean;
+            proxy: ProxySettingsDto;
         }>('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify(patch)
         }),
+    /** Probe a proxy (the draft URL, or the saved one when empty) without saving it. */
+    testProxy: (url?: string) => request<ProxyTestResultDto>('/api/settings/proxy/test', { method: 'POST', body: JSON.stringify({ url }) }),
 
     // first-chapter cover cache
     coversStatus: () => request<CoverStatusDto>('/api/library/covers/status'),
