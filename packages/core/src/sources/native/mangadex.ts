@@ -6,7 +6,7 @@
  * legacy connector (same id, registered first in the registry).
  */
 
-import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
+import { retryAfterMs } from '../../shims/request.js';
 import type { ChapterInfo, ChapterOptions, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
 import { checkHealthViaProbe, createThrottle } from './http.js';
@@ -22,7 +22,10 @@ const REGIONAL_LANGUAGES: Record<string, string[]> = {
     zh: ['zh-hk']
 };
 
-const UA = randomUserAgent();
+// MangaDex's edge proof-of-work challenger targets browser impersonators: a
+// browser-looking User-Agent gets "403 Bot challenge not passed" while an
+// identified API client goes straight through. Declare ourselves, don't spoof.
+const UA = 'Tanko (+https://github.com/nils010485/tanko)';
 const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
 
 /** Subset of the MangaDex v5 JSON:API shapes Tanko reads. */
