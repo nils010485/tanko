@@ -654,13 +654,12 @@ export const fr: typeof import('./en.js').en = {
     'settings.languages': 'Langues',
     'settings.sectionLanguagesDesc': 'Filtre de contenu appliqué à l’import et aux sources multi-langues',
     'settings.network': 'Réseau',
-    'settings.sectionNetworkDesc': 'Connexion sortante utilisée par les sources, les téléchargements, les couvertures et les notifications',
+    'settings.sectionNetworkDesc': 'Connexion sortante pour toutes les requêtes',
     'settings.proxyEnabled': 'Utiliser un proxy',
     'settings.proxyEnabledHint':
-        'Fait passer toutes les requêtes sortantes (recherches, téléchargement des pages, couvertures, webhooks, pack de sources) par ce proxy. Appliqué à l’enregistrement',
+        'Fait passer tout le trafic sortant (sources, téléchargements, couvertures, webhooks) par ce proxy. Appliqué à l’enregistrement',
     'settings.proxyUrl': 'URL du proxy',
-    'settings.proxyUrlHint':
-        'socks5:// ou socks5h:// (SOCKS5, nom résolu par le proxy), http:// ou https:// (CONNECT), http2:// pour un listener HTTP/2 gost - identifiants en user:pass@host:port',
+    'settings.proxyUrlHint': 'socks5://, socks5h://, http://, https:// ou http2:// (gost) - identifiants en user:pass@host:port',
     'settings.proxyTest': 'Tester',
     'settings.proxyTesting': 'Test en cours…',
     'settings.proxyTestOk': 'Tunnel OK : {ms} ms, IP de sortie {ip}',
