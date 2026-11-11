@@ -7,7 +7,6 @@ import { AsuraScansConnector } from './asurascans.js';
 import { AzoraFlyConnector } from './azorofly.js';
 import { BilibiliManhuaConnector } from './bilibili.js';
 import { BlackArmyConnector } from './blackarmy.js';
-import { ComiciConnector } from './comici.js';
 import { comick as comickConnector } from './comick.js';
 import { ComizyConnector } from './comizy.js';
 import { config } from './config.js';
@@ -84,16 +83,6 @@ export function createNativeConnectors(): SourceAdapter[] {
                 tags: ['webtoon', 'english']
             })
         ),
-        // theme decodes chapter pages client-side (blob:) -> capture mode
-        new MadaraConnector(
-            config('raijinscans', {
-                id: 'raijinscans',
-                label: 'Raijin Scans',
-                base: 'https://raijin-scans.fr',
-                capturePages: true,
-                tags: ['manga', 'french', 'webtoon']
-            })
-        ),
         // Aqua theme renamed the Madara classes (aqua-*)
         new MadaraConnector(
             config('aquareader', {
@@ -119,14 +108,6 @@ export function createNativeConnectors(): SourceAdapter[] {
                 label: 'Arthur Scan',
                 base: 'https://arthurscan.xyz',
                 tags: ['manga', 'portuguese']
-            })
-        ),
-        new MadaraConnector(
-            config('asurascans-tr', {
-                id: 'asurascans-tr',
-                label: 'Asura Scans (TR)',
-                base: 'https://asurascans.com.tr',
-                tags: ['manga', 'turkish', 'webtoon']
             })
         ),
         new MadaraConnector(
@@ -224,11 +205,6 @@ export function createNativeConnectors(): SourceAdapter[] {
         new FlameScansConnector(),
         new AzoraFlyConnector(),
         new AssortedScansConnector(),
-        new ComiciConnector(config('bigcomics', { id: 'bigcomics', label: 'BIG COMICS', base: 'https://bigcomics.jp', tags: ['manga', 'japanese'] })),
-        new ComiciConnector(
-            config('takecomic', { id: 'takecomic', label: 'Takeshobo (takecomic)', base: 'https://takecomic.jp', tags: ['manga', 'japanese'] })
-        ),
-        new ComiciConnector(config('kimicomi', { id: 'kimicomi', label: 'Kimi to Comic', base: 'https://kimicomi.com', tags: ['manga', 'japanese'] })),
         new MangalibConnector(),
         new MagaPokeConnector(),
         new MangadeniziConnector(),
@@ -265,14 +241,6 @@ export function createNativeConnectors(): SourceAdapter[] {
                 id: 'manhwaclub',
                 label: 'ManhwaClub',
                 base: 'https://manhwaclub.net',
-                tags: ['webtoon', 'english', 'manhwa']
-            })
-        ),
-        new MadaraConnector(
-            config('webtoonscan', {
-                id: 'webtoonscan',
-                label: 'WebtoonScan',
-                base: 'https://webtoonscan.com',
                 tags: ['webtoon', 'english', 'manhwa']
             })
         ),
