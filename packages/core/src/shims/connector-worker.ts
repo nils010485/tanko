@@ -19,6 +19,7 @@
 import { pathToFileURL } from 'node:url';
 import type { EngineContext } from '../engine.js';
 import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
+import { searchLegacyMangas } from '../sources/legacy-search.js';
 import { currentAbortSignal, withAbortScope } from './abort-scope.js';
 import { isAntiBotShell } from './browser.js';
 import { evaluateIsolated } from './evaluate.js';
@@ -249,14 +250,8 @@ function startConnectorWorker(): void {
     const mangaInfo = (manga: LegacyManga): { id: string; title: string } => ({ id: manga.id, title: manga.title });
 
     const searchMangas = async (connector: LegacyConnector, query: string): Promise<Array<{ id: string; title: string }>> => {
-        // same fast path as the adapter: site search endpoint when the connector has one
-        if (typeof connector._searchMangas === 'function') {
-            const mangas = await connector._searchMangas(query);
-            return (mangas || []).map(mangaInfo);
-        }
-        const needle = query.trim().toLowerCase();
-        const mangas = await promisify<LegacyManga[] | undefined>(callback => connector._getMangaList(callback));
-        return (mangas || []).filter(manga => manga.title?.toLowerCase().includes(needle)).map(mangaInfo);
+        const mangas = await searchLegacyMangas(connector, query, () => promisify<LegacyManga[] | undefined>(callback => connector._getMangaList(callback)));
+        return mangas.map(mangaInfo);
     };
 
     const runMethod = async (connector: LegacyConnector, method: string, args: unknown[]): Promise<unknown> => {
