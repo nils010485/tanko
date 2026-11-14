@@ -23,12 +23,12 @@ const SEARCH_TIMEOUT_MS = 30_000;
 /** Display cap for one direct search: the response reports the true total. */
 const SEARCH_RESULTS_CAP = 50;
 
-async function timedSourceSearch(source: SourceAdapter, sourceId: string, query: string): Promise<MangaInfo[]> {
+async function timedSourceSearch(source: SourceAdapter, sourceId: string, query: string, languages: string[]): Promise<MangaInfo[]> {
     try {
         return await new Promise<MangaInfo[]>((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('source search timed out')), SEARCH_TIMEOUT_MS);
             timer.unref();
-            source.searchMangas(query).then(
+            source.searchMangas(query, { languages }).then(
                 value => {
                     clearTimeout(timer);
                     resolve(value);
@@ -209,10 +209,11 @@ export function registerSourceRoutes(
             return reply.code(400).send({ error: 'Query parameter "q" is required' });
         }
         return withSource(reply, sourceRegistry, sourceId, async source => {
-            const mangas = await timedSourceSearch(source, sourceId, query);
+            const preferred = getPreferredLanguages();
+            const mangas = await timedSourceSearch(source, sourceId, query, preferred);
             // drop titles known (native MangaDex metadata) to lack chapters in
             // the preferred languages - they would list 0 chapters later
-            const allowed = mangas.filter(manga => mangaLanguagesAllowed(manga.languages, getPreferredLanguages()));
+            const allowed = mangas.filter(manga => mangaLanguagesAllowed(manga.languages, preferred));
             // native MangaDex emits one entry per title/alt-title (import matching
             // relies on it): display keeps a single card per manga
             const unique = new Map<string, MangaInfo>();

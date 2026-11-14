@@ -80,3 +80,38 @@ describe('MangaDexConnector.searchMangas', () => {
         expect(url.searchParams.get('hasAvailableChapters')).toBe('true');
     });
 });
+
+describe('MangaDexConnector.searchMangas readable chapters', () => {
+    const searchPayload = {
+        result: 'ok',
+        data: [
+            { id: 'external-only', attributes: { title: { en: 'External Only' }, availableTranslatedLanguages: ['en'] } },
+            { id: 'readable', attributes: { title: { en: 'Readable' }, availableTranslatedLanguages: ['en'] } }
+        ]
+    };
+
+    function serveSearch(chapterTotals: Record<string, number>) {
+        const mock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = new URL(String(input));
+            const json = url.pathname === '/manga' ? searchPayload : { result: 'ok', data: [], total: chapterTotals[url.searchParams.get('manga') ?? ''] ?? 0 };
+            return new Response(JSON.stringify(json), { headers: { 'Content-Type': 'application/json' } });
+        });
+        vi.stubGlobal('fetch', mock);
+        return mock;
+    }
+
+    it('drops a title whose only chapters are hosted elsewhere', async () => {
+        const mock = serveSearch({ 'external-only': 0, readable: 3 });
+        const mangas = await new MangaDexConnector().searchMangas('x', { languages: ['en'] });
+        expect(mangas.map(manga => manga.id)).toEqual(['readable']);
+        const probe = new URL(String(mock.mock.calls[1]?.[0]));
+        expect(probe.searchParams.get('includeExternalUrl')).toBe('0');
+    });
+
+    it('probes nothing when no language is requested', async () => {
+        const mock = serveSearch({});
+        const mangas = await new MangaDexConnector().searchMangas('x');
+        expect(mangas).toHaveLength(2);
+        expect(mock).toHaveBeenCalledTimes(1);
+    });
+});

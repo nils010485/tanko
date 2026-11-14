@@ -132,13 +132,14 @@ export class GlobalSearchService {
                 throw new Error('source not available');
             }
             const budget = Math.max(1, Math.min(sourceTimeout, deadline - Date.now()));
+            const preferred = this.opts.getPreferredLanguages?.() || [];
             const mangas = await new Promise<MangaInfo[]>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     timedOut = true;
                     reject(new Error('source search timed out'));
                 }, budget);
                 timer.unref();
-                adapter.searchMangas(job.query).then(
+                adapter.searchMangas(job.query, { languages: preferred }).then(
                     value => {
                         clearTimeout(timer);
                         resolve(value);
@@ -157,7 +158,6 @@ export class GlobalSearchService {
                     unique.set(String(manga.id), manga);
                 }
             }
-            const preferred = this.opts.getPreferredLanguages?.() || [];
             job.results.push({
                 sourceId: target.id,
                 sourceLabel: target.label,

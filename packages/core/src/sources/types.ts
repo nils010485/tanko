@@ -55,7 +55,7 @@ export interface SourceAdapter {
     initialize?(): Promise<void>;
 
     /** Search mangas by free-text query. */
-    searchMangas(query: string): Promise<MangaInfo[]>;
+    searchMangas(query: string, options?: ChapterOptions): Promise<MangaInfo[]>;
 
     /** List chapters for a manga. `options.languages` lets sites that can
      *  filter server-side (MangaDex) fetch only the preferred languages - a
