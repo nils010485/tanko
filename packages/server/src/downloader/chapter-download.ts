@@ -105,7 +105,7 @@ export async function downloadChapterPages(
         if (archive) {
             archive.file(fileName, Buffer.from(data));
         } else {
-            fs.writeFileSync(path.join(paths.directory, fileName), Buffer.from(data));
+            await fs.promises.writeFile(path.join(paths.directory, fileName), Buffer.from(data));
         }
 
         ctx.update(row.id, {

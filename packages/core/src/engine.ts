@@ -8,6 +8,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { LegacyConnector } from './legacy-types.js';
 import { currentAbortSignal } from './shims/abort-scope.js';
+import { browserEnabled, getPageHTML } from './shims/browser.js';
+import { ConnectorPool } from './shims/connector-pool.js';
 import { installGlobals } from './shims/globals.js';
 import { HeadlessRequest } from './shims/request.js';
 import { HeadlessSettings } from './shims/settings.js';
@@ -42,6 +44,9 @@ export const VENDOR_PATH = path.resolve(import.meta.dirname, '../vendor');
 export const CONNECTOR_OVERRIDES = ['MangaFox.mjs', 'ComicMeteor.mjs', 'ComicPolaris.mjs', 'LELScan.mjs', 'ToomicsKO.mjs'];
 
 const connectorRegistry = new Map<string, LegacyConnector>();
+/** Connector id -> source file: a worker re-imports the very file the host loaded. */
+const connectorFilePaths = new Map<string, string>();
+let connectorPool: ConnectorPool | undefined;
 let fetchWrapped = false;
 /**
  * The global fetch wrapper is installed once but must delegate to the
@@ -78,6 +83,20 @@ export function getVendorDirectory(): string {
     return activeVendorPath;
 }
 
+export function getConnectorFilePath(id: string): string | undefined {
+    return connectorFilePaths.get(id);
+}
+
+/** Off-main-thread connector pool of the active engine (undefined before createEngine). */
+export function getConnectorPool(): ConnectorPool | undefined {
+    return connectorPool;
+}
+
+/** Escape hatch for tests that stub the in-process engine: run every connector call on this thread. */
+export function inProcessConnectors(): boolean {
+    return process.env.TANKO_CONNECTOR_INPROCESS === '1';
+}
+
 export async function createEngine(options: { dataDirectory: string }): Promise<EngineContext> {
     installGlobals();
 
@@ -102,6 +121,18 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     const request = new HeadlessRequest();
     activeRequest = request;
 
+    // Legacy list operations parse HTML synchronously (seconds on a big
+    // catalog): they run in worker processes, fed by this session. A second
+    // engine reuses the process, so the previous pool's workers must go.
+    void connectorPool?.dispose().catch(() => undefined);
+    connectorPool = new ConnectorPool({
+        request,
+        renderPage: (url, options) =>
+            browserEnabled()
+                ? getPageHTML(url, { userAgent: request.userAgent, timeoutMs: options.timeoutMs })
+                : Promise.reject(new Error('no browser backend'))
+    });
+
     // Intercept the legacy 'connector://' protocol used for protected media
     // (e.g. MangaDex@Home) and route it to the owning connector.
     if (!fetchWrapped) {
@@ -111,6 +142,17 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
             const url = requestUrl(input);
             if (url?.startsWith('connector://')) {
                 const uri = new URL(url);
+                const connectorFile = inProcessConnectors() ? undefined : getConnectorFilePath(uri.hostname);
+                if (connectorPool && connectorFile) {
+                    const result = await connectorPool.run<{ data: ArrayBuffer; mimeType: string }>(
+                        uri.hostname,
+                        connectorFile,
+                        'handleConnectorURI',
+                        [uri.href],
+                        currentAbortSignal()
+                    );
+                    return new Response(new Blob([result.data], { type: result.mimeType }), { status: 200 });
+                }
                 const connector = connectorRegistry.get(uri.hostname);
                 if (!connector) {
                     throw new Error(`No connector registered for protocol host "${uri.hostname}"`);
@@ -213,6 +255,7 @@ export async function loadConnectors(): Promise<LoadResult> {
             const connector = new module.default() as LegacyConnector;
             if (!connectorRegistry.has(connector.id)) {
                 connectorRegistry.set(connector.id, connector);
+                connectorFilePaths.set(String(connector.id), path.join(directory, file));
                 connectors.push(connector);
             }
         } catch (error) {

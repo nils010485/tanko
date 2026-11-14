@@ -127,6 +127,32 @@ describe('GlobalSearchService', () => {
         expect(status.results.filter(result => result.status === 'skipped').length).toBeGreaterThanOrEqual(2);
     });
 
+    it('get(jobId, since) returns only the delta, get(jobId) returns everything', async () => {
+        const service = makeService(
+            [
+                fakeAdapter('a', async () => [{ id: 'm1', title: 'A1' }]),
+                fakeAdapter('b', async () => [{ id: 'm2', title: 'B1' }]),
+                fakeAdapter('c', async () => [])
+            ],
+            [
+                { id: 'a', label: 'A', kind: 'legacy' },
+                { id: 'b', label: 'B', kind: 'legacy' },
+                { id: 'c', label: 'C', kind: 'legacy' }
+            ]
+        );
+        const { jobId } = await service.start('x');
+        const full = await waitForDone(service, jobId);
+        expect(service.get(jobId)?.results).toHaveLength(full.completed);
+        expect(service.get(jobId, 0)?.results).toHaveLength(full.completed);
+        const all = service.get(jobId);
+        const tail = service.get(jobId, 2);
+        expect(tail?.results).toEqual(all?.results.slice(2));
+        expect(tail?.results).toHaveLength(full.completed - 2);
+        expect(tail?.completed).toBe(full.completed);
+        expect(service.get(jobId, full.completed)?.results).toEqual([]);
+        expect(service.get(jobId, full.completed + 10)?.results).toEqual([]);
+    });
+
     it('cancel() on an unknown or finished job returns false', async () => {
         const service = makeService([fakeAdapter('a', async () => [])], [{ id: 'a', label: 'A', kind: 'legacy' }]);
         expect(service.cancel(999)).toBe(false);

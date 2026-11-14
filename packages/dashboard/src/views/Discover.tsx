@@ -366,6 +366,7 @@ export default function Discover({
             }
             setGlobalStatus({ jobId, query: searched, total: targets, completed: 0, done: false, results: [] });
             let pollFailures = 0;
+            let since = 0;
             for (;;) {
                 await new Promise(resolve => setTimeout(resolve, 1200));
                 if (run !== globalSeq.current) {
@@ -373,7 +374,7 @@ export default function Discover({
                 }
                 let status: GlobalSearchStatusDto | null = null;
                 try {
-                    status = await api.globalSearch(jobId);
+                    status = await api.globalSearch(jobId, since);
                     pollFailures = 0;
                 } catch (error) {
                     // 404 = the server purged the job (restart): keep what we have
@@ -387,7 +388,9 @@ export default function Discover({
                     }
                 }
                 if (status) {
-                    setGlobalStatus(status);
+                    // results are append-only: the poll only carries the delta
+                    since += status.results.length;
+                    setGlobalStatus(prev => (prev ? { ...status, results: [...prev.results, ...status.results] } : status));
                     if (status.done) {
                         return;
                     }

@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SourceAdapter } from '@tanko/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CachedSourceAdapter } from '../src/cache/cached-adapter.js';
 import { SqliteCacheStore } from '../src/cache/sqlite-store.js';
+import { TieredCacheStore } from '../src/cache/tiered-store.js';
 import { Database } from '../src/db.js';
 
 let tmpDir: string;
@@ -44,6 +45,99 @@ describe('SqliteCacheStore', () => {
         expect(await store.clear()).toBe(2);
         expect(await store.get('a')).toBeUndefined();
         expect(await store.get('b')).toBeUndefined();
+    });
+
+    it('purges expired rows on the interval, not on every set', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+            const timed = new SqliteCacheStore(database);
+            const rowCount = () => (database.db.prepare('SELECT COUNT(*) AS n FROM cache').get() as { n: number }).n;
+
+            await timed.set('stale', 'value', 1);
+            vi.setSystemTime(new Date('2026-01-01T00:00:02Z'));
+            await timed.set('fresh', 'value', 3600);
+            expect(rowCount()).toBe(2);
+
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            expect(rowCount()).toBe(1);
+            expect(database.db.prepare('SELECT key FROM cache').get()).toEqual({ key: 'fresh' });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe('TieredCacheStore', () => {
+    let tiered: TieredCacheStore;
+
+    beforeEach(() => {
+        tiered = new TieredCacheStore(store);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('serves repeated reads from memory without re-reading SQLite', async () => {
+        const innerRead = vi.spyOn(store, 'getWithExpiry');
+        await tiered.set('catalog', [{ id: 'm1', title: 'Solo Leveling' }], 60);
+
+        expect(await tiered.get('catalog')).toEqual([{ id: 'm1', title: 'Solo Leveling' }]);
+        expect(await tiered.get('catalog')).toEqual([{ id: 'm1', title: 'Solo Leveling' }]);
+        expect(innerRead).toHaveBeenCalledTimes(0);
+    });
+
+    it('parses a persisted blob once when it is not in memory', async () => {
+        await store.set('catalog', [{ id: 'm1' }, { id: 'm2' }], 60);
+        const fresh = new TieredCacheStore(store);
+        const parse = vi.spyOn(JSON, 'parse');
+
+        expect(await fresh.get('catalog')).toEqual([{ id: 'm1' }, { id: 'm2' }]);
+        expect(await fresh.get('catalog')).toEqual([{ id: 'm1' }, { id: 'm2' }]);
+        expect(parse).toHaveBeenCalledTimes(1);
+    });
+
+    it('honors the TTL of memory entries', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+            const timed = new TieredCacheStore(store);
+            await timed.set('short', 'value', 5);
+            expect(await timed.get('short')).toBe('value');
+
+            vi.setSystemTime(new Date('2026-01-01T00:00:06Z'));
+            expect(await timed.get('short')).toBeUndefined();
+            expect(await timed.get('short')).toBeUndefined();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('invalidates memory on set, delete and clear', async () => {
+        await tiered.set('k', 1, 60);
+        expect(await tiered.get('k')).toBe(1);
+
+        await tiered.set('k', 2, 60);
+        expect(await tiered.get('k')).toBe(2);
+
+        await tiered.delete('k');
+        expect(await tiered.get('k')).toBeUndefined();
+
+        await tiered.set('a', 1, 60);
+        await tiered.set('b', 2, 60);
+        expect(await tiered.get('a')).toBe(1);
+        expect(await tiered.get('b')).toBe(2);
+        expect(await tiered.clear()).toBe(2);
+        expect(await tiered.get('a')).toBeUndefined();
+        expect(await tiered.get('b')).toBeUndefined();
+    });
+
+    it('reads through to SQLite when the memory tier is empty', async () => {
+        await store.set('k', { a: 1 }, 60);
+        expect(await tiered.get('k')).toEqual({ a: 1 });
+        expect(await store.get('k')).toEqual({ a: 1 });
+        expect(await tiered.get('missing')).toBeUndefined();
     });
 });
 

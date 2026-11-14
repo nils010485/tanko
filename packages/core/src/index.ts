@@ -1,8 +1,18 @@
 // Public surface: only what server/tests actually import from the package
 // root - internal modules use relative paths (see each shim/module).
-export { CONNECTOR_OVERRIDES, createEngine, getVendorDirectory, loadConnectors, VENDOR_PATH } from './engine.js';
+export {
+    CONNECTOR_OVERRIDES,
+    createEngine,
+    getConnectorFilePath,
+    getConnectorPool,
+    getVendorDirectory,
+    inProcessConnectors,
+    loadConnectors,
+    VENDOR_PATH
+} from './engine.js';
 export { closeBrowser, isAntiBotShell } from './shims/browser.js';
-export { HeadlessRequest, randomUserAgent, retryAfterMs } from './shims/request.js';
+export { ConnectorPool, type ConnectorPoolOptions } from './shims/connector-pool.js';
+export { HeadlessRequest, HostGate, randomUserAgent, retryAfterMs } from './shims/request.js';
 export { createComicInfoXML } from './shims/storage.js';
 export { LegacySourceAdapter } from './sources/legacy-adapter.js';
 export { normalizeAsuraPath } from './sources/native/asurascans.js';

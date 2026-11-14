@@ -110,9 +110,11 @@ export function retryAfterMs(response: Response): number | undefined {
     return Number.isNaN(date) ? undefined : Math.min(Math.max(date - Date.now(), 0), MAX_RETRY_DELAY_MS);
 }
 
-class HostGate {
+export class HostGate {
     private inFlight = new Map<string, number>();
     private waiters = new Map<string, Array<() => void>>();
+
+    constructor(private readonly maxInFlight: number = MAX_IN_FLIGHT_PER_HOST) {}
 
     async run<T>(url: string, task: () => Promise<T>): Promise<T> {
         const host = new URL(url).hostname;
@@ -126,7 +128,7 @@ class HostGate {
 
     private async acquire(host: string): Promise<void> {
         const current = this.inFlight.get(host) ?? 0;
-        if (current < MAX_IN_FLIGHT_PER_HOST) {
+        if (current < this.maxInFlight) {
             this.inFlight.set(host, current + 1);
             return;
         }

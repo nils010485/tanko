@@ -1,7 +1,9 @@
-import { type MangaInfo, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
+import { HostGate, LegacySourceAdapter, type MangaInfo, NOT_IN_BROWSER_MODE, type SourceAdapter, SourceError, type SourceRegistry } from '@tanko/core';
 import type { ChapterDto, MangaDto, SourceDto, SourceSearchResponseDto } from '@tanko/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { unwrapSource } from '../cache/cached-adapter.js';
 import { adultAllowed, chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
+import { ByteBudgetCache } from '../util/image-cache.js';
 import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
@@ -107,18 +109,21 @@ async function enrichMangaDexCovers(mangas: MangaInfo[]): Promise<void> {
     }
 }
 
-/** Minimal shape of the caching decorator around a legacy connector (engine RequestOptions). */
-interface ConnectorHolder {
-    connector?: { requestOptions?: RequestInit };
-    inner?: { connector?: { requestOptions?: RequestInit } };
-}
-
 /** Global Engine injected by the boot shims (legacy fetch honouring connector requestOptions). */
 type EngineGlobal = typeof globalThis & { Engine: { Request: { fetch: (request: Request) => Promise<Response> } } };
 /** Hard cap on proxied page images (memory safety). */
 const MAX_PAGE_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PAGE_IMAGE_CACHE_BYTES = 200 * 1024 * 1024;
+/** Concurrent outbound page-image fetches per host: a preview must not storm a CDN. */
+const PAGE_IMAGE_HOST_CONCURRENCY = 4;
 
-/** Fetch a page image: connector:// indirection, legacy engine fetch, or plain fetch with browser-ish headers. */
+interface PageImageEntry {
+    contentType: string;
+    body: Buffer;
+}
+
+/** Fetch a page image: connector:// indirection, legacy engine fetch, the
+ *  source's own browser-session transport, or plain fetch with browser-ish headers. */
 async function fetchPageImage(url: string, source: SourceAdapter | undefined): Promise<Response> {
     if (url.startsWith('connector://')) {
         return fetch(url);
@@ -126,11 +131,9 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
     // SSRF guard: entry URL must resolve publicly; the plain-fetch branch
     // re-checks every redirect hop (the legacy engine's internal redirects are not)
     await assertPublicHttpUrl(url);
-    if (source && source.kind === 'legacy') {
-        // unwrap caching decorator to reach the legacy connector (requestOptions)
-        const holder = source as unknown as ConnectorHolder;
-        const connector = holder.connector || holder.inner?.connector;
-        const legacyRequest = new Request(url, connector?.requestOptions);
+    const adapter = source ? unwrapSource(source) : undefined;
+    if (adapter instanceof LegacySourceAdapter) {
+        const legacyRequest = new Request(url, adapter.connector.requestOptions);
         const response = await (globalThis as EngineGlobal).Engine.Request.fetch(legacyRequest);
         // the legacy engine follows redirects internally and cannot be
         // hop-checked: the final URL is the last guard available - refuse to
@@ -138,11 +141,23 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
         await assertPublicHttpUrl(response.url || url);
         return response;
     }
+    // native connectors may run inside a solved browser session: their image
+    // host blocks plain HTTP too (undici TLS fingerprint) - use their transport
+    if (adapter?.fetchPageImage) {
+        try {
+            const { mime, data } = await adapter.fetchPageImage(url);
+            return new Response(Buffer.from(data), { status: 200, headers: { 'content-type': mime } });
+        } catch (error) {
+            if ((error as Error).message !== NOT_IN_BROWSER_MODE) {
+                throw error;
+            }
+        }
+    }
     return fetchGuarded(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0',
             Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
-            Referer: source?.url ? `${source.url}/` : url
+            Referer: adapter?.url ? `${adapter.url}/` : url
         },
         signal: AbortSignal.timeout(60000)
     });
@@ -154,6 +169,9 @@ export function registerSourceRoutes(
     getPreferredLanguages: () => string[],
     getHideAdultSources: () => boolean
 ): void {
+    const pageImageCache = new ByteBudgetCache<PageImageEntry>(MAX_PAGE_IMAGE_CACHE_BYTES, entry => entry.body.length);
+    const pageImageGate = new HostGate(PAGE_IMAGE_HOST_CONCURRENCY);
+
     app.get('/api/sources', async (): Promise<SourceDto[]> => {
         const sources = await sourceRegistry.list();
         const hideAdult = getHideAdultSources();
@@ -233,9 +251,11 @@ export function registerSourceRoutes(
         return app.globalSearch.start(query);
     });
 
-    app.get<{ Params: { jobId: string } }>('/api/sources/search-all/:jobId', async (request, reply) => {
+    app.get<{ Params: { jobId: string }; Querystring: { since?: string } }>('/api/sources/search-all/:jobId', async (request, reply) => {
         const jobId = Number(request.params.jobId);
-        const status = Number.isInteger(jobId) && jobId > 0 ? app.globalSearch.get(jobId) : undefined;
+        const parsedSince = Number.parseInt(request.query.since ?? '0', 10);
+        const since = Number.isInteger(parsedSince) && parsedSince > 0 ? parsedSince : 0;
+        const status = Number.isInteger(jobId) && jobId > 0 ? app.globalSearch.get(jobId, since) : undefined;
         if (!status) {
             return reply.code(404).send({ error: `Search job "${request.params.jobId}" not found` });
         }
@@ -303,15 +323,24 @@ export function registerSourceRoutes(
             return reply.code(400).send({ error: 'Query parameter "url" is required' });
         }
         const source = await sourceRegistry.get(sourceId);
+        const cacheKey = `${sourceId}:${url}`;
+        const cached = pageImageCache.get(cacheKey);
+        if (cached) {
+            return reply.header('Content-Type', cached.contentType).header('Cache-Control', 'public, max-age=3600').header('X-Cache', 'hit').send(cached.body);
+        }
         try {
-            const response = await fetchPageImage(url, source);
-            if (!response.ok) {
-                return reply.code(502).send({ error: `HTTP ${response.status}` });
-            }
-            const buffer = await readBodyCapped(response, MAX_PAGE_IMAGE_BYTES);
-            reply.header('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+            const entry = await pageImageGate.run(url, async () => {
+                const response = await fetchPageImage(url, source);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const body = await readBodyCapped(response, MAX_PAGE_IMAGE_BYTES);
+                return { contentType: response.headers.get('content-type') || 'image/jpeg', body };
+            });
+            pageImageCache.set(cacheKey, entry);
+            reply.header('Content-Type', entry.contentType);
             reply.header('Cache-Control', 'public, max-age=3600');
-            return reply.send(buffer);
+            return reply.send(entry.body);
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });
         }

@@ -71,8 +71,8 @@ export class GlobalSearchService {
         return { jobId: job.id, targets: targets.length };
     }
 
-    /** Polling snapshot; undefined once the job has been purged. */
-    get(jobId: number): GlobalSearchStatusDto | undefined {
+    /** Polling snapshot; undefined once the job has been purged. `since` skips already-received results (append-only). */
+    get(jobId: number, since = 0): GlobalSearchStatusDto | undefined {
         const job = this.jobs.get(jobId);
         if (!job) {
             return undefined;
@@ -84,7 +84,7 @@ export class GlobalSearchService {
             completed: job.results.length,
             done: job.done,
             cancelled: job.cancelled || undefined,
-            results: [...job.results]
+            results: job.results.slice(since)
         };
     }
 
