@@ -5,6 +5,7 @@ import { unwrapSource } from '../cache/cached-adapter.js';
 import { adultAllowed, chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
 import { ByteBudgetCache } from '../util/image-cache.js';
 import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
+import { withTimeout } from '../util/timeout.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
     // coded error bodies: the dashboard localizes 'source_error' itself
@@ -83,16 +84,16 @@ interface MangaDexResponse {
     }>;
 }
 
-async function enrichMangaDexCovers(mangas: MangaInfo[]): Promise<void> {
+async function enrichMangaDexCovers(mangas: MangaInfo[]): Promise<MangaInfo[]> {
     try {
         const ids = mangas.map(m => m.id).filter((id): id is string => typeof id === 'string');
-        if (ids.length === 0) return;
+        if (ids.length === 0) return mangas;
         const url = new URL('https://api.mangadex.org/manga');
         url.searchParams.set('limit', String(ids.length));
         for (const id of ids) url.searchParams.append('ids[]', id);
         url.searchParams.append('includes[]', 'cover_art');
         const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        if (!response.ok) return;
+        if (!response.ok) return mangas;
         const json: MangaDexResponse = await response.json();
         const covers = new Map<string, string>();
         for (const item of json.data || []) {
@@ -101,11 +102,9 @@ async function enrichMangaDexCovers(mangas: MangaInfo[]): Promise<void> {
                 covers.set(item.id, `https://uploads.mangadex.org/covers/${item.id}/${rel.attributes.fileName}.256.jpg`);
             }
         }
-        for (const manga of mangas) {
-            if (covers.has(manga.id)) manga.thumbnail = covers.get(manga.id);
-        }
+        return mangas.map(manga => (covers.has(manga.id) ? { ...manga, thumbnail: covers.get(manga.id) } : manga));
     } catch {
-        /* covers are best-effort */
+        return mangas; // covers are best-effort
     }
 }
 
@@ -116,6 +115,8 @@ const MAX_PAGE_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_PAGE_IMAGE_CACHE_BYTES = 200 * 1024 * 1024;
 /** Concurrent outbound page-image fetches per host: a preview must not storm a CDN. */
 const PAGE_IMAGE_HOST_CONCURRENCY = 4;
+/** Budget for the source's own image transport: its internal retry ladder can be long (comick ~254s) but must not hold a gate slot forever. */
+const PAGE_IMAGE_FETCH_TIMEOUT_MS = 360_000;
 
 interface PageImageEntry {
     contentType: string;
@@ -145,7 +146,7 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
     // host blocks plain HTTP too (undici TLS fingerprint) - use their transport
     if (adapter?.fetchPageImage) {
         try {
-            const { mime, data } = await adapter.fetchPageImage(url);
+            const { mime, data } = await withTimeout(adapter.fetchPageImage(url), PAGE_IMAGE_FETCH_TIMEOUT_MS, `page image ${url}`);
             return new Response(Buffer.from(data), { status: 200, headers: { 'content-type': mime } });
         } catch (error) {
             if ((error as Error).message !== NOT_IN_BROWSER_MODE) {
@@ -221,9 +222,9 @@ export function registerSourceRoutes(
                 }
             }
             const all = [...unique.values()];
-            const sliced = all.slice(0, SEARCH_RESULTS_CAP);
+            let sliced = all.slice(0, SEARCH_RESULTS_CAP);
             if (sourceId === 'mangadex') {
-                await enrichMangaDexCovers(sliced);
+                sliced = await enrichMangaDexCovers(sliced);
             }
             return {
                 total: all.length,

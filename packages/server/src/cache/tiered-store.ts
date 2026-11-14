@@ -45,4 +45,8 @@ export class TieredCacheStore implements CacheStore {
         this.memory.clear();
         return removed;
     }
+
+    dispose(): void {
+        this.inner.dispose();
+    }
 }

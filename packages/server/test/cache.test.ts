@@ -19,6 +19,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    store.dispose();
     database.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
 });

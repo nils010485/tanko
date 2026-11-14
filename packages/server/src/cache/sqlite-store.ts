@@ -7,13 +7,15 @@ import type { CacheStore } from './cache.js';
 export interface CacheEntry {
     value: unknown;
     expiresAt: number;
-    /** Serialized size in bytes, precomputed so LRU eviction never re-stringifies. */
+    /** Precomputed serialized string length (code units, not bytes) so eviction never re-stringifies; both cache tiers use this same budget metric. */
     bytes: number;
 }
 
 const PURGE_INTERVAL_MS = 5 * 60 * 1000;
 
 export class SqliteCacheStore implements CacheStore {
+    private readonly purgeTimer: ReturnType<typeof setInterval>;
+
     constructor(private readonly db: Database) {
         this.db.db.exec(`
             CREATE TABLE IF NOT EXISTS cache (
@@ -23,7 +25,13 @@ export class SqliteCacheStore implements CacheStore {
             );
             CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires_at);
         `);
-        setInterval(() => this.purgeExpired(), PURGE_INTERVAL_MS).unref();
+        this.purgeTimer = setInterval(() => this.purgeExpired(), PURGE_INTERVAL_MS);
+        this.purgeTimer.unref();
+    }
+
+    /** Stop the purge interval before the database handle is closed. */
+    dispose(): void {
+        clearInterval(this.purgeTimer);
     }
 
     /** Reads a row and returns it with its expiration timestamp (single parse). */

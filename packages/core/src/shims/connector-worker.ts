@@ -75,21 +75,13 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     return Promise.race([promise, aborted]);
 }
 
-/** IPC values must be structured-cloneable; connectors hand back class instances. */
+/** IPC values must be structured-cloneable; a non-cloneable result is a real failure, not silently coerced. */
 function transferable(value: unknown): unknown {
-    try {
-        structuredClone(value);
-        return value;
-    } catch {
-        return JSON.parse(JSON.stringify(value));
-    }
+    return structuredClone(value);
 }
 
 function startConnectorWorker(): void {
-    // the host's environment carries secrets and proxies: nothing below may see it
-    for (const key of Object.keys(process.env)) {
-        delete process.env[key];
-    }
+    // the pool forks this entry with a minimal env (no host secrets/proxies);
     // must be set before any connector code runs: page scripts are evaluated
     // in this process, a nested fork would escape the worker boundary
     process.env.TANKO_EVAL_INPROCESS = '1';
@@ -140,7 +132,8 @@ function startConnectorWorker(): void {
     const responseOf = async (request: Request, timeoutMs: number): Promise<{ response: Response; url: string }> => {
         const bodyB64 = request.method === 'GET' || request.method === 'HEAD' ? undefined : Buffer.from(await request.arrayBuffer()).toString('base64');
         const wire = await wireRequest({ url: request.url, method: request.method, headers: [...request.headers.entries()], bodyB64, timeoutMs });
-        const response = new Response(Buffer.from(wire.bodyB64, 'base64'), { status: wire.status, headers: wire.headers });
+        const nullBody = wire.status === 204 || wire.status === 205 || wire.status === 304;
+        const response = new Response(nullBody ? null : Buffer.from(wire.bodyB64, 'base64'), { status: wire.status, headers: wire.headers });
         // a Response built from a buffer carries no url: the host reports the redirect target
         return { response, url: wire.url || request.url };
     };

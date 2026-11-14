@@ -104,7 +104,8 @@ export async function runPageEvaluation(payload: EvalPayload, fetchVia: FetchVia
             ...request,
             timeoutMs: Math.min(request.timeoutMs ?? SANDBOX_FETCH_TIMEOUT_MS, remaining)
         });
-        return new Response(Buffer.from(response.bodyB64, 'base64'), { status: response.status, headers: response.headers });
+        const nullBody = response.status === 204 || response.status === 205 || response.status === 304;
+        return new Response(nullBody ? null : Buffer.from(response.bodyB64, 'base64'), { status: response.status, headers: response.headers });
     };
 
     const sandboxFetch = async (input: Request | string, init?: RequestInit): Promise<Response> => {
