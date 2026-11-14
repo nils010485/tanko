@@ -20,7 +20,7 @@
     "jszip": "^3.10.1",
     "linkedom": "^0.18.5",
     "protobufjs": "^7.4.0",
-    "puppeteer-core": "^25.8.0",
+    "puppeteer-core": "^25.17.0",
     "tough-cookie": "^5.0.0"
   },
   "optionalDependencies": {
@@ -29,6 +29,6 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }
