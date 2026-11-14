@@ -700,7 +700,7 @@ export default function Discover({
                             <div
                                 role="listbox"
                                 aria-label={t('discover.searchHistory')}
-                                className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-line bg-card shadow-xl shadow-black/40"
+                                className="absolute z-20 mt-1 w-full origin-top animate-menu-in overflow-hidden rounded-lg border border-line bg-card shadow-xl shadow-black/40"
                             >
                                 {suggestions.map(item => (
                                     <button

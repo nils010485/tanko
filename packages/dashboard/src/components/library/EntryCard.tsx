@@ -68,6 +68,8 @@ interface EntryCardProps {
     menuRef: React.Ref<HTMLDivElement>;
     /** Long-press handlers spread on the card (selection mode entry point). */
     longPress(id: number): React.HTMLAttributes<HTMLElement>;
+    /** Stagger delay (ms) for the entrance animation; only the Library grid sets it, on first reveal. */
+    riseDelay?: number;
 }
 
 function statusBadges(entry: LibraryEntryDto, t: ReturnType<typeof useI18n>['t']) {
@@ -162,7 +164,7 @@ function actionMenu(
                 <IconDots size={14} />
             </IconButton>
             {state.menuFor === entry.id && (
-                <div className="absolute bottom-8 right-0 z-30 w-48 rounded-xl border border-line bg-card p-1.5 shadow-xl shadow-black/60">
+                <div className="absolute bottom-8 right-0 z-30 w-48 origin-bottom-right animate-menu-in rounded-xl border border-line bg-card p-1.5 shadow-xl shadow-black/60">
                     {withChapters &&
                         item(<IconList size={14} />, state.expandedId === entry.id ? t('library.hide') : t('discover.chapters'), () =>
                             handlers.onToggleChapters(entry)
@@ -221,7 +223,7 @@ export function migrationBanner(
 ) {
     return (
         entry.migrationSuggestion && (
-            <div className={`flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs ${className}`}>
+            <div className={`flex animate-fade-in flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs ${className}`}>
                 <span className="text-fg">
                     {t('library.migrationSuggested')} <b>{entry.migrationSuggestion.mangaTitle}</b> ({entry.migrationSuggestion.sourceLabel},{' '}
                     {Math.round((entry.migrationSuggestion.score ?? 0) * 100)}%)
@@ -241,7 +243,7 @@ export function migrationBanner(
 function chaptersPanel(entry: LibraryEntryDto, state: EntryCardState, handlers: EntryCardHandlers, t: ReturnType<typeof useI18n>['t'], className = '') {
     return (
         state.expandedId === entry.id && (
-            <div className={`max-h-56 space-y-1 overflow-y-auto rounded-xl bg-canvas/60 p-2 ${className}`}>
+            <div className={`max-h-56 animate-fade-in space-y-1 overflow-y-auto rounded-xl bg-canvas/60 p-2 ${className}`}>
                 {state.chapters === null && (
                     <div className="p-2 text-sm text-faint">
                         <Spinner />
@@ -308,14 +310,16 @@ function coverCornerButton(entry: LibraryEntryDto, state: EntryCardState, handle
     );
 }
 
-export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: EntryCardProps) {
+export function EntryGridCard({ entry, state, handlers, menuRef, longPress, riseDelay }: EntryCardProps) {
     const { t, formatDate } = useI18n();
     const progress = progressOf(entry);
     const tone = progressTone(entry);
+    const entrance = riseDelay === undefined ? '' : 'animate-rise';
     return (
         <article
             {...longPress(entry.id)}
-            className={`group relative rounded-2xl border bg-surface transition-all duration-200 hover:-translate-y-1 hover:border-faint hover:shadow-xl hover:shadow-black/50 ${
+            style={riseDelay === undefined ? undefined : { animationDelay: `${riseDelay}ms` }}
+            className={`group relative rounded-2xl border bg-surface transition-all duration-200 hover:-translate-y-1 hover:border-faint hover:shadow-xl hover:shadow-black/50 ${entrance} ${
                 state.selecting && state.selectedIds.has(entry.id) ? 'border-accent/60 ring-1 ring-accent/40' : 'border-line'
             }`}
         >
@@ -351,7 +355,7 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress }: En
                     {state.prefs.progress && (
                         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/15">
                             <div
-                                className={`h-full rounded-full transition-all duration-300 ${tone === 'green' ? 'bg-emerald-400' : 'bg-accent'}`}
+                                className={`h-full rounded-full transition-[width] duration-300 ${tone === 'green' ? 'bg-emerald-400' : 'bg-accent'}`}
                                 style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
                             />
                         </div>

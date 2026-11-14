@@ -67,6 +67,8 @@ export default function Library({
     const [activeFilters, setActiveFilters] = useState<Set<FilterId>>(new Set());
     const [prefs, setPrefs] = useState<DisplayPrefs>(loadPrefs);
     const [menuFor, setMenuFor] = useState<number | null>(null);
+    /** True when this mount started from the loading state: the first grid reveal gets the staggered entrance. */
+    const [stagger] = useState(!loaded);
     const menuRef = useRef<HTMLDivElement>(null);
     const { t } = useI18n();
 
@@ -342,8 +344,16 @@ export default function Library({
             )}
             {loaded && filtered.length > 0 && view !== 'list' && (
                 <div className={gridClassName(view)}>
-                    {filtered.map(entry => (
-                        <EntryGridCard key={entry.id} entry={entry} state={cardState} handlers={cardHandlers} menuRef={menuRef} longPress={longPress} />
+                    {filtered.map((entry, index) => (
+                        <EntryGridCard
+                            key={entry.id}
+                            entry={entry}
+                            state={cardState}
+                            handlers={cardHandlers}
+                            menuRef={menuRef}
+                            longPress={longPress}
+                            riseDelay={stagger ? Math.min(index, 6) * 12 : undefined}
+                        />
                     ))}
                 </div>
             )}

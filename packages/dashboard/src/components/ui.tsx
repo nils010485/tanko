@@ -77,7 +77,7 @@ export function Button({
             autoFocus={autoFocus}
             disabled={disabled || loading}
             onClick={onClick}
-            className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${small ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm'} ${buttonVariants[variant]} ${className}`}
+            className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition duration-150 active:scale-[0.98] disabled:cursor-not-allowed ${small ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm'} ${buttonVariants[variant]} ${className}`}
         >
             {loading ? <Spinner size={small ? 12 : 14} /> : children}
         </button>
@@ -93,7 +93,7 @@ export function IconButton({ children, onClick, variant = 'ghost', disabled = fa
             aria-label={title}
             disabled={disabled || loading}
             onClick={onClick}
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed ${buttonVariants[variant]}`}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition duration-150 active:scale-95 disabled:cursor-not-allowed ${buttonVariants[variant]}`}
         >
             {loading ? <Spinner size={13} /> : children}
         </button>
@@ -109,7 +109,7 @@ export function ProgressBar({ value, tone = 'orange' }: { value: number; tone?: 
     };
     return (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
-            <div className={`h-full rounded-full transition-all duration-300 ${tones[tone]}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+            <div className={`h-full rounded-full transition-[width] duration-300 ${tones[tone]}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
         </div>
     );
 }
@@ -124,7 +124,9 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
                 onClick={() => onChange(!checked)}
                 className={`relative h-5 w-9 flex-none rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-line'}`}
             >
-                <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all" style={{ left: checked ? '1.15rem' : '0.125rem' }} />
+                <span
+                    className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-150 ${checked ? 'translate-x-4' : ''}`}
+                />
             </button>
             {label && <span className="whitespace-nowrap text-sm text-fg">{label}</span>}
         </label>
@@ -282,14 +284,14 @@ export function Modal({
     return (
         // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; every dialog also closes with Escape (handled by the caller)
         <div
-            className={`fixed inset-0 flex items-center justify-center p-4 backdrop-blur-sm ${overlayClassName}`}
+            className={`fixed inset-0 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in ${overlayClassName}`}
             onClick={event => {
                 if (event.target === event.currentTarget) {
                     onClose();
                 }
             }}
         >
-            <div role="dialog" aria-modal="true" aria-label={ariaLabel} className={panelClassName}>
+            <div role="dialog" aria-modal="true" aria-label={ariaLabel} className={`animate-dialog-in ${panelClassName}`}>
                 {children}
             </div>
         </div>
