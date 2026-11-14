@@ -6,7 +6,16 @@
 import type { ChapterDto, GlobalSearchStatusDto, MangaDto, SourceDto } from '@tanko/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DuplicateTarget } from '../components/discover/DuplicateDialog.js';
-import { ChaptersModal, DuplicateDialog, FollowDialog, GlobalResults, healthDot, MangaResultCard, SourcePicker } from '../components/discover/index.js';
+import {
+    ChaptersModal,
+    CompareDialog,
+    DuplicateDialog,
+    FollowDialog,
+    GlobalResults,
+    healthDot,
+    MangaResultCard,
+    SourcePicker
+} from '../components/discover/index.js';
 import { IconAlert, IconEyeOff, IconGitHub, IconGlobe, IconRefresh, IconSearch, IconX } from '../components/icons.js';
 import { PagePreview } from '../components/PagePreview.js';
 import { useToast } from '../components/toast.js';
@@ -134,6 +143,7 @@ export default function Discover({
     const [followCount, setFollowCount] = useState<number | null>(null);
     const [duplicate, setDuplicate] = useState<DuplicateTarget | null>(null);
     const [duplicateBusy, setDuplicateBusy] = useState(false);
+    const [compare, setCompare] = useState<MangaDto[] | null>(null);
     const comboRef = useRef<HTMLDivElement>(null);
     const toast = useToast();
     const { t } = useI18n();
@@ -252,8 +262,9 @@ export default function Discover({
         setPreview(null);
         setFollowTarget(null);
         setDuplicate(null);
+        setCompare(null);
     }, []);
-    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null || duplicate !== null);
+    useEscapeKey(closeModals, selected !== null || preview !== null || previewLoading || followTarget !== null || duplicate !== null || compare !== null);
 
     const matchingSources = useMemo(() => {
         const base = showHidden ? sources : sources.filter(source => !source.hidden);
@@ -312,6 +323,7 @@ export default function Discover({
         setResultMeta(null);
         setSelected(null);
         setChapters(null);
+        setCompare(null);
         try {
             const { mangas, total, hiddenByLanguage } = await api.search(searchedSource, searched, controller.signal);
             if (seq !== searchSeq.current) return; // a newer search replaced this one
@@ -344,13 +356,15 @@ export default function Discover({
         setResultMeta(null);
         setSelected(null);
         setChapters(null);
+        setCompare(null);
         try {
-            const { jobId } = await api.searchAll(searched);
+            const { jobId, targets } = await api.searchAll(searched);
             globalJobId.current = jobId;
             if (run !== globalSeq.current) {
                 cancelGlobalJob(); // stopped or replaced while starting
                 return;
             }
+            setGlobalStatus({ jobId, query: searched, total: targets, completed: 0, done: false, results: [] });
             let pollFailures = 0;
             for (;;) {
                 await new Promise(resolve => setTimeout(resolve, 1200));
@@ -815,7 +829,6 @@ export default function Discover({
                 <GlobalResults
                     globalStatus={globalStatus}
                     globalSearching={globalSearching}
-                    sources={sources}
                     added={added}
                     addingKey={addingKey}
                     showMisses={showMisses}
@@ -823,6 +836,7 @@ export default function Discover({
                     onStop={stopGlobalSearch}
                     onChapters={openChapters}
                     onFollow={openFollowChoice}
+                    onCompare={setCompare}
                 />
             )}
 
@@ -865,6 +879,17 @@ export default function Discover({
                     onLink={() => void linkDuplicate()}
                     onForce={() => void forceDuplicate()}
                     onClose={() => setDuplicate(null)}
+                />
+            )}
+            {compare !== null && (
+                <CompareDialog
+                    instances={compare}
+                    sources={sources}
+                    added={added}
+                    addingKey={addingKey}
+                    onClose={() => setCompare(null)}
+                    onFollow={openFollowChoice}
+                    onChapters={openChapters}
                 />
             )}
         </div>
