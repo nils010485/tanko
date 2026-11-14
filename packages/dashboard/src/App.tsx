@@ -106,13 +106,14 @@ export default function App() {
             return (
                 // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the badge rides the keyboard-accessible tab button; clicking only adds the "new" filter
                 <span
+                    key={totalNew}
                     onClick={event => {
                         // no bubbling to the tab button: the badge only arms the "new" filter
                         event.stopPropagation();
                         setLibraryFocusFilter('new');
                     }}
                     title={t('app.focusNewChapters')}
-                    className="ml-auto rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-bold text-canvas"
+                    className="ml-auto animate-pop rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-bold text-canvas"
                 >
                     {totalNew}
                 </span>
@@ -175,7 +176,7 @@ export default function App() {
             {/* Backdrop for the mobile navigation */}
             {navOpen && (
                 // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: click-outside backdrop; the navigation also closes with Escape (document listener above)
-                <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setNavOpen(false)} />
+                <div className="fixed inset-0 z-30 animate-fade-in bg-black/60 lg:hidden" onClick={() => setNavOpen(false)} />
             )}
 
             {/* Sidebar */}
@@ -203,7 +204,7 @@ export default function App() {
 
             <div className="flex min-w-0 flex-1 flex-col">
                 {offlineReady && !live.connected && (
-                    <div className="flex items-center justify-center gap-2 border-b border-accent/30 bg-accent/10 px-4 py-2 text-xs text-accent-soft">
+                    <div className="flex animate-fade-in items-center justify-center gap-2 border-b border-accent/30 bg-accent/10 px-4 py-2 text-xs text-accent-soft">
                         <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
                         {t('app.disconnected')}
                     </div>
@@ -230,7 +231,7 @@ export default function App() {
 
                 {/* Main content */}
                 <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-                    <div className="mx-auto max-w-5xl">
+                    <div key={tab} className="mx-auto max-w-5xl animate-fade-in">
                         {tab === 'discover' && (
                             <Discover onAddedToLibrary={live.refreshLibrary} onOpenSeries={navigateSeries} sourcesVersion={live.sourcesVersion} />
                         )}

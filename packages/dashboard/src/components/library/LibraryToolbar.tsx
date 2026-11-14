@@ -139,7 +139,7 @@ export function LibraryToolbar({
                         <IconSliders size={13} /> {t('library.display')}
                     </Button>
                     {prefsOpen && (
-                        <div className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-line bg-card p-3 shadow-xl shadow-black/60">
+                        <div className="absolute right-0 z-30 mt-2 w-60 origin-top-right animate-menu-in rounded-xl border border-line bg-card p-3 shadow-xl shadow-black/60">
                             <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-faint">{t('library.displayVisible')}</div>
                             {prefRow('progress', t('library.showProgress'))}
                             {prefRow('date', t('library.showDate'))}

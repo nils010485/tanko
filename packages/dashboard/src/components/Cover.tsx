@@ -4,7 +4,7 @@
  * server-side image proxy (bypasses hotlink protection), then a letter
  * placeholder when nothing loads.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 function proxiedImage(url: string): string {
     return `/api/image?url=${encodeURIComponent(url)}`;
@@ -13,21 +13,30 @@ function proxiedImage(url: string): string {
 export function Cover({ title, thumbnail, coverUrl, className = '' }: { title: string; thumbnail?: string; coverUrl?: string; className?: string }) {
     const [brokenCover, setBrokenCover] = useState(false);
     const [brokenThumbnail, setBrokenThumbnail] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    // an image already in the browser cache may not fire onLoad after mount
+    const markIfCached = useCallback((img: HTMLImageElement | null) => {
+        if (img?.complete && img.naturalWidth > 0) setLoaded(true);
+    }, []);
+    const fade = `transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`;
+    const image = (src: string, onError: () => void) => (
+        <img
+            ref={markIfCached}
+            src={src}
+            alt=""
+            loading="lazy"
+            onLoad={() => setLoaded(true)}
+            onError={onError}
+            className={`flex-none object-cover ${fade} ${className}`}
+        />
+    );
 
     if (coverUrl && !brokenCover) {
-        return <img src={coverUrl} alt="" loading="lazy" onError={() => setBrokenCover(true)} className={`flex-none object-cover ${className}`} />;
+        return image(coverUrl, () => setBrokenCover(true));
     }
 
     if (thumbnail && !brokenThumbnail) {
-        return (
-            <img
-                src={proxiedImage(thumbnail)}
-                alt=""
-                loading="lazy"
-                onError={() => setBrokenThumbnail(true)}
-                className={`flex-none object-cover ${className}`}
-            />
-        );
+        return image(proxiedImage(thumbnail), () => setBrokenThumbnail(true));
     }
 
     return (

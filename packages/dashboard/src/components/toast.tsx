@@ -10,6 +10,8 @@ interface Toast {
     id: number;
     tone: ToastTone;
     message: string;
+    /** Playing its exit animation - removed once it ends. */
+    leaving: boolean;
 }
 
 export interface ToastApi {
@@ -35,16 +37,26 @@ const TONES: Record<ToastTone, string> = {
 };
 
 const DISMISS_MS = 4000;
+/** Matches --animate-toast-out. */
+const EXIT_MS = 130;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const nextId = useRef(1);
 
-    const push = useCallback((tone: ToastTone, message: string) => {
-        const id = nextId.current++;
-        setToasts(current => [...current.slice(-4), { id, tone, message }]);
-        setTimeout(() => setToasts(current => current.filter(toast => toast.id !== id)), DISMISS_MS);
+    const dismiss = useCallback((id: number) => {
+        setToasts(current => current.map(toast => (toast.id === id ? { ...toast, leaving: true } : toast)));
+        setTimeout(() => setToasts(current => current.filter(toast => toast.id !== id)), EXIT_MS);
     }, []);
+
+    const push = useCallback(
+        (tone: ToastTone, message: string) => {
+            const id = nextId.current++;
+            setToasts(current => [...current.slice(-4), { id, tone, message, leaving: false }]);
+            setTimeout(() => dismiss(id), DISMISS_MS);
+        },
+        [dismiss]
+    );
 
     const api = useRef<ToastApi>({
         success: message => push('success', message),
@@ -60,12 +72,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     <div
                         key={toast.id}
                         role="status"
-                        className={`pointer-events-auto rounded-lg border bg-card/95 shadow-lg shadow-black/40 backdrop-blur ${TONES[toast.tone]}`}
+                        className={`pointer-events-auto rounded-lg border bg-card/95 shadow-lg shadow-black/40 backdrop-blur ${TONES[toast.tone]} ${
+                            toast.leaving ? 'animate-toast-out' : 'animate-toast-in'
+                        }`}
                     >
                         <button
                             type="button"
-                            onClick={() => setToasts(current => current.filter(item => item.id !== toast.id))}
-                            className="block w-full cursor-pointer break-words px-3.5 py-2.5 text-left text-sm transition-all"
+                            onClick={() => dismiss(toast.id)}
+                            className="block w-full cursor-pointer break-words px-3.5 py-2.5 text-left text-sm"
                         >
                             {toast.message}
                         </button>

@@ -100,7 +100,7 @@ export function SourcePicker({
             </button>
 
             {comboOpen && (
-                <div className="absolute z-20 mt-2 w-80 overflow-hidden rounded-lg border border-line bg-card shadow-xl shadow-black/40">
+                <div className="absolute z-20 mt-2 w-80 origin-top animate-menu-in overflow-hidden rounded-lg border border-line bg-card shadow-xl shadow-black/40">
                     <div className="flex items-center gap-2 border-b border-line px-3 py-2">
                         <IconSearch size={14} className="text-faint" />
                         <input
