@@ -154,7 +154,7 @@ export const api = {
         request<SourceSearchResponseDto>(`/api/sources/${encodeURIComponent(sourceId)}/search?q=${encodeURIComponent(query)}`, { signal }),
     searchAll: (query: string) =>
         request<{ jobId: number; targets: number }>('/api/sources/search-all', { method: 'POST', body: JSON.stringify({ q: query }) }),
-    globalSearch: (jobId: number) => request<GlobalSearchStatusDto>(`/api/sources/search-all/${jobId}`),
+    globalSearch: (jobId: number, since = 0) => request<GlobalSearchStatusDto>(`/api/sources/search-all/${jobId}${since > 0 ? `?since=${since}` : ''}`),
     cancelGlobalSearch: (jobId: number) => request<{ cancelled: boolean }>(`/api/sources/search-all/${jobId}/cancel`, { method: 'POST' }),
     chapters: (sourceId: string, mangaId: string, title: string) =>
         request<ChapterDto[]>(`/api/sources/${encodeURIComponent(sourceId)}/chapters?${qs({ mangaId, title })}`),

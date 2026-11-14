@@ -12,6 +12,7 @@ import { JobRunner } from './activity/jobs.js';
 import { ActivityService } from './activity/service.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
 import { SqliteCacheStore } from './cache/sqlite-store.js';
+import { TieredCacheStore } from './cache/tiered-store.js';
 import { loadConfig } from './config.js';
 import { Database } from './db.js';
 import { DownloadQueue, type QueueSettings } from './downloader/queue.js';
@@ -97,7 +98,7 @@ process.on('uncaughtException', error => {
 const activity = new ActivityService({ db: database });
 // every `log` event is persisted; the returned row id tags the broadcast copy
 events.setLogSink(event => activity.add(event));
-const cacheStore = new SqliteCacheStore(database);
+const cacheStore = new TieredCacheStore(new SqliteCacheStore(database));
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
 const queueSettings: QueueSettings = {
@@ -432,7 +433,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         await app.close();
         database.close();
         // solved-session pages + Chromium: teardown is ours, not puppeteer's
-        const { closeBrowser } = await import('@tanko/core');
+        const { closeBrowser, getConnectorPool } = await import('@tanko/core');
+        await getConnectorPool()?.dispose();
         await closeBrowser().catch(() => undefined);
         process.exit(0);
     });

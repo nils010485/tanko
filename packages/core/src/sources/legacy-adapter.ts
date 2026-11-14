@@ -2,11 +2,18 @@
  * Wraps a legacy Hakuneko connector behind the normalized SourceAdapter
  * interface. The legacy API is callback based and coupled to the global
  * `Engine`; this adapter only reads from it (manga/chapter/page lists).
+ *
+ * List operations run in the engine's connector pool (worker processes) when
+ * one is wired, because their synchronous linkedom parses block the server's
+ * event loop. The in-process path stays as the fallback and as the
+ * TANKO_CONNECTOR_INPROCESS escape hatch.
  */
 
+import { getConnectorFilePath, getConnectorPool, inProcessConnectors } from '../engine.js';
 import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
-import { withAbortScope } from '../shims/abort-scope.js';
+import { currentAbortSignal, withAbortScope } from '../shims/abort-scope.js';
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../shims/browser.js';
+import type { ConnectorPool } from '../shims/connector-pool.js';
 import { type ChapterInfo, errorMessage, type HealthResult, type MangaInfo, type PageList, type SourceAdapter, SourceError } from './types.js';
 
 /** Language tags missing from the vendored connectors (verified per site),
@@ -66,6 +73,11 @@ export class LegacySourceAdapter implements SourceAdapter {
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
         return this._guard(async () => {
+            const target = this._poolTarget();
+            if (target) {
+                const mangas = await target.pool.run<LegacyManga[]>(this.id, target.filePath, 'searchMangas', [query], currentAbortSignal());
+                return mangas.map(manga => this._toMangaInfo(manga));
+            }
             await this.initialize();
             // connectors with a site search endpoint answer in one request;
             // the default flow crawls the whole catalog (minutes on some)
@@ -81,6 +93,11 @@ export class LegacySourceAdapter implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         return this._guard(async () => {
+            const target = this._poolTarget();
+            if (target) {
+                const chapters = await target.pool.run<LegacyChapter[]>(this.id, target.filePath, 'getChapters', [manga], currentAbortSignal());
+                return chapters.map(chapter => ({ id: chapter.id, title: chapter.title, language: chapter.language }));
+            }
             await this.initialize();
             const legacyManga = { connector: this.connector, id: manga.id, title: manga.title };
             const chapters = await this._promisify<LegacyChapter[] | undefined>(callback => this.connector._getChapterList(legacyManga, callback));
@@ -94,10 +111,16 @@ export class LegacySourceAdapter implements SourceAdapter {
 
     async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
         return this._guard(async () => {
-            await this.initialize();
-            const legacyManga = { connector: this.connector, id: manga.id, title: manga.title };
-            const legacyChapter = { manga: legacyManga, id: chapter.id, title: chapter.title };
-            const pages: unknown = await this._promisify<unknown>(callback => this.connector._getPageList(legacyManga, legacyChapter, callback));
+            const target = this._poolTarget();
+            let pages: unknown;
+            if (target) {
+                pages = await target.pool.run<unknown>(this.id, target.filePath, 'getPages', [manga, chapter], currentAbortSignal());
+            } else {
+                await this.initialize();
+                const legacyManga = { connector: this.connector, id: manga.id, title: manga.title };
+                const legacyChapter = { manga: legacyManga, id: chapter.id, title: chapter.title };
+                pages = await this._promisify<unknown>(callback => this.connector._getPageList(legacyManga, legacyChapter, callback));
+            }
             // Anime chapters return { mirrors | video } objects - only image lists are supported.
             if (!Array.isArray(pages)) {
                 throw new SourceError(`Chapter "${chapter.title}" is not an image chapter (anime/media not supported)`, this.id);
@@ -155,10 +178,13 @@ export class LegacySourceAdapter implements SourceAdapter {
             // when the catalog scan loses the 12s race, abort the whole
             // crawl instead of letting it run as a zombie
             const SLOW = Symbol('slow');
+            const target = this._poolTarget();
             let crawlScope: AbortController | undefined;
             const listPromise = withAbortScope(scope => {
                 crawlScope = scope;
-                return this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
+                return target
+                    ? target.pool.run<LegacyManga[]>(this.id, target.filePath, 'getMangaList', [], scope.signal)
+                    : this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
             });
             let slowTimer: ReturnType<typeof setTimeout> | undefined;
             const mangas = await Promise.race([
@@ -182,6 +208,15 @@ export class LegacySourceAdapter implements SourceAdapter {
         } catch (error) {
             return { ok: false, latencyMs: Date.now() - startedAt, error: this._describeError(error) };
         }
+    }
+
+    private _poolTarget(): { pool: ConnectorPool; filePath: string } | undefined {
+        if (inProcessConnectors()) {
+            return undefined;
+        }
+        const pool = getConnectorPool();
+        const filePath = getConnectorFilePath(this.id);
+        return pool && filePath ? { pool, filePath } : undefined;
     }
 
     private _promisify<T>(invoke: (callback: (error: unknown, result: T) => void) => void): Promise<T> {

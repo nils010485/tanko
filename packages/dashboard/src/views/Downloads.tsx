@@ -117,9 +117,9 @@ export default function Downloads({
     // WS job transitions drive the refresh; the slow poll only guards
     // against a dead socket (stale data is surfaced by the banner above)
     useEffect(() => {
-        if (downloadsVersion > 0) {
-            load();
-        }
+        if (downloadsVersion === 0) return undefined;
+        const timer = setTimeout(load, 1000);
+        return () => clearTimeout(timer);
     }, [downloadsVersion, load]);
     useEffect(() => {
         const timer = setInterval(load, 30_000);

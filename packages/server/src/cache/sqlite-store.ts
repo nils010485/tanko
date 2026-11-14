@@ -4,6 +4,15 @@
 import type { Database } from '../db.js';
 import type { CacheStore } from './cache.js';
 
+export interface CacheEntry {
+    value: unknown;
+    expiresAt: number;
+    /** Serialized size in bytes, precomputed so LRU eviction never re-stringifies. */
+    bytes: number;
+}
+
+const PURGE_INTERVAL_MS = 5 * 60 * 1000;
+
 export class SqliteCacheStore implements CacheStore {
     constructor(private readonly db: Database) {
         this.db.db.exec(`
@@ -14,9 +23,11 @@ export class SqliteCacheStore implements CacheStore {
             );
             CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires_at);
         `);
+        setInterval(() => this.purgeExpired(), PURGE_INTERVAL_MS).unref();
     }
 
-    async get<T = unknown>(key: string): Promise<T | undefined> {
+    /** Reads a row and returns it with its expiration timestamp (single parse). */
+    async getWithExpiry(key: string): Promise<CacheEntry | undefined> {
         const row = this.db.db.prepare('SELECT value, expires_at FROM cache WHERE key = ?').get(key) as { value: string; expires_at: number } | undefined;
         if (!row) {
             return undefined;
@@ -26,11 +37,16 @@ export class SqliteCacheStore implements CacheStore {
             return undefined;
         }
         try {
-            return JSON.parse(row.value) as T;
+            return { value: JSON.parse(row.value) as unknown, expiresAt: row.expires_at, bytes: row.value.length };
         } catch {
             await this.delete(key);
             return undefined;
         }
+    }
+
+    async get<T = unknown>(key: string): Promise<T | undefined> {
+        const entry = await this.getWithExpiry(key);
+        return entry?.value as T | undefined;
     }
 
     async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
@@ -40,7 +56,6 @@ export class SqliteCacheStore implements CacheStore {
                 'INSERT INTO cache (key, value, expires_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at'
             )
             .run(key, JSON.stringify(value), expiresAt);
-        this.purgeExpired();
     }
 
     async delete(key: string): Promise<void> {

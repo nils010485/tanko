@@ -24,10 +24,10 @@ export async function spillArchiveToDirectory(events: EventBus, zip: JSZip, path
         params: { jobId },
         message: `Chapter exceeds the in-memory CBZ budget - saved as an image folder instead (job #${jobId})`
     });
-    fs.mkdirSync(paths.directory, { recursive: true });
+    await fs.promises.mkdir(paths.directory, { recursive: true });
     for (const file of Object.values(zip.files)) {
         if (!file.dir) {
-            fs.writeFileSync(path.join(paths.directory, file.name), await file.async('nodebuffer'));
+            await fs.promises.writeFile(path.join(paths.directory, file.name), await file.async('nodebuffer'));
         }
     }
 }
@@ -35,9 +35,9 @@ export async function spillArchiveToDirectory(events: EventBus, zip: JSZip, path
 /** Write the CBZ archive (ComicInfo.xml + downloaded pages) to disk. */
 export async function finalizeCbz(zip: JSZip, paths: ChapterPaths, mangaTitle: string, chapterTitle: string, pageCount: number): Promise<void> {
     zip.file('ComicInfo.xml', createComicInfoXML(mangaTitle, chapterTitle, pageCount));
-    fs.mkdirSync(path.dirname(paths.cbzFile), { recursive: true });
+    await fs.promises.mkdir(path.dirname(paths.cbzFile), { recursive: true });
     const buffer = await zip.generateAsync({ compression: 'STORE', type: 'nodebuffer' });
-    fs.writeFileSync(paths.cbzFile, buffer);
+    await fs.promises.writeFile(paths.cbzFile, buffer);
     // integrity check: the archive must hold every page. A corrupt file is
     // removed so a later run retries instead of treating it as "already
     // downloaded". Only the zip central directory is read back - re-opening

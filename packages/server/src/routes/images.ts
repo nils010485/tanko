@@ -4,6 +4,7 @@
  * and mixed-content/CORS constraints. Small in-memory LRU cache included.
  */
 import type { FastifyInstance } from 'fastify';
+import { ByteBudgetCache } from '../util/image-cache.js';
 import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
 
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -18,34 +19,7 @@ interface CacheEntry {
 }
 
 export function registerImageRoutes(app: FastifyInstance): void {
-    const cache = new Map<string, CacheEntry>();
-    let cacheBytes = 0;
-
-    const cacheGet = (url: string): CacheEntry | undefined => {
-        const entry = cache.get(url);
-        if (entry) {
-            // refresh LRU recency
-            cache.delete(url);
-            cache.set(url, entry);
-        }
-        return entry;
-    };
-
-    // byte-budget LRU: evict oldest (Map order) until under budget
-    const cacheSet = (url: string, entry: CacheEntry): void => {
-        const previous = cache.get(url);
-        if (previous) {
-            cacheBytes -= previous.body.length;
-        }
-        cache.set(url, entry);
-        cacheBytes += entry.body.length;
-        while (cacheBytes > MAX_CACHE_BYTES && cache.size > 0) {
-            const oldest = cache.keys().next().value;
-            if (oldest === undefined) break;
-            cacheBytes -= cache.get(oldest)?.body.length ?? 0;
-            cache.delete(oldest);
-        }
-    };
+    const cache = new ByteBudgetCache<CacheEntry>(MAX_CACHE_BYTES, entry => entry.body.length);
 
     app.get<{ Querystring: { url?: string } }>('/api/image', async (request, reply) => {
         const raw = request.query.url;
@@ -60,7 +34,7 @@ export function registerImageRoutes(app: FastifyInstance): void {
             return reply.code(400).send({ error: 'Invalid or blocked "url" parameter' });
         }
 
-        const cached = cacheGet(raw);
+        const cached = cache.get(raw);
         if (cached) {
             return reply.header('Content-Type', cached.contentType).header('Cache-Control', 'public, max-age=86400').header('X-Cache', 'hit').send(cached.body);
         }
@@ -92,7 +66,7 @@ export function registerImageRoutes(app: FastifyInstance): void {
             return reply.code(502).send({ error: 'Remote image is too large' });
         }
 
-        cacheSet(raw, { contentType, body });
+        cache.set(raw, { contentType, body });
         return reply.header('Content-Type', contentType).header('Cache-Control', 'public, max-age=86400').send(body);
     });
 }

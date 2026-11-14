@@ -58,7 +58,7 @@ export function PagePreview({
                             src={`/api/sources/${encodeURIComponent(sourceId)}/page-image?url=${encodeURIComponent(url)}`}
                             alt={`page ${index + 1}`}
                             loading="lazy"
-                            className="mx-auto w-full max-w-xl rounded-md border border-line"
+                            className="mx-auto min-h-[420px] w-full max-w-xl rounded-md border border-line object-contain"
                         />
                     ))
                 )}

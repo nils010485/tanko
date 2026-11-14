@@ -5,6 +5,7 @@
  */
 import type { SourceAdapter } from '@tanko/core';
 import { LegacySourceAdapter, NOT_IN_BROWSER_MODE, randomUserAgent } from '@tanko/core';
+import { unwrapSource } from '../cache/cached-adapter.js';
 import { withTimeout } from '../util/timeout.js';
 import { detectMime } from './paths.js';
 import type { DomainGate } from './rate-limiter.js';
@@ -116,6 +117,7 @@ export async function fetchPageWithRetries(url: string, source: SourceAdapter, g
 }
 
 async function fetchPage(url: string, source: SourceAdapter): Promise<{ mime: string; data: Uint8Array }> {
+    source = unwrapSource(source);
     let response: Response;
     if (url.startsWith('connector://')) {
         // routed to the owning connector by the global fetch wrapper

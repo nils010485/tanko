@@ -103,4 +103,15 @@ export class CachedSourceAdapter implements SourceAdapter {
     checkHealth(): Promise<HealthResult> {
         return this.inner.checkHealth();
     }
+
+    get unwrapped(): SourceAdapter {
+        return this.inner;
+    }
+}
+
+/** Reach the concrete adapter behind the caching decorator: the image
+ *  transports need the real type (instanceof LegacySourceAdapter) and the
+ *  optional fetchPageImage that the decorator does not forward. */
+export function unwrapSource(source: SourceAdapter): SourceAdapter {
+    return source instanceof CachedSourceAdapter ? source.unwrapped : source;
 }

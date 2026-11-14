@@ -45,6 +45,8 @@ export interface WireResponse {
     status: number;
     headers: Array<[string, string]>;
     bodyB64: string;
+    /** Final URL after redirects; absent when the transport cannot report one. */
+    url?: string;
 }
 export type FetchVia = (request: WireRequest) => Promise<WireResponse>;
 
