@@ -136,7 +136,6 @@ export function GlobalResults({
 
             <div className="flex flex-wrap items-center gap-2 px-1 text-xs text-faint">
                 <span className="text-sm font-medium text-fg">{t('discover.mergedCount', { n: merged.length })}</span>
-                {globalSearching && <span>· {t('discover.globalLive')}</span>}
                 {merged.length > 1 && (
                     <Select
                         className="ml-auto w-auto py-1 text-xs"

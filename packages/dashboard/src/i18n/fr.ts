@@ -96,7 +96,6 @@ export const fr: typeof import('./en.js').en = {
     'discover.resultsHiddenByLanguage': '{n} masqué(s) (aucun chapitre dans les langues préférées)',
     'discover.sourcePickerMore': '+{n} autres',
     'discover.mergedCount': '{n} titres toutes sources confondues',
-    'discover.globalLive': 'les résultats arrivent en direct…',
     'discover.sortRelevance': 'Pertinence',
     'discover.sortTitle': 'Titre A→Z',
     'discover.sortSources': 'Plus de sources',
