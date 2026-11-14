@@ -4,6 +4,7 @@
  */
 
 export { ChaptersModal } from './ChaptersModal.js';
+export { CompareDialog } from './CompareDialog.js';
 export type { DuplicateTarget } from './DuplicateDialog.js';
 export { DuplicateDialog } from './DuplicateDialog.js';
 export { FollowDialog } from './FollowDialog.js';
