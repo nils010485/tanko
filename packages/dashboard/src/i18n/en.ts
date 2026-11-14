@@ -96,7 +96,6 @@ export const en = {
     'discover.resultsHiddenByLanguage': '{n} hidden (no chapter in the preferred languages)',
     'discover.sourcePickerMore': '+{n} more',
     'discover.mergedCount': '{n} titles across sources',
-    'discover.globalLive': 'results stream in live…',
     'discover.sortRelevance': 'Relevance',
     'discover.sortTitle': 'Title A→Z',
     'discover.sortSources': 'Most sources',
