@@ -68,7 +68,7 @@ export class MangaDexConnector implements SourceAdapter {
         // stateless API, nothing to warm up
     }
 
-    async searchMangas(query: string): Promise<MangaInfo[]> {
+    async searchMangas(query: string, options?: ChapterOptions): Promise<MangaInfo[]> {
         const url = this._apiUrl('/manga');
         url.searchParams.set('title', query);
         url.searchParams.set('limit', '10');
@@ -92,7 +92,46 @@ export class MangaDexConnector implements SourceAdapter {
                 });
             }
         }
-        return results;
+        return options?.languages?.length ? this._withReadableChapters(results, options.languages) : results;
+    }
+
+    private async _withReadableChapters(mangas: MangaInfo[], languages: string[]): Promise<MangaInfo[]> {
+        const wanted = new Set(languages.map(code => code.slice(0, 2).toLowerCase()));
+        const readable = new Map<string, boolean>();
+        for (const manga of mangas) {
+            if (readable.has(manga.id)) {
+                continue;
+            }
+            const plausible = !manga.languages?.length || manga.languages.some(code => wanted.has(code.slice(0, 2).toLowerCase()));
+            readable.set(manga.id, plausible ? await this._hasReadableChapter(manga.id, languages) : true);
+        }
+        return mangas.filter(manga => readable.get(manga.id));
+    }
+
+    private async _hasReadableChapter(mangaId: string, languages: string[]): Promise<boolean> {
+        const url = this._apiUrl('/chapter');
+        url.searchParams.set('manga', mangaId);
+        url.searchParams.set('limit', '1');
+        url.searchParams.set('includeExternalUrl', '0');
+        for (const language of languages) {
+            for (const code of [language, ...(REGIONAL_LANGUAGES[language] ?? [])]) {
+                url.searchParams.append('translatedLanguage[]', code);
+            }
+        }
+        await this._throttle();
+        try {
+            const response = await fetch(url, {
+                headers: { 'User-Agent': UA, Accept: 'application/json' },
+                signal: AbortSignal.timeout(15000)
+            });
+            if (!response.ok) {
+                return true;
+            }
+            const json = (await response.json()) as { total?: number };
+            return (json.total ?? 0) > 0;
+        } catch {
+            return true;
+        }
     }
 
     async getChapters(manga: MangaInfo, options?: ChapterOptions): Promise<ChapterInfo[]> {

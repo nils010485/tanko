@@ -217,6 +217,31 @@ describe('CachedSourceAdapter (native)', () => {
         expect(calls.search).toBe(2);
     });
 
+    it('keys native search caching on the requested languages', async () => {
+        const calls: string[][] = [];
+        const native: SourceAdapter = {
+            id: 'native-x',
+            label: 'Native X',
+            tags: [],
+            kind: 'native',
+            url: 'https://n.test',
+            initialize: async () => undefined,
+            searchMangas: async (_query, options) => {
+                calls.push(options?.languages ?? []);
+                return [{ id: 'n1', title: 'One Piece' }];
+            },
+            getChapters: async () => [],
+            getPages: async () => [],
+            checkHealth: async () => ({ ok: true, latencyMs: 1 })
+        };
+        const adapter = new CachedSourceAdapter(native, store);
+        await adapter.searchMangas('one', { languages: ['en'] });
+        await adapter.searchMangas('one', { languages: ['en'] }); // same languages: cache hit
+        expect(calls).toHaveLength(1);
+        await adapter.searchMangas('one', { languages: ['fr'] }); // different filter: different key
+        expect(calls).toEqual([['en'], ['fr']]);
+    });
+
     it('keys chapter-list caching on the requested languages', async () => {
         const calls = { chapters: 0 };
         const native: SourceAdapter = {

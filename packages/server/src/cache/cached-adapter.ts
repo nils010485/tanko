@@ -46,18 +46,19 @@ export class CachedSourceAdapter implements SourceAdapter {
         return this.inner.initialize?.() ?? Promise.resolve();
     }
 
-    async searchMangas(query: string): Promise<MangaInfo[]> {
+    async searchMangas(query: string, options?: ChapterOptions): Promise<MangaInfo[]> {
         const needle = query.trim().toLowerCase();
         // native sources use the site's own (fast) search endpoint: no list
         // cache, but results are cached shortly so global search re-runs hit
         // the cache instead of the endpoint (rate limits)
         if (this.inner.kind === 'native') {
-            const key = `src:search:${this.id}:${createHash('sha1').update(needle).digest('hex')}`;
+            const langKey = options?.languages?.length ? options.languages.join(',') : 'all';
+            const key = `src:search:${this.id}:${langKey}:${createHash('sha1').update(needle).digest('hex')}`;
             const cached = await this.cache.get<MangaInfo[]>(key);
             if (cached) {
                 return cached;
             }
-            const results = await this.inner.searchMangas(query);
+            const results = await this.inner.searchMangas(query, options);
             // like the list cache: never cache an empty (likely failed) result
             if (results.length > 0) {
                 await this.cache.set(key, results, SEARCH_TTL_SECONDS);
