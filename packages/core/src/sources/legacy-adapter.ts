@@ -118,7 +118,7 @@ export class LegacySourceAdapter implements SourceAdapter {
             } else {
                 await this.initialize();
                 const legacyManga = { connector: this.connector, id: manga.id, title: manga.title };
-                const legacyChapter = { manga: legacyManga, id: chapter.id, title: chapter.title };
+                const legacyChapter = { manga: legacyManga, id: chapter.id, title: chapter.title, language: chapter.language };
                 pages = await this._promisify<unknown>(callback => this.connector._getPageList(legacyManga, legacyChapter, callback));
             }
             // Anime chapters return { mirrors | video } objects - only image lists are supported.

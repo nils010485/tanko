@@ -54,8 +54,4 @@ export class ByteBudgetCache<T> {
         this.map.clear();
         this.bytes = 0;
     }
-
-    get size(): number {
-        return this.map.size;
-    }
 }

@@ -431,6 +431,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         healthService.stop();
         stopPackPolling();
         await app.close();
+        cacheStore.dispose();
         database.close();
         // solved-session pages + Chromium: teardown is ours, not puppeteer's
         const { closeBrowser, getConnectorPool } = await import('@tanko/core');

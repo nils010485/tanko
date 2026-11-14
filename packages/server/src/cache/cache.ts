@@ -3,7 +3,8 @@
  * JSON-serializable, entries expire (TTL).
  */
 export interface CacheStore {
-    /** Returns the cached value, or undefined when missing/expired. */
+    /** Returns the cached value, or undefined when missing/expired. Values may be
+     *  shared between callers (in-memory tier): treat them as immutable. */
     get<T = unknown>(key: string): Promise<T | undefined>;
     /** Stores a value with a time-to-live in seconds. */
     set(key: string, value: unknown, ttlSeconds: number): Promise<void>;

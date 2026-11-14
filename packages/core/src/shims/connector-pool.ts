@@ -33,6 +33,20 @@ function currentSpawnMode(): SpawnMode {
     return spawnMode;
 }
 
+/** A degraded pool re-tries hardened after this cooldown: one transient boot failure must not strip the sandbox for the whole process lifetime. */
+const SPAWN_MODE_RETRY_MS = 60_000;
+
+/** Only a genuine hardened boot refusal degrades the ladder - never our own timeout/dispose kills. Loud, and re-arms after a cooldown. */
+function degradeToPlain(reason: string): void {
+    spawnMode = 'plain';
+    console.error(`[connector-pool] hardened worker refused to boot (${reason}); running unsandboxed, retrying hardened in ${SPAWN_MODE_RETRY_MS / 1000}s`);
+    setTimeout(() => {
+        if (spawnMode === 'plain') {
+            spawnMode = 'unknown';
+        }
+    }, SPAWN_MODE_RETRY_MS).unref();
+}
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -143,17 +157,33 @@ export class ConnectorPool {
         const slotIndex = this.assign(connectorId);
         const child = await this.ensureWorker(slotIndex, filePath);
         await this.ensureLoaded(slotIndex, connectorId, filePath, child);
+        // an abort that landed while the worker spawned/loaded must not be lost:
+        // the signal never re-fires and the listener below is not attached yet
+        if (signal?.aborted) {
+            throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+        }
 
         const opId = this.nextOpId++;
         const value = await new Promise<unknown>((resolve, reject) => {
             const timer = setTimeout(() => {
                 // the op may hold the worker in a synchronous parse forever:
                 // settling is not enough, the process has to go
-                this.settleOp(this.pendingOps.get(opId), false, new Error(`connector ${method} timed out after ${this.opTimeoutMs}ms`));
-                this.recycle(slotIndex);
+                const op = this.pendingOps.get(opId);
+                this.settleOp(op, false, new Error(`connector ${method} timed out after ${this.opTimeoutMs}ms`));
+                // only recycle if this op's child still owns the slot: a respawned
+                // replacement must not be killed for a stale op's timeout
+                if (op && this.slots[slotIndex].child === op.child) {
+                    this.recycle(slotIndex);
+                }
             }, this.opTimeoutMs);
             timer.unref?.();
-            const onAbort = () => void this.cancel(connectorId, opId);
+            const onAbort = () => {
+                // settle now: the worker may be inside a synchronous parse and never
+                // ack the cancel, so the caller must not wait for it
+                const reason = signal?.reason instanceof Error ? signal.reason : new Error('aborted');
+                void this.cancel(connectorId, opId);
+                this.settleOp(this.pendingOps.get(opId), false, reason);
+            };
             signal?.addEventListener('abort', onAbort, { once: true });
             this.pendingOps.set(opId, { opId, child, connectorId, timer, signal, onAbort, resolve, reject });
             this.syncRef(child);
@@ -267,7 +297,9 @@ export class ConnectorPool {
 
         return new Promise<ChildProcess>((resolve, reject) => {
             let ready = false;
+            let selfKill = false;
             const timer = setTimeout(() => {
+                selfKill = true;
                 child.kill('SIGKILL');
                 reject(new Error(`connector worker did not become ready within ${READY_TIMEOUT_MS}ms`));
             }, READY_TIMEOUT_MS);
@@ -287,9 +319,12 @@ export class ConnectorPool {
             child.on('exit', (code, signal) => {
                 const reason = `connector worker exited (code ${String(code)}, signal ${String(signal)})`;
                 if (!ready) {
-                    // refused to boot (permission model, missing flag): degrade once
-                    spawnMode = 'plain';
                     clearTimeout(timer);
+                    // only a hardened spawn that died on its own refused to boot;
+                    // our own timeout/dispose kills must not strip the sandbox
+                    if (hardened && !selfKill && !this.disposed) {
+                        degradeToPlain(reason);
+                    }
                     reject(new Error(reason));
                 }
                 if (slot.spawning === child) {
@@ -300,8 +335,10 @@ export class ConnectorPool {
             child.on('error', (error: Error) => {
                 const reason = `connector worker error: ${error.message}`;
                 if (!ready) {
-                    spawnMode = 'plain';
                     clearTimeout(timer);
+                    if (hardened && !selfKill && !this.disposed) {
+                        degradeToPlain(reason);
+                    }
                     reject(new Error(reason));
                 }
                 this.onWorkerGone(slotIndex, child, reason);
@@ -325,17 +362,25 @@ export class ConnectorPool {
 
     private loadConnector(connectorId: string, filePath: string, child: ChildProcess): Promise<void> {
         return new Promise<void>((resolve, reject) => {
+            let pending: PendingLoad;
             const timer = setTimeout(() => {
-                this.pendingLoads.delete(connectorId);
+                // delete only our own entry: a newer load for this connector may
+                // have replaced it, and must not be orphaned by a stale timer
+                if (this.pendingLoads.get(connectorId) === pending) {
+                    this.pendingLoads.delete(connectorId);
+                }
                 reject(new Error(`connector "${connectorId}" load timed out after ${this.opTimeoutMs}ms`));
             }, this.opTimeoutMs);
             timer.unref?.();
-            this.pendingLoads.set(connectorId, { connectorId, child, timer, resolve, reject });
+            pending = { connectorId, child, timer, resolve, reject };
+            this.pendingLoads.set(connectorId, pending);
             this.syncRef(child);
             child.send({ type: 'load', connectorId, filePath, userAgent: this.request.userAgent } satisfies ConnectorCommand, error => {
                 if (error) {
                     clearTimeout(timer);
-                    this.pendingLoads.delete(connectorId);
+                    if (this.pendingLoads.get(connectorId) === pending) {
+                        this.pendingLoads.delete(connectorId);
+                    }
                     reject(error);
                 }
             });
