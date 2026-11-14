@@ -358,7 +358,7 @@ registerLibraryRoutes(app, library, scheduler, queue, events, failover, covers, 
 registerSettingsRoutes(app, queue, database, covers);
 registerCacheRoutes(app, cacheStore);
 registerCoverRoutes(app, covers);
-registerImageRoutes(app);
+registerImageRoutes(app, sourceRegistry);
 registerImportRoutes(app, importer, queue, database);
 
 // WebSocket endpoint: dashboard live events (token via query - WebSocket cannot carry headers)

@@ -6,11 +6,19 @@
  */
 import { useCallback, useState } from 'react';
 
-function proxiedImage(url: string): string {
-    return `/api/image?url=${encodeURIComponent(url)}`;
+function proxiedImage(url: string, sourceId?: string): string {
+    return `/api/image?url=${encodeURIComponent(url)}${sourceId ? `&sourceId=${encodeURIComponent(sourceId)}` : ''}`;
 }
 
-export function Cover({ title, thumbnail, coverUrl, className = '' }: { title: string; thumbnail?: string; coverUrl?: string; className?: string }) {
+export interface CoverProps {
+    title: string;
+    thumbnail?: string;
+    sourceId?: string;
+    coverUrl?: string;
+    className?: string;
+}
+
+export function Cover({ title, thumbnail, sourceId, coverUrl, className = '' }: CoverProps) {
     const [brokenCover, setBrokenCover] = useState(false);
     const [brokenThumbnail, setBrokenThumbnail] = useState(false);
     const [loaded, setLoaded] = useState(false);
@@ -36,7 +44,7 @@ export function Cover({ title, thumbnail, coverUrl, className = '' }: { title: s
     }
 
     if (thumbnail && !brokenThumbnail) {
-        return image(proxiedImage(thumbnail), () => setBrokenThumbnail(true));
+        return image(proxiedImage(thumbnail, sourceId), () => setBrokenThumbnail(true));
     }
 
     return (

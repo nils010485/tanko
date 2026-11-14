@@ -269,6 +269,7 @@ export default function Downloads({
                     <Cover
                         title={job.mangaTitle}
                         thumbnail={job.entryId != null ? covers.get(job.entryId)?.thumbnail : undefined}
+                        sourceId={job.entryId != null ? covers.get(job.entryId)?.sourceId : job.sourceId}
                         coverUrl={job.entryId != null ? covers.get(job.entryId)?.coverUrl : undefined}
                         className="h-11 w-8 flex-none rounded"
                     />

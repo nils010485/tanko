@@ -42,11 +42,12 @@ export class MangaPillConnector implements SourceAdapter {
                 continue;
             }
             seen.add(href);
+            const image = anchor.parentElement?.previousElementSibling?.querySelector('img');
             results.push({
                 id: href,
                 title,
                 url: href,
-                thumbnail: lazySrc(anchor.querySelector('img'))
+                thumbnail: absoluteUrl(lazySrc(image), this.base) || undefined
             });
         }
         return results;

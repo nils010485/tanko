@@ -12,7 +12,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaProbe, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, backgroundUrl, checkHealthViaProbe, noPagesError } from './http.js';
 
 export class KuMangaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -92,12 +92,15 @@ export class KuMangaConnector implements SourceAdapter {
             if (needle && !title.toLowerCase().includes(needle)) {
                 continue;
             }
-            const image = anchor.querySelector('img');
+            const cover =
+                backgroundUrl(anchor.querySelector('[style*="background-image"]')) ??
+                backgroundUrl(anchor) ??
+                backgroundUrl(anchor.parentElement?.querySelector('a.mhu-card'));
             results.set(href, {
                 id: `manga/${match[1]}/${match[2]}`,
                 title,
                 url: href,
-                thumbnail: lazySrc(image)
+                thumbnail: absoluteUrl(cover, `${this.base}/`) || undefined
             });
         }
         return [...results.values()];

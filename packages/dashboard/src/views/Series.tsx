@@ -453,7 +453,13 @@ export default function Series({
             </div>
 
             <Card className="flex flex-col gap-4 p-4 sm:flex-row">
-                <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-40 w-28 flex-none rounded-lg" />
+                <Cover
+                    title={entry.title}
+                    thumbnail={entry.thumbnail}
+                    sourceId={entry.sourceId}
+                    coverUrl={entry.coverUrl}
+                    className="h-40 w-28 flex-none rounded-lg"
+                />
                 <div className="min-w-0 flex-1 space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-lg font-semibold" title={entry.title}>

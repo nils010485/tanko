@@ -10,7 +10,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
+import { absoluteUrl, backgroundUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
 
 /** Safety cap for the admin-ajax chapter pagination (10 chapters/page). */
 const MAX_CHAPTER_PAGES = 200;
@@ -75,8 +75,7 @@ export class MangaHantaConnector implements SourceAdapter {
                 continue;
             }
             seen.add(href);
-            const style = anchor.querySelector('.series-card-thumb')?.getAttribute('style') || '';
-            const thumbnail = style.match(/url\(['"]?([^'")]+)['"]?\)/)?.[1];
+            const thumbnail = backgroundUrl(anchor.querySelector('.series-card-thumb'));
             results.push({ id: href, title, url: href, thumbnail: absoluteUrl(thumbnail, this.base) || undefined });
         }
         return results;

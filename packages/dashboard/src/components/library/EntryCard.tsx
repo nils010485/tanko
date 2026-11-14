@@ -324,7 +324,13 @@ export function EntryGridCard({ entry, state, handlers, menuRef, longPress, rise
             }`}
         >
             <div className="relative aspect-[2/3] overflow-hidden rounded-t-2xl">
-                <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="absolute inset-0 h-full w-full" />
+                <Cover
+                    title={entry.title}
+                    thumbnail={entry.thumbnail}
+                    sourceId={entry.sourceId}
+                    coverUrl={entry.coverUrl}
+                    className="absolute inset-0 h-full w-full"
+                />
                 {/* full-cover click target (pointer + keyboard): opens the series (or toggles selection) */}
                 <button
                     type="button"
@@ -408,7 +414,13 @@ export function EntryListRow({ entry, state, handlers, longPress }: EntryCardPro
                     tabIndex={-1}
                     className="flex-none"
                 >
-                    <Cover title={entry.title} thumbnail={entry.thumbnail} coverUrl={entry.coverUrl} className="h-16 w-11 rounded-lg" />
+                    <Cover
+                        title={entry.title}
+                        thumbnail={entry.thumbnail}
+                        sourceId={entry.sourceId}
+                        coverUrl={entry.coverUrl}
+                        className="h-16 w-11 rounded-lg"
+                    />
                 </button>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

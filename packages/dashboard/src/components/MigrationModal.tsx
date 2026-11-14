@@ -302,6 +302,7 @@ export function MigrationModal({
                                 <Cover
                                     title={current.title}
                                     thumbnail={current.thumbnail}
+                                    sourceId={current.sourceId}
                                     coverUrl={current.coverUrl}
                                     className="aspect-[2/3] w-14 flex-none rounded-lg border border-line sm:w-16"
                                 />

@@ -39,7 +39,7 @@ export function GlobalResults({
     showMisses: boolean;
     onToggleMisses(): void;
     onStop(): void;
-    onChapters(manga: MangaDto): void;
+    onChapters(manga: MangaDto, instances: MangaDto[]): void;
     onFollow(manga: MangaDto): void;
     onCompare(instances: MangaDto[]): void;
 }) {
@@ -164,7 +164,7 @@ export function GlobalResults({
                                 isAdded={added.has(key)}
                                 isAdding={addingKey === key}
                                 followDisabled={addingKey !== null}
-                                onChapters={onChapters}
+                                onChapters={manga => onChapters(manga, entry.instances)}
                                 onFollow={onFollow}
                                 onCompare={() => onCompare(entry.instances)}
                             />

@@ -155,6 +155,11 @@ export function lazySrc(img: Element | null | undefined): string | undefined {
     return img?.getAttribute('data-src') || img?.getAttribute('src') || undefined;
 }
 
+export function backgroundUrl(element: Element | null | undefined): string | undefined {
+    const style = element?.getAttribute('style') || '';
+    return style.match(/url\(['"]?([^'")]+)['"]?\)/)?.[1];
+}
+
 export function createThrottle(minIntervalMs: number): () => Promise<void> {
     let lastRequestAt = 0;
     return async () => {

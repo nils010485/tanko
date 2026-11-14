@@ -119,6 +119,8 @@ export const fr: typeof import('./en.js').en = {
     'discover.follow': 'Suivre',
     'discover.chaptersCount': '{n} chapitres',
     'discover.noChapter': 'Aucun chapitre.',
+    'discover.noChapterHint':
+        '{source} ne référence aucun chapitre pour ce titre dans vos langues préférées - essayez une autre source, ou élargissez les langues dans les Réglages.',
     'discover.previewHint': 'Aperçu des pages (qualité)',
     'discover.previewTitle': 'Aperçu - {title}',
     'discover.pagesCount': '({n} pages)',
