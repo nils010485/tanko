@@ -14,6 +14,7 @@ import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-type
 import { currentAbortSignal, withAbortScope } from '../shims/abort-scope.js';
 import { browserEnabled, getPageHTML, isAntiBotShell } from '../shims/browser.js';
 import type { ConnectorPool } from '../shims/connector-pool.js';
+import { searchLegacyMangas } from './legacy-search.js';
 import { type ChapterInfo, errorMessage, type HealthResult, type MangaInfo, type PageList, type SourceAdapter, SourceError } from './types.js';
 
 /** Language tags missing from the vendored connectors (verified per site),
@@ -79,15 +80,10 @@ export class LegacySourceAdapter implements SourceAdapter {
                 return mangas.map(manga => this._toMangaInfo(manga));
             }
             await this.initialize();
-            // connectors with a site search endpoint answer in one request;
-            // the default flow crawls the whole catalog (minutes on some)
-            if (typeof this.connector._searchMangas === 'function') {
-                const mangas = await this.connector._searchMangas(query);
-                return (mangas || []).map(manga => this._toMangaInfo(manga));
-            }
-            const needle = query.trim().toLowerCase();
-            const mangas = await this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
-            return (mangas || []).filter(manga => manga.title?.toLowerCase().includes(needle)).map(manga => this._toMangaInfo(manga));
+            const mangas = await searchLegacyMangas(this.connector, query, () =>
+                this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback))
+            );
+            return mangas.map(manga => this._toMangaInfo(manga));
         }, 'search');
     }
 
