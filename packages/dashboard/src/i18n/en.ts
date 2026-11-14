@@ -119,6 +119,7 @@ export const en = {
     'discover.follow': 'Follow',
     'discover.chaptersCount': '{n} chapters',
     'discover.noChapter': 'No chapter.',
+    'discover.noChapterHint': '{source} lists no chapter for this title in your preferred languages - pick another source, or widen the languages in Settings.',
     'discover.previewHint': 'Preview pages (quality)',
     'discover.previewTitle': 'Preview - {title}',
     'discover.pagesCount': '({n} pages)',

@@ -131,6 +131,7 @@ export default function Discover({
     const searchInputRef = useRef<HTMLInputElement>(null);
     const searchWrapRef = useRef<HTMLDivElement>(null);
     const [selected, setSelected] = useState<MangaDto | null>(null);
+    const [selectedInstances, setSelectedInstances] = useState<MangaDto[]>([]);
     const [chapters, setChapters] = useState<ChapterDto[] | null>(null);
     const [chaptersError, setChaptersError] = useState('');
     const [preview, setPreview] = useState<string[] | null>(null);
@@ -150,6 +151,7 @@ export default function Discover({
     const unmounted = useUnmounted();
     /** Ignore page responses that resolve after the preview was closed or replaced. */
     const previewSeq = useRef(0);
+    const chaptersSeq = useRef(0);
     const closePreview = () => {
         previewSeq.current++;
         setPreview(null);
@@ -501,13 +503,17 @@ export default function Discover({
         );
     }, [results, resultMeta, t]);
 
-    const openChapters = async (manga: MangaDto) => {
+    const openChapters = async (manga: MangaDto, instances: MangaDto[] = [manga]) => {
+        const seq = ++chaptersSeq.current;
         setSelected(manga);
+        setSelectedInstances(instances);
         setChapters(null);
         setChaptersError('');
         try {
-            setChapters(await api.chapters(manga.sourceId, manga.id, manga.title));
+            const list = await api.chapters(manga.sourceId, manga.id, manga.title);
+            if (seq === chaptersSeq.current) setChapters(list);
         } catch (error) {
+            if (seq !== chaptersSeq.current) return;
             setChapters([]);
             setChaptersError(apiErrorText(error, t));
         }
@@ -846,6 +852,8 @@ export default function Discover({
             {selected && (
                 <ChaptersModal
                     selected={selected}
+                    instances={selectedInstances}
+                    sources={sources}
                     chapters={chapters}
                     chaptersError={chaptersError}
                     added={added}
@@ -853,6 +861,7 @@ export default function Discover({
                     onOpenSeries={id => onOpenSeries?.(id)}
                     onClose={() => setSelected(null)}
                     onFollow={openFollowChoice}
+                    onChaptersOf={manga => void openChapters(manga, selectedInstances)}
                     onPreview={openPreview}
                     onEnqueue={enqueueChapters}
                 />
@@ -892,7 +901,10 @@ export default function Discover({
                     addingKey={addingKey}
                     onClose={() => setCompare(null)}
                     onFollow={openFollowChoice}
-                    onChapters={openChapters}
+                    onChapters={(manga, instances) => {
+                        setCompare(null);
+                        void openChapters(manga, instances);
+                    }}
                 />
             )}
         </div>

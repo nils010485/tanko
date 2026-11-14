@@ -99,3 +99,43 @@ describe('MadaraConnector paged-style fallback', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('MadaraConnector search covers', () => {
+    const ajaxRows = JSON.stringify({
+        success: true,
+        data: [
+            { title: 'Alpha', url: 'https://example.test/manga/alpha/', type: 'manga' },
+            { title: 'Beta', url: 'https://example.test/manga/beta/', type: 'manga' }
+        ]
+    });
+    const searchPage = `<html><body>
+        <div class="row c-tabs-item__content">
+            <div class="tab-thumb"><a href="https://example.test/manga/alpha/"><img src="/covers/alpha.webp"></a></div>
+            <div class="post-title"><a href="https://example.test/manga/alpha/">Alpha</a></div>
+        </div>
+        <div class="row c-tabs-item__content">
+            <div class="tab-thumb"><a href="https://example.test/manga/beta/"><img data-src="/covers/beta.webp"></a></div>
+            <div class="post-title"><a href="https://example.test/manga/beta/">Beta</a></div>
+        </div></body></html>`;
+
+    it('merges the covers of the rendered search page when the ajax rows carry none', async () => {
+        vi.stubGlobal(
+            'fetch',
+            serve({
+                'https://example.test/wp-admin/admin-ajax.php': ajaxRows,
+                'https://example.test/?s=alpha&post_type=wp-manga': pad(searchPage)
+            })
+        );
+        const connector = new MadaraConnector({ id: 'md', label: 'MD', base: 'https://example.test' });
+        const found = await connector.searchMangas('alpha');
+        expect(found.map(manga => manga.thumbnail)).toEqual(['https://example.test/covers/alpha.webp', 'https://example.test/covers/beta.webp']);
+    });
+
+    it('keeps the ajax rows when the rendered search page fails', async () => {
+        vi.stubGlobal('fetch', serve({ 'https://example.test/wp-admin/admin-ajax.php': ajaxRows }));
+        const connector = new MadaraConnector({ id: 'md', label: 'MD', base: 'https://example.test' });
+        const found = await connector.searchMangas('alpha');
+        expect(found.map(manga => manga.title)).toEqual(['Alpha', 'Beta']);
+        expect(found.every(manga => manga.thumbnail === undefined)).toBe(true);
+    });
+});

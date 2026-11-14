@@ -65,4 +65,18 @@ describe('MangaDexConnector.getChapters language filter', () => {
         const url = new URL(String(mock.mock.calls[0][0]));
         expect(url.searchParams.has('translatedLanguage[]')).toBe(false);
     });
+
+    it('returns an empty list instead of failing when the title has no chapter', async () => {
+        stubFetch(chapterList([]));
+        await expect(new MangaDexConnector().getChapters(MANGA, { languages: ['en'] })).resolves.toEqual([]);
+    });
+});
+
+describe('MangaDexConnector.searchMangas', () => {
+    it('asks the API for titles that actually carry chapters', async () => {
+        const mock = stubFetch({ result: 'ok', data: [], total: 0 });
+        await new MangaDexConnector().searchMangas('solo level');
+        const url = new URL(String(mock.mock.calls[0][0]));
+        expect(url.searchParams.get('hasAvailableChapters')).toBe('true');
+    });
 });

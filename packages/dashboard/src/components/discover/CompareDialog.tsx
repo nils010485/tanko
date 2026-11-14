@@ -29,7 +29,7 @@ export function CompareDialog({
     addingKey: string | null;
     onClose(): void;
     onFollow(manga: MangaDto): void;
-    onChapters(manga: MangaDto): void;
+    onChapters(manga: MangaDto, instances: MangaDto[]): void;
 }) {
     const { t } = useI18n();
     const [stats, setStats] = useState<Map<string, SourceStats>>(new Map());
@@ -67,7 +67,7 @@ export function CompareDialog({
             ariaLabel={t('discover.compareTitle')}
         >
             <div className="flex items-start gap-3 border-b border-line px-4 py-3">
-                <Cover title={head.title || '?'} thumbnail={head.thumbnail} className="h-16 w-11 flex-none rounded-md" />
+                <Cover title={head.title || '?'} thumbnail={head.thumbnail} sourceId={head.sourceId} className="h-16 w-11 flex-none rounded-md" />
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold" title={head.title}>
                         {head.title}
@@ -128,7 +128,7 @@ export function CompareDialog({
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-faint">{detail}</div>
                             <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                <Button small variant="ghost" onClick={() => onChapters(manga)}>
+                                <Button small variant="ghost" onClick={() => onChapters(manga, instances)}>
                                     {t('discover.chapters')}
                                 </Button>
                                 <Button small disabled={isAdded || addingKey !== null} loading={addingKey === key} onClick={() => onFollow(manga)}>

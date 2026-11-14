@@ -169,20 +169,31 @@ export class MadaraConnector implements SourceAdapter {
                     return [];
                 }
                 if (!errored) {
-                    return (json.data as MadaraAjaxItem[])
-                        .filter((item): item is MadaraAjaxItem & { url: string } => !!item.url)
-                        .map(item => ({
-                            id: this._mangaIdFromUrl(item.url),
-                            title: this._decode(item.label || item.title || item.value || item.url),
-                            url: item.url,
-                            thumbnail: item.thumbnail
-                        }));
+                    const items = (json.data as MadaraAjaxItem[]).filter((item): item is MadaraAjaxItem & { url: string } => !!item.url);
+                    await this._mergeSearchCovers(items, query);
+                    return items.map(item => ({
+                        id: this._mangaIdFromUrl(item.url),
+                        title: this._decode(item.label || item.title || item.value || item.url),
+                        url: item.url,
+                        thumbnail: item.thumbnail
+                    }));
                 }
             }
         } catch {
             /* fall through to the HTML search page */
         }
         return this._searchHtml(query);
+    }
+
+    private async _mergeSearchCovers(items: Array<MadaraAjaxItem & { url: string }>, query: string): Promise<void> {
+        if (items.length === 0 || items.some(item => item.thumbnail) || Date.now() < this._browserUntil) {
+            return;
+        }
+        const rows = await this._searchHtml(query).catch(() => []);
+        const covers = new Map(rows.filter(row => row.thumbnail).map(row => [row.url, row.thumbnail]));
+        for (const item of items) {
+            item.thumbnail = covers.get(item.url);
+        }
     }
 
     /** Server-rendered search: /?s={q}&post_type=wp-manga rows (NoAjax sites). */
@@ -207,7 +218,8 @@ export class MadaraConnector implements SourceAdapter {
                 continue;
             }
             const img = row.querySelector('img');
-            const thumbnail = img?.getAttribute('data-src') || img?.getAttribute('data-backup') || img?.getAttribute('src') || undefined;
+            const thumbnail =
+                absoluteUrl(img?.getAttribute('data-src') || img?.getAttribute('data-backup') || img?.getAttribute('src'), this.base) || undefined;
             results.push({
                 id: this._mangaIdFromUrl(url),
                 title: this._decode((anchor.textContent || '').replace(/\s+/g, ' ').trim()),

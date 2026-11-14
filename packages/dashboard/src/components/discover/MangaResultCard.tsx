@@ -34,7 +34,7 @@ export function MangaResultCard({
     const { t } = useI18n();
     return (
         <Card className="flex gap-3 p-3">
-            <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} className="h-24 w-16 rounded-md" />
+            <Cover title={manga.title || '?'} thumbnail={manga.thumbnail} sourceId={manga.sourceId} className="h-24 w-16 rounded-md" />
             <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium" title={manga.title}>
                     {manga.title}

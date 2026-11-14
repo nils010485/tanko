@@ -74,6 +74,7 @@ export class MangaDexConnector implements SourceAdapter {
         url.searchParams.set('limit', '10');
         url.searchParams.set('order[relevance]', 'desc');
         url.searchParams.append('includes[]', 'cover_art');
+        url.searchParams.set('hasAvailableChapters', 'true');
         const json = await this._fetch<MangadexListResponse<MangadexMangaAttributes>>(url);
         // one entry per usable title: scanlation names often live in altTitles
         // ("Damn Reincarnation" vs official "My Blasted Reincarnated Life")
@@ -137,9 +138,6 @@ export class MangaDexConnector implements SourceAdapter {
             if (data.length < 100) {
                 break;
             }
-        }
-        if (chapters.length === 0) {
-            throw new SourceError(`No chapters found for "${manga.title}" on MangaDex`, this.id);
         }
         return chapters;
     }

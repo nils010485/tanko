@@ -21,11 +21,20 @@ interface WpManga {
     slug?: string;
     link?: string;
     title?: { rendered?: string };
+    _embedded?: {
+        'wp:featuredmedia'?: Array<{ media_details?: { sizes?: Record<string, { source_url?: string }> }; source_url?: string }>;
+    };
 }
 
 interface WpChapter {
     id?: number;
     slug?: string;
+}
+
+function coverOf(item: WpManga): string | undefined {
+    const media = item._embedded?.['wp:featuredmedia']?.[0];
+    const sizes = media?.media_details?.sizes || {};
+    return sizes.thumbnail?.source_url || sizes.medium?.source_url || media?.source_url || undefined;
 }
 
 function decodeEntities(text: string): string {
@@ -86,12 +95,12 @@ export class NatsuOneConnector implements SourceAdapter {
         const api = `${this.base}/wp-json/wp/v2/manga`;
         let items: WpManga[] = [];
         if (needle) {
-            items = await this._getJson<WpManga[]>(`${api}?search=${encodeURIComponent(needle)}&per_page=100`);
+            items = await this._getJson<WpManga[]>(`${api}?search=${encodeURIComponent(needle)}&per_page=100&_embed=1`);
         }
         if (items.length === 0) {
             // browse the catalog (page 1 for an empty query, a few pages otherwise) and filter locally
             for (let page = 1; page <= (needle ? FALLBACK_PAGES : 1); page++) {
-                const batch = await this._getJson<WpManga[]>(`${api}?per_page=100&page=${page}`);
+                const batch = await this._getJson<WpManga[]>(`${api}?per_page=100&page=${page}&_embed=1`);
                 items.push(...batch);
                 if (batch.length < 100) {
                     break;
@@ -108,7 +117,7 @@ export class NatsuOneConnector implements SourceAdapter {
                     .replace(/<[^>]+>/g, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-                return link && title ? { id: link, title, url: link } : null;
+                return link && title ? { id: link, title, url: link, thumbnail: coverOf(item) } : null;
             })
             .filter((item): item is MangaInfo => item !== null);
     }
