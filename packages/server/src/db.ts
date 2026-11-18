@@ -44,6 +44,23 @@ export class Database {
         this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
     }
 
+    /** Run `fn` inside a SQLite transaction, rolling back if `fn` throws. */
+    transaction<T>(fn: () => T): T {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+            const result = fn();
+            this.db.exec('COMMIT');
+            return result;
+        } catch (error) {
+            try {
+                this.db.exec('ROLLBACK');
+            } catch {
+                /* already rolled back */
+            }
+            throw error;
+        }
+    }
+
     close(): void {
         this.db.close();
     }

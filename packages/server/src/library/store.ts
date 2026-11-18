@@ -29,6 +29,15 @@ import { migrateLibrarySchema } from './schema.js';
 
 export type { AlternativeRow, ChapterRow, MigrationTarget, SourceOutage, StalledCandidate };
 
+interface AggregatedEntryRow extends EntryRow {
+    chapter_total: number | null;
+    chapter_downloaded: number | null;
+    chapter_fresh: number | null;
+    chapter_failed: number | null;
+    chapter_missing: number | null;
+    has_snapshot: number;
+}
+
 export class LibraryStore {
     private readonly ctx: StoreContext;
 
@@ -107,22 +116,26 @@ export class LibraryStore {
                 2 * 60 * 1000,
                 `getChapters(${entry.title})`
             );
-            const insert = this.ctx.db.db.prepare(SQL_INSERT_CHAPTER);
-            for (const chapter of chaptersFound) {
-                if (!chapterAllowed(chapter.language, preferred)) {
-                    continue;
+            snapshot = this.ctx.db.transaction(() => {
+                const insert = this.ctx.db.db.prepare(SQL_INSERT_CHAPTER);
+                let count = 0;
+                for (const chapter of chaptersFound) {
+                    if (!chapterAllowed(chapter.language, preferred)) {
+                        continue;
+                    }
+                    let status: 'downloaded' | 'missing' | 'new';
+                    if (isDownloaded(this.ctx, source.label, entry.title, chapter.title, { id: result.id, directory })) {
+                        status = 'downloaded';
+                    } else if (entry.backlog === 'ignore') {
+                        status = 'missing';
+                    } else {
+                        status = 'new';
+                    }
+                    insert.run(result.id, chapter.id, chapter.title, chapter.language || null, status, now);
+                    count++;
                 }
-                let status: 'downloaded' | 'missing' | 'new';
-                if (isDownloaded(this.ctx, source.label, entry.title, chapter.title, { id: result.id, directory })) {
-                    status = 'downloaded';
-                } else if (entry.backlog === 'ignore') {
-                    status = 'missing';
-                } else {
-                    status = 'new';
-                }
-                insert.run(result.id, chapter.id, chapter.title, chapter.language || null, status, now);
-                snapshot++;
-            }
+                return count;
+            });
         } catch (error) {
             console.warn(`[library] initial snapshot failed for "${entry.title}":`, (error as Error).message);
         }
@@ -318,20 +331,22 @@ export class LibraryStore {
     }
 
     getEntry(entryId: number): LibraryEntryDto | undefined {
-        const row = getEntryRow(this.ctx, entryId);
-        return row ? this._entryToDto(row) : undefined;
+        return this._queryEntries('WHERE l.id = ?', 'WHERE entry_id = ?', [entryId, entryId])[0];
     }
 
     async listEntries(filter: 'visible' | 'hidden' | 'all' = 'visible'): Promise<LibraryEntryDto[]> {
-        const where = filter === 'visible' ? 'WHERE hidden = 0' : filter === 'hidden' ? 'WHERE hidden = 1' : '';
-        const rows = this.ctx.q.all<EntryRow>(`SELECT * FROM library ${where} ORDER BY title COLLATE NOCASE ASC`);
-        return rows.map(row => this._entryToDto(row));
+        let where = '';
+        if (filter === 'visible') {
+            where = 'WHERE l.hidden = 0';
+        } else if (filter === 'hidden') {
+            where = 'WHERE l.hidden = 1';
+        }
+        return this._queryEntries(where);
     }
 
     /** Monitored entries (scheduler checks, detection passes): visible and not paused. */
     async listFollowedEntries(): Promise<LibraryEntryDto[]> {
-        const rows = this.ctx.q.all<EntryRow>('SELECT * FROM library WHERE hidden = 0 AND paused = 0 ORDER BY title COLLATE NOCASE ASC');
-        return rows.map(row => this._entryToDto(row));
+        return this._queryEntries('WHERE l.hidden = 0 AND l.paused = 0');
     }
 
     /** Hide (or restore) an entry without touching its files: a hidden entry
@@ -592,17 +607,36 @@ export class LibraryStore {
         return migration.rollbackMigration(this.ctx, entryId);
     }
 
-    private _entryToDto(row: EntryRow): LibraryEntryDto {
-        const counts = this.ctx.q.get<{ total: number | null; downloaded: number | null; fresh: number | null; failed: number | null; missing: number | null }>(
-            `SELECT COUNT(*) AS total,
+    /** Load entries with chapter counters + snapshot flag in a single JOIN query (avoids N+1 per entry). */
+    private _queryEntries(whereClause: string, chapterWhereClause = '', params: Array<string | number | null> = []): LibraryEntryDto[] {
+        const rows = this.ctx.q.all<AggregatedEntryRow>(
+            `SELECT l.*,
+                    c.total AS chapter_total,
+                    c.downloaded AS chapter_downloaded,
+                    c.fresh AS chapter_fresh,
+                    c.failed AS chapter_failed,
+                    c.missing AS chapter_missing,
+                    EXISTS(SELECT 1 FROM entry_snapshots es WHERE es.entry_id = l.id) AS has_snapshot
+             FROM library l
+             LEFT JOIN (
+                 SELECT entry_id,
+                        COUNT(*) AS total,
                         SUM(CASE WHEN status = 'downloaded' THEN 1 ELSE 0 END) AS downloaded,
                         SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh,
                         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
                         SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing
-                 FROM library_chapters WHERE entry_id = ?`,
-            row.id
-        ) as { total: number | null; downloaded: number | null; fresh: number | null; failed: number | null; missing: number | null }; // aggregate without GROUP BY always returns a row
-        const snapshot = this.ctx.q.get<{ n: number }>('SELECT COUNT(*) AS n FROM entry_snapshots WHERE entry_id = ?', row.id) as { n: number }; // aggregate without GROUP BY always returns a row
+                 FROM library_chapters
+                 ${chapterWhereClause}
+                 GROUP BY entry_id
+             ) c ON c.entry_id = l.id
+             ${whereClause}
+             ORDER BY l.title COLLATE NOCASE ASC`,
+            ...params
+        );
+        return rows.map(row => this._entryToDto(row));
+    }
+
+    private _entryToDto(row: AggregatedEntryRow): LibraryEntryDto {
         let suggestion: LibraryEntryDto['migrationSuggestion'];
         try {
             suggestion = row.migration_suggestion ? JSON.parse(row.migration_suggestion) : undefined;
@@ -622,8 +656,8 @@ export class LibraryStore {
         } catch {
             aliases = undefined;
         }
-        let chapterCount = Number(counts.total || 0);
-        let downloadedCount = Number(counts.downloaded || 0);
+        let chapterCount = Number(row.chapter_total || 0);
+        let downloadedCount = Number(row.chapter_downloaded || 0);
         // no chapter registered (import whose source-based sync failed,
         // files pre-dating the database): show what actually sits on disk
         if (chapterCount === 0) {
@@ -643,16 +677,16 @@ export class LibraryStore {
             autoDownload: row.auto_download === 1,
             chapterCount,
             downloadedCount,
-            newCount: Number(counts.fresh || 0),
-            failedCount: Number(counts.failed || 0),
-            missingCount: Number(counts.missing || 0),
+            newCount: Number(row.chapter_fresh || 0),
+            failedCount: Number(row.chapter_failed || 0),
+            missingCount: Number(row.chapter_missing || 0),
             lastCheckedAt: row.last_checked_at || undefined,
             lastChapterAt: row.last_chapter_at || undefined,
             addedAt: row.added_at,
             checkFailures: Number(row.check_failures || 0),
             migrationSuggestion: suggestion,
             dismissedMigration: dismissed,
-            canRollbackMigration: Number(snapshot.n || 0) > 0,
+            canRollbackMigration: row.has_snapshot === 1,
             hidden: Number(row.hidden || 0) === 1,
             paused: Number(row.paused || 0) === 1,
             aliases: aliases && aliases.length > 0 ? aliases : undefined

@@ -374,3 +374,42 @@ describe('scheduler stalled-source detection pass', () => {
         expect(recordStalenessProbe).toHaveBeenCalledWith(80, false);
     });
 });
+
+describe('scheduler inter-source parallelism', () => {
+    it('checks distinct sources in parallel while serializing entries of the same source', async () => {
+        const activePerSource = new Map<string, number>();
+        const maxPerSource = new Map<string, number>();
+        let globalActive = 0;
+        let maxGlobalActive = 0;
+
+        const entries = [
+            { id: 101, sourceId: 'alpha', sourceLabel: 'Alpha', title: 'Alpha 1' },
+            { id: 102, sourceId: 'alpha', sourceLabel: 'Alpha', title: 'Alpha 2' },
+            { id: 103, sourceId: 'beta', sourceLabel: 'Beta', title: 'Beta 1' },
+            { id: 104, sourceId: 'gamma', sourceLabel: 'Gamma', title: 'Gamma 1' }
+        ] as unknown as LibraryEntryDto[];
+
+        const store = {
+            listFollowedEntries: async () => entries,
+            checkForNewChapters: async (id: number) => {
+                const entry = entries.find(item => item.id === id)!;
+                const next = (activePerSource.get(entry.sourceId) ?? 0) + 1;
+                activePerSource.set(entry.sourceId, next);
+                maxPerSource.set(entry.sourceId, Math.max(maxPerSource.get(entry.sourceId) ?? 0, next));
+                globalActive++;
+                maxGlobalActive = Math.max(maxGlobalActive, globalActive);
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                globalActive--;
+                activePerSource.set(entry.sourceId, next - 1);
+                return { fresh: [], usableSeen: 1 };
+            }
+        };
+
+        const result = await buildScheduler(store).runNow();
+        expect(result).toEqual({ checked: 4, newChapters: 0 });
+        expect(maxGlobalActive).toBeGreaterThan(1);
+        expect(maxPerSource.get('alpha')).toBe(1);
+        expect(maxPerSource.get('beta')).toBe(1);
+        expect(maxPerSource.get('gamma')).toBe(1);
+    });
+});
