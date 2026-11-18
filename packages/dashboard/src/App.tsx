@@ -3,6 +3,7 @@
  * The active tab is synced with the URL hash (#/library, …) so it survives
  * reloads and can be shared.
  */
+import type { AuthUserDto, BootstrapDto } from '@tanko/shared';
 import { type ComponentType, useEffect, useState } from 'react';
 
 import {
@@ -11,6 +12,7 @@ import {
     IconGlobe,
     IconImport,
     IconLibrary,
+    IconLogOut,
     IconMenu,
     type IconProps,
     IconSearch,
@@ -18,6 +20,7 @@ import {
     IconTasks
 } from './components/icons.js';
 import { useI18n } from './i18n/index.js';
+import { api, getBootstrap, onUnauthorized, resetBootToken } from './lib/api.js';
 import { useLiveState } from './lib/live.js';
 import { useHashRoute, useHashSeriesId } from './lib/router.js';
 import Activity from './views/Activity.js';
@@ -51,6 +54,74 @@ const NAV_SECTIONS: Array<{ labelKey: 'nav.sectionRead' | 'nav.sectionManage'; t
 const TAB_IDS = Object.keys(TAB_ICONS) as Tab[];
 
 export default function App() {
+    const [boot, setBoot] = useState<BootstrapDto | null | undefined>(undefined);
+    const { t } = useI18n();
+
+    useEffect(() => {
+        let active = true;
+        getBootstrap().then(data => {
+            if (active) {
+                setBoot(data);
+            }
+        });
+        const unsubscribe = onUnauthorized(() => setBoot(null));
+        return () => {
+            active = false;
+            unsubscribe();
+        };
+    }, []);
+
+    if (boot === undefined) {
+        return <div className="min-h-screen bg-canvas" />;
+    }
+
+    if (boot === null) {
+        const authError = new URLSearchParams(window.location.search).get('auth_error');
+        const returnTo = `${window.location.pathname}${window.location.hash}`;
+        const loginHref = `/auth/login?returnTo=${encodeURIComponent(returnTo.startsWith('/') ? returnTo : '/')}`;
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
+                <div className="w-full max-w-sm space-y-6 rounded-2xl border border-line bg-surface/60 p-6 shadow-2xl">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-accent font-display text-xl font-extrabold text-canvas shadow-lg shadow-accent/25">
+                            単
+                        </div>
+                        <div>
+                            <div className="font-display text-lg font-bold tracking-tight">Tanko</div>
+                            <div className="text-[11px] font-semibold uppercase tracking-widest text-faint">{t('app.tagline')}</div>
+                        </div>
+                    </div>
+                    <p className="text-sm text-muted">{t('auth.subtitle')}</p>
+                    {authError && (
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                            {authError === 'forbidden' ? t('auth.errorForbidden') : t('auth.errorFailed')}
+                        </div>
+                    )}
+                    <a
+                        href={loginHref}
+                        className="flex w-full items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-canvas transition hover:opacity-90"
+                    >
+                        {t('auth.signIn')}
+                    </a>
+                </div>
+            </div>
+        );
+    }
+
+    const handleLogout = async () => {
+        const result = await api.logout().catch(() => null);
+        resetBootToken();
+        if (result?.logoutUrl) {
+            window.location.assign(result.logoutUrl);
+            return;
+        }
+        setBoot(null);
+    };
+
+    return <DashboardShell user={boot.user} onLogout={boot.authEnabled ? handleLogout : undefined} />;
+}
+
+function DashboardShell({ user, onLogout }: { user?: AuthUserDto; onLogout?: () => void }) {
     const [tab, setTab] = useHashRoute<Tab>('library', TAB_IDS);
     const [seriesId, navigateSeries] = useHashSeriesId();
     const [navOpen, setNavOpen] = useState(false);
@@ -174,7 +245,7 @@ export default function App() {
 
             {/* Sidebar */}
             <aside
-                className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col border-r border-line bg-canvas transition-transform lg:static lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-none flex-col border-r border-line bg-canvas transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}
             >
                 <div className="px-5 pb-5 pt-6">{logo}</div>
                 <nav className="flex-1 overflow-y-auto px-3">
@@ -185,7 +256,25 @@ export default function App() {
                         </div>
                     ))}
                 </nav>
-                <div className="border-t border-line px-3 py-3">
+                <div className="space-y-2 border-t border-line px-3 py-3">
+                    {user && (
+                        <div className="flex items-center justify-between gap-2 px-3 text-xs text-muted">
+                            <span className="truncate font-medium text-fg" title={user.email || user.name}>
+                                {user.name}
+                            </span>
+                            {onLogout && (
+                                <button
+                                    type="button"
+                                    onClick={onLogout}
+                                    title={t('auth.logout')}
+                                    aria-label={t('auth.logout')}
+                                    className="rounded-md p-1 text-faint transition hover:bg-surface hover:text-fg"
+                                >
+                                    <IconLogOut size={14} />
+                                </button>
+                            )}
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 px-3 text-[11px] text-faint">
                         {connectionDot}
                         <span className="truncate">

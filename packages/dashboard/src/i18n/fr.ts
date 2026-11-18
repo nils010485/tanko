@@ -741,5 +741,12 @@ export const fr: typeof import('./en.js').en = {
     'confirm.confirm': 'Confirmer',
 
     // coded server errors (apiErrorText)
-    'errors.sourceError': "La source n'a pas répondu correctement"
+    'errors.sourceError': "La source n'a pas répondu correctement",
+
+    // auth
+    'auth.signIn': 'Se connecter avec le SSO',
+    'auth.subtitle': 'Connectez-vous via votre fournisseur d’identité pour accéder à Tanko',
+    'auth.logout': 'Déconnexion',
+    'auth.errorForbidden': 'Accès refusé : votre compte ne fait pas partie d’un groupe autorisé.',
+    'auth.errorFailed': 'Échec de l’authentification SSO. Veuillez réessayer.'
 };

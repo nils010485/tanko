@@ -8,6 +8,7 @@ import type {
     ActivityStatsDto,
     ApiError,
     AppSettingsResponseDto,
+    BootstrapDto,
     ChapterDto,
     ConnectorsUpdateInfo,
     DeadSeriesDto,
@@ -74,23 +75,47 @@ function qs(params: Record<string, string>): string {
     return new URLSearchParams(params).toString();
 }
 
-/** Boot token (CSRF guard): random per server boot, readable same-origin only
- *  via GET /api/bootstrap. Attached to every request; '' when the server has none. */
-let bootToken: string | null = null;
-let bootTokenPromise: Promise<string> | null = null;
+let bootstrapCache: BootstrapDto | null | undefined;
+let bootstrapPromise: Promise<BootstrapDto | null> | null = null;
+const unauthorizedListeners = new Set<() => void>();
+const FALLBACK_BOOTSTRAP: BootstrapDto = { token: '', authEnabled: false };
+
+export function onUnauthorized(listener: () => void): () => void {
+    unauthorizedListeners.add(listener);
+    return () => unauthorizedListeners.delete(listener);
+}
+
+export function getBootstrap(): Promise<BootstrapDto | null> {
+    if (bootstrapCache !== undefined) {
+        return Promise.resolve(bootstrapCache);
+    }
+    bootstrapPromise ??= fetch('/api/bootstrap')
+        .then(async response => {
+            if (response.status === 401) {
+                return null;
+            }
+            if (!response.ok) {
+                return FALLBACK_BOOTSTRAP;
+            }
+            const data = (await response.json()) as BootstrapDto;
+            return { token: data.token ?? '', authEnabled: Boolean(data.authEnabled), user: data.user };
+        })
+        .catch(() => FALLBACK_BOOTSTRAP)
+        .then(data => {
+            bootstrapCache = data;
+            return data;
+        });
+    return bootstrapPromise;
+}
 
 export function getBootToken(): Promise<string> {
-    bootTokenPromise ??= fetch('/api/bootstrap')
-        .then(response => (response.ok ? response.json() : { token: '' }))
-        .then((body: { token?: string }) => (bootToken = body.token ?? ''))
-        .catch(() => (bootToken = ''));
-    return bootTokenPromise;
+    return getBootstrap().then(data => data?.token ?? '');
 }
 
 /** Forget the memoized token - the server restarted and rotated it. */
 export function resetBootToken(): void {
-    bootToken = null;
-    bootTokenPromise = null;
+    bootstrapCache = undefined;
+    bootstrapPromise = null;
 }
 
 /** Request failure carrying the parsed error body (e.g. the duplicate
@@ -126,6 +151,12 @@ async function request<T>(url: string, init?: RequestInit, retried = false): Pro
         headers.set(TOKEN_HEADER, token);
     }
     const response = await fetch(url, { ...init, headers });
+    if (response.status === 401) {
+        resetBootToken();
+        for (const listener of unauthorizedListeners) {
+            listener();
+        }
+    }
     if (response.status === 403 && !retried) {
         // token rotated (server restart) or bootstrap failed earlier: refetch and retry once
         resetBootToken();
@@ -326,7 +357,10 @@ export const api = {
         request<{ confirmed: number }>(`/api/import/jobs/${jobId}/confirm`, { method: 'POST', body: JSON.stringify({ mode }) }),
     importJobChoose: (jobId: number, payload: { path: string; sourceId: string; sourceLabel: string; mangaId: string; mangaTitle: string }) =>
         request<{ ok: boolean }>(`/api/import/jobs/${jobId}/choose`, { method: 'POST', body: JSON.stringify(payload) }),
-    importJobSync: (jobId: number) => request<void>(`/api/import/jobs/${jobId}/sync`, { method: 'POST' })
+    importJobSync: (jobId: number) => request<void>(`/api/import/jobs/${jobId}/sync`, { method: 'POST' }),
+
+    // auth
+    logout: () => request<{ ok: boolean; logoutUrl?: string }>('/api/auth/logout', { method: 'POST' })
 };
 
 export function formatBytes(bytes: number): string {

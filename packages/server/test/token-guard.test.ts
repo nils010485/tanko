@@ -21,7 +21,7 @@ describe('token guard', () => {
     it('serves the boot token on GET /api/bootstrap without auth', async () => {
         const response = await app.inject({ method: 'GET', url: '/api/bootstrap' });
         expect(response.statusCode).toBe(200);
-        expect(response.json()).toEqual({ token: apiToken });
+        expect(response.json()).toEqual({ token: apiToken, authEnabled: false });
         expect(response.headers['cache-control']).toContain('no-store');
     });
 
