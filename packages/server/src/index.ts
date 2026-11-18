@@ -10,6 +10,7 @@ import type { DownloadJobDto, DownloadStatus } from '@tanko/shared';
 import Fastify from 'fastify';
 import { JobRunner } from './activity/jobs.js';
 import { ActivityService } from './activity/service.js';
+import { OidcAuthService } from './auth/oidc.js';
 import { CachedSourceAdapter } from './cache/cached-adapter.js';
 import { SqliteCacheStore } from './cache/sqlite-store.js';
 import { TieredCacheStore } from './cache/tiered-store.js';
@@ -371,7 +372,12 @@ const globalSearch = new GlobalSearchService({
 const app = Fastify({ logger: false });
 await app.register(fastifyWebsocket);
 
-registerTokenGuard(app);
+const auth = config.oidc ? new OidcAuthService({ config: config.oidc, db: database }) : undefined;
+registerTokenGuard(app, auth);
+if (auth) {
+    await auth.registerRoutes(app);
+    console.log(`[server] OIDC auth enabled (issuer: ${config.oidc?.issuer})`);
+}
 
 app.decorate('healthService', healthService);
 app.decorate('globalSearch', globalSearch);
@@ -391,7 +397,7 @@ registerImportRoutes(app, importer, queue, database);
 // WebSocket endpoint: dashboard live events (token via query - WebSocket cannot carry headers)
 app.register(async fastify => {
     fastify.get<{ Querystring: { token?: string } }>('/ws', { websocket: true }, (socket: WebSocket, request) => {
-        if (request.query.token !== apiToken) {
+        if (request.query.token !== apiToken || (auth && !auth.sessionFromHeaders(request.headers.cookie))) {
             socket.close(1008, 'invalid token');
             return;
         }

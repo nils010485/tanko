@@ -417,6 +417,7 @@ export function activeProxy(): string | null {
 }
 
 const nativeFetch = globalThis.fetch;
+export const directFetch = nativeFetch;
 let installed = false;
 
 /** Route every subsequent global fetch() through the active proxy: a single

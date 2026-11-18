@@ -27,6 +27,7 @@ import {
     Link2,
     List,
     ListChecks,
+    LogOut,
     type LucideProps,
     Menu,
     Pause,
@@ -101,6 +102,7 @@ export const IconBookmarkFilled = filled(decorative(Bookmark));
 export const IconUndo = decorative(Undo2);
 export const IconDots = decorative(Ellipsis);
 export const IconArrowLeft = decorative(ArrowLeft);
+export const IconLogOut = decorative(LogOut);
 
 /** GitHub logo - brand icons were removed from lucide, kept local. */
 export function IconGitHub({ size = 16, ...props }: IconProps) {

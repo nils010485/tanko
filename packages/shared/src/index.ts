@@ -539,3 +539,14 @@ export interface ApiError {
 
 /** Header carrying the same-origin API token guarding all mutations. */
 export const TOKEN_HEADER = 'x-tanko-token';
+
+export interface AuthUserDto {
+    name: string;
+    email?: string;
+}
+
+export interface BootstrapDto {
+    token: string;
+    authEnabled: boolean;
+    user?: AuthUserDto;
+}

@@ -735,5 +735,12 @@ export const en = {
     'confirm.confirm': 'Confirm',
 
     // coded server errors (apiErrorText)
-    'errors.sourceError': 'The source did not respond correctly'
+    'errors.sourceError': 'The source did not respond correctly',
+
+    // auth
+    'auth.signIn': 'Sign in with SSO',
+    'auth.subtitle': 'Sign in with your identity provider to access Tanko',
+    'auth.logout': 'Sign out',
+    'auth.errorForbidden': 'Access denied: your account is not in an allowed group.',
+    'auth.errorFailed': 'SSO sign-in failed. Please try again.'
 };
