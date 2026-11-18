@@ -35,6 +35,9 @@ const NO_USABLE_CHAPTERS = 'la source ne référence plus aucun chapitre dans le
  *  (autoUnfollow setting). 120 days: monthly series publish every ~30 days,
  *  quarterly ones every ~92. */
 const UNFOLLOW_STALE_DAYS = 120;
+/** Distinct sources checked concurrently during a run (entries of the same
+ *  source stay sequential so no site is hit in parallel). */
+const SOURCE_CHECK_CONCURRENCY = 6;
 
 export type { ScheduleSettings } from './settings.js';
 
@@ -127,14 +130,10 @@ export class Scheduler {
         const failedIds = new Set<number>();
         try {
             const entries = await this.opts.store.listFollowedEntries();
-            for (const entry of entries) {
-                const fresh = await this._checkOne(entry, failoverProbed, failedIds);
-                checked++;
-                totalNew += fresh.length;
-                if (fresh.length > 0) {
-                    newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
-                }
-            }
+            const summary = await this._checkEntriesBySource(entries, failoverProbed, failedIds);
+            checked = summary.checked;
+            totalNew = summary.totalNew;
+            newBySeries.push(...summary.newBySeries);
             // outage maintenance, before the backstop: close outages whose
             // last observed failure is stale (the source quietly recovered -
             // restart the failed jobs' retry ladder) and arm the escalation
@@ -404,6 +403,44 @@ export class Scheduler {
         }
         this._publishEntryUpdated(entry.id);
         return fresh;
+    }
+
+    /** Check followed entries concurrently across distinct sources while keeping
+     *  entries of the same source sequential (politeness + coherent outage accounting). */
+    private async _checkEntriesBySource(
+        entries: LibraryEntryDto[],
+        failoverProbed: Set<number>,
+        failedIds: Set<number>
+    ): Promise<{ checked: number; totalNew: number; newBySeries: Array<{ title: string; chapters: string[] }> }> {
+        const bySource = new Map<string, LibraryEntryDto[]>();
+        for (const entry of entries) {
+            const bucket = bySource.get(entry.sourceId);
+            if (bucket) {
+                bucket.push(entry);
+            } else {
+                bySource.set(entry.sourceId, [entry]);
+            }
+        }
+        const queues = [...bySource.values()];
+        let cursor = 0;
+        let checked = 0;
+        let totalNew = 0;
+        const newBySeries: Array<{ title: string; chapters: string[] }> = [];
+        const worker = async (): Promise<void> => {
+            while (cursor < queues.length) {
+                const sourceEntries = queues[cursor++];
+                for (const entry of sourceEntries) {
+                    const fresh = await this._checkOne(entry, failoverProbed, failedIds);
+                    checked++;
+                    totalNew += fresh.length;
+                    if (fresh.length > 0) {
+                        newBySeries.push({ title: entry.title, chapters: fresh.map(chapter => chapter.title) });
+                    }
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(SOURCE_CHECK_CONCURRENCY, queues.length) }, worker));
+        return { checked, totalNew, newBySeries };
     }
 
     /** Jitter + check one entry; failures are routed to _handleCheckFailure and reported as []. */

@@ -55,108 +55,112 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
         `getChapters(${row.title})`
     );
     const now = new Date().toISOString();
-    const insert = ctx.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
-    const fresh: ChapterRow[] = [];
-    const rows = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId);
-    // local-only rows (files the source never listed) whose number the
-    // source now carries are absorbed into the real chapter: same file,
-    // real chapter id, no duplicate row
-    const known = new Set(rows.map(item => item.chapter_id));
-    // every row by chapter number, local ghosts first so they keep priority.
-    // A row the source still lists under its current id is NOT a candidate:
-    // absorbing it would re-id a known chapter when numbers duplicate.
-    const listedIds = new Set(chapters.map(chapter => chapter.id));
-    const byNumber = new Map<number, ChapterRow>();
-    for (const row of rows) {
-        const number = parseChapterNumber(row.title);
-        if (number === null || listedIds.has(row.chapter_id)) {
-            continue;
+    return ctx.db.transaction(() => {
+        const insert = ctx.db.db.prepare(SQL_INSERT_NEW_CHAPTER);
+        const fresh: ChapterRow[] = [];
+        const rows = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId);
+        // local-only rows (files the source never listed) whose number the
+        // source now carries are absorbed into the real chapter: same file,
+        // real chapter id, no duplicate row
+        const known = new Set(rows.map(item => item.chapter_id));
+        // every row by chapter number, local ghosts first so they keep priority.
+        // A row the source still lists under its current id is NOT a candidate:
+        // absorbing it would re-id a known chapter when numbers duplicate.
+        const listedIds = new Set(chapters.map(chapter => chapter.id));
+        const byNumber = new Map<number, ChapterRow>();
+        for (const item of rows) {
+            const number = parseChapterNumber(item.title);
+            if (number === null || listedIds.has(item.chapter_id)) {
+                continue;
+            }
+            const current = byNumber.get(number);
+            const rowIsLocal = item.chapter_id.startsWith('local:');
+            if (!current || (rowIsLocal && !current.chapter_id.startsWith('local:'))) {
+                byNumber.set(number, item);
+            }
         }
-        const current = byNumber.get(number);
-        const rowIsLocal = row.chapter_id.startsWith('local:');
-        if (!current || (rowIsLocal && !current.chapter_id.startsWith('local:'))) {
-            byNumber.set(number, row);
+        // Re-identification guard: when a source rotates the ids of its whole
+        // catalogue (Asura Scans rotates a shared build code embedded in every
+        // URL), the entire listing looks unknown while the chapter numbers still
+        // match the stored rows. An overwhelming mismatch re-ids the existing
+        // rows instead of treating the series as brand new - otherwise each
+        // rotation re-downloads and re-notifies the whole series.
+        const listed = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));
+        const unknown = listed.filter(chapter => !known.has(chapter.id));
+        const matched = unknown.filter(chapter => {
+            const number = parseChapterNumber(chapter.title);
+            return number !== null && byNumber.has(number);
+        }).length;
+        const reidentified = unknown.length >= 6 && matched >= unknown.length * 0.9;
+        const absorb = ctx.db.db.prepare('UPDATE library_chapters SET chapter_id = ?, title = ?, language = ? WHERE entry_id = ? AND id = ?');
+        let usableSeen = 0;
+        for (const chapter of chapters) {
+            if (!chapterAllowed(chapter.language, preferred)) {
+                continue;
+            }
+            usableSeen++;
+            const number = parseChapterNumber(chapter.title);
+            if (number !== null && !known.has(chapter.id)) {
+                const candidate = byNumber.get(number);
+                if (candidate && (candidate.chapter_id.startsWith('local:') || reidentified)) {
+                    absorb.run(chapter.id, chapter.title, chapter.language || null, entryId, candidate.id);
+                    byNumber.delete(number);
+                    continue;
+                }
+            }
+            const result = insert.run(entryId, chapter.id, chapter.title, chapter.language || null, now);
+            if (Number(result.changes) > 0) {
+                fresh.push({
+                    id: Number(result.lastInsertRowid),
+                    entry_id: entryId,
+                    chapter_id: chapter.id,
+                    title: chapter.title,
+                    language: chapter.language || null,
+                    status: 'new',
+                    path: null,
+                    discovered_at: now,
+                    downloaded_at: null
+                });
+            }
         }
-    }
-    // Re-identification guard: when a source rotates the ids of its whole
-    // catalogue (Asura Scans rotates a shared build code embedded in every
-    // URL), the entire listing looks unknown while the chapter numbers still
-    // match the stored rows. An overwhelming mismatch re-ids the existing
-    // rows instead of treating the series as brand new - otherwise each
-    // rotation re-downloads and re-notifies the whole series.
-    const listed = chapters.filter(chapter => chapterAllowed(chapter.language, preferred));
-    const unknown = listed.filter(chapter => !known.has(chapter.id));
-    const matched = unknown.filter(chapter => {
-        const number = parseChapterNumber(chapter.title);
-        return number !== null && byNumber.has(number);
-    }).length;
-    const reidentified = unknown.length >= 6 && matched >= unknown.length * 0.9;
-    const absorb = ctx.db.db.prepare('UPDATE library_chapters SET chapter_id = ?, title = ?, language = ? WHERE entry_id = ? AND id = ?');
-    let usableSeen = 0;
-    for (const chapter of chapters) {
-        if (!chapterAllowed(chapter.language, preferred)) {
-            continue;
+        // Reconcile failed chapters against the listing: a chapter the source
+        // no longer lists is 'lost' (slow revalidation stops - the download
+        // can never succeed), and a 'lost' chapter listed again goes back to
+        // 'failed' (revalidation resumes at its cooldown step). Guarded by
+        // usableSeen > 0: an empty or language-stripped listing (takedown)
+        // must never mass-mark chapters lost. The RAW listing (preferred
+        // languages included) keeps a language-preference change from losing
+        // chapters either.
+        if (usableSeen > 0) {
+            const listedJson = JSON.stringify(chapters.map(chapter => chapter.id));
+            ctx.db.db
+                .prepare(
+                    `UPDATE library_chapters SET status = 'lost'
+                     WHERE entry_id = ? AND status = 'failed'
+                       AND chapter_id NOT LIKE 'local:%'
+                       AND chapter_id NOT IN (SELECT value FROM json_each(?))`
+                )
+                .run(entryId, listedJson);
+            ctx.db.db
+                .prepare(
+                    `UPDATE library_chapters SET status = 'failed'
+                     WHERE entry_id = ? AND status = 'lost'
+                       AND chapter_id IN (SELECT value FROM json_each(?))`
+                )
+                .run(entryId, listedJson);
         }
-        usableSeen++;
-        const number = parseChapterNumber(chapter.title);
-        const candidate = number !== null && !known.has(chapter.id) ? byNumber.get(number) : undefined;
-        if (candidate && number !== null && (candidate.chapter_id.startsWith('local:') || reidentified)) {
-            absorb.run(chapter.id, chapter.title, chapter.language || null, entryId, candidate.id);
-            byNumber.delete(number);
-            continue;
+        if (fresh.length > 0) {
+            // a new chapter just arrived: refresh the date that arms the
+            // stale-series auto-unfollow and clear the stalled-probe
+            // back-off - the series is fresh again
+            ctx.db.db
+                .prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ?, staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?')
+                .run(now, now, entryId);
+        } else {
+            ctx.db.db.prepare('UPDATE library SET last_checked_at = ? WHERE id = ?').run(now, entryId);
         }
-        const result = insert.run(entryId, chapter.id, chapter.title, chapter.language || null, now);
-        if (Number(result.changes) > 0) {
-            fresh.push({
-                id: Number(result.lastInsertRowid),
-                entry_id: entryId,
-                chapter_id: chapter.id,
-                title: chapter.title,
-                language: chapter.language || null,
-                status: 'new',
-                path: null,
-                discovered_at: now,
-                downloaded_at: null
-            });
-        }
-    }
-    // Reconcile failed chapters against the listing: a chapter the source
-    // no longer lists is 'lost' (slow revalidation stops - the download
-    // can never succeed), and a 'lost' chapter listed again goes back to
-    // 'failed' (revalidation resumes at its cooldown step). Guarded by
-    // usableSeen > 0: an empty or language-stripped listing (takedown)
-    // must never mass-mark chapters lost. The RAW listing (preferred
-    // languages included) keeps a language-preference change from losing
-    // chapters either.
-    if (usableSeen > 0) {
-        const listed = JSON.stringify(chapters.map(chapter => chapter.id));
-        ctx.db.db
-            .prepare(
-                `UPDATE library_chapters SET status = 'lost'
-                 WHERE entry_id = ? AND status = 'failed'
-                   AND chapter_id NOT LIKE 'local:%'
-                   AND chapter_id NOT IN (SELECT value FROM json_each(?))`
-            )
-            .run(entryId, listed);
-        ctx.db.db
-            .prepare(
-                `UPDATE library_chapters SET status = 'failed'
-                 WHERE entry_id = ? AND status = 'lost'
-                   AND chapter_id IN (SELECT value FROM json_each(?))`
-            )
-            .run(entryId, listed);
-    }
-    if (fresh.length > 0) {
-        // a new chapter just arrived: refresh the date that arms the
-        // stale-series auto-unfollow and clear the stalled-probe
-        // back-off - the series is fresh again
-        ctx.db.db
-            .prepare('UPDATE library SET last_checked_at = ?, last_chapter_at = ?, staleness_misses = 0, staleness_next_probe_at = NULL WHERE id = ?')
-            .run(now, now, entryId);
-    } else {
-        ctx.db.db.prepare('UPDATE library SET last_checked_at = ? WHERE id = ?').run(now, entryId);
-    }
-    return { fresh, usableSeen };
+        return { fresh, usableSeen };
+    });
 }
 
 /** Enqueue every not-yet-downloaded chapter ('new' status plus failed
