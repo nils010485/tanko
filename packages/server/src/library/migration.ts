@@ -42,14 +42,23 @@ export async function migrateEntry(ctx: StoreContext, entryId: number, target: M
         throw new Error(`Source "${target.sourceId}" introuvable`);
     }
 
-    snapshotEntry(ctx, entryId, 'failover');
+    const snapshotId = snapshotEntry(ctx, entryId, 'failover');
     const downloaded = downloadedByNumber(ctx, entryId);
     // local files matter as much as DB rows: an entry imported from a
     // starved source (a handful of chapters listed) has barely any
     // 'downloaded' row to carry - rebuilding on a richer source must not
     // mark those files missing just because the old source ignored them
     const disk = diskByNumber(seriesDirectory(ctx, entryId));
-    const result = await rebuildChapters(ctx, entryId, target, source, downloaded, disk);
+    let result: { kept: number; total: number };
+    try {
+        result = await rebuildChapters(ctx, entryId, target, source, downloaded, disk);
+    } catch (error) {
+        // the migration never happened: don't leave a phantom undo behind
+        if (snapshotId !== undefined) {
+            ctx.db.db.prepare('DELETE FROM entry_snapshots WHERE id = ?').run(snapshotId);
+        }
+        throw error;
+    }
     // the consumed linked provenance is spent: the entry now lives there, and
     // the migration snapshot already offers the way back
     ctx.db.db.prepare('DELETE FROM library_alternatives WHERE entry_id = ? AND source_id = ? AND manga_id = ?').run(entryId, target.sourceId, target.mangaId);
@@ -60,6 +69,15 @@ export async function migrateEntry(ctx: StoreContext, entryId: number, target: M
  *  chapters whose download failed on the old one (matched by chapter number,
  *  like the file carry-over) so the interrupted download resumes by itself. */
 export function requeueFailedAfterMigration(ctx: StoreContext, entryId: number, queue: DownloadQueue): number {
+    // the still-queued old-source jobs are cancelled through the queue: their
+    // library chapters revert and the dashboard hears about it - a raw DELETE
+    // would leave them 'queued' forever with no job behind them
+    const queuedJobs = ctx.db.db.prepare("SELECT id FROM download_jobs WHERE entry_id = ? AND status = 'queued'").all(entryId) as unknown as Array<{
+        id: number;
+    }>;
+    for (const job of queuedJobs) {
+        queue.cancel(job.id);
+    }
     const titles = (
         ctx.db.db.prepare("SELECT chapter_title FROM download_jobs WHERE entry_id = ? AND status = 'failed'").all(entryId) as unknown as Array<{
             chapter_title: string;
@@ -82,11 +100,10 @@ export function requeueFailedAfterMigration(ctx: StoreContext, entryId: number, 
         const number = parseChapterNumber(chapter.title);
         return chapter.status !== 'downloaded' && number !== null && numbers.has(number);
     });
-    // the consumed failures (and the still-queued old-source jobs, which
-    // would keep failing pointlessly) are purged before enqueuing, so a
-    // bulk "retry failed" cannot resurrect the dead source AND the fresh
-    // jobs are not caught by the DELETE themselves
-    ctx.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status IN ('failed', 'queued')").run(entryId);
+    // the consumed failures are purged before enqueuing, so a bulk "retry
+    // failed" cannot resurrect the dead source AND the fresh jobs are not
+    // caught by the DELETE themselves
+    ctx.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status = 'failed'").run(entryId);
     return enqueueSelected(entry, failed, queue, () =>
         markChaptersQueued(
             ctx,
@@ -227,13 +244,14 @@ export function rollbackMigration(ctx: StoreContext, entryId: number): boolean {
     return true;
 }
 
-function snapshotEntry(ctx: StoreContext, entryId: number, reason: string): void {
+function snapshotEntry(ctx: StoreContext, entryId: number, reason: string): number | undefined {
     const entry = getEntryRow(ctx, entryId);
     if (!entry) {
-        return;
+        return undefined;
     }
     const chapters = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId);
-    ctx.db.db
+    const result = ctx.db.db
         .prepare('INSERT INTO entry_snapshots (entry_id, reason, data, at) VALUES (?, ?, ?, ?)')
         .run(entryId, reason, JSON.stringify({ entry, chapters }), new Date().toISOString());
+    return Number(result.lastInsertRowid);
 }

@@ -9,7 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 export class ZeurelScanConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -67,7 +67,7 @@ export class ZeurelScanConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const slug = new URL(manga.url || manga.id).pathname.match(/\/serie\/([^/]+)/)?.[1];
         const chapters: ChapterInfo[] = [];
@@ -102,7 +102,7 @@ export class ZeurelScanConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('div.reader img[src], .reader-container img[src]')]
             .map(img => img.getAttribute('src'))

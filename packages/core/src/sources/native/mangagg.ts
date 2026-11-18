@@ -25,7 +25,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { errorMessage, SourceError } from '../types.js';
-import { checkHealthViaProbe } from './http.js';
+import { checkHealthViaProbe, pinToOrigin } from './http.js';
 
 const BASE = 'https://mangagg.com';
 
@@ -133,7 +133,7 @@ export class MangaGGConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const mangaUrl = (manga.url || manga.id).replace(/\/$/, '');
+        const mangaUrl = pinToOrigin((manga.url || manga.id).replace(/\/$/, ''), BASE, { id: this.id });
         const html = await this._postChapters(mangaUrl);
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
@@ -153,7 +153,7 @@ export class MangaGGConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, BASE, { id: this.id }));
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('div.page-break img, div.reading-content img')]
             .map(img => img.getAttribute('src')?.trim())

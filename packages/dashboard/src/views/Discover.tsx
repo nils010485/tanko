@@ -613,7 +613,8 @@ export default function Discover({
         setDuplicateBusy(true);
         try {
             await api.linkSource(existing.id, { sourceId: manga.sourceId, mangaId: manga.id, title: manga.title, url: mangaUrlOf(manga) });
-            toast.success(t('discover.duplicateLinked', { title: existing.title, source: manga.title }));
+            const sourceLabel = sources.find(candidate => candidate.id === manga.sourceId)?.label ?? manga.sourceId;
+            toast.success(t('discover.duplicateLinked', { title: existing.title, source: sourceLabel }));
             setDuplicate(null);
         } catch (error) {
             toast.error((error as Error).message);

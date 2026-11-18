@@ -17,7 +17,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { checkHealthViaProbe, fetchWithRetries, noPagesError, siteHeaders } from './http.js';
+import { checkHealthViaProbe, fetchWithRetries, noPagesError, pinToOrigin, siteHeaders } from './http.js';
 
 const UA = randomUserAgent();
 
@@ -82,7 +82,7 @@ export class VComicsConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const seriesUrl = manga.url || `${this.base}/series/${manga.id}`;
+        const seriesUrl = pinToOrigin(manga.url || `${this.base}/series/${manga.id}`, this.base, { id: this.id });
         const html = await this._getText(seriesUrl);
 
         // the full list (all chapters incl. locked ones) is embedded in an
@@ -191,7 +191,7 @@ export class VComicsConnector implements SourceAdapter {
         return value;
     }
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
 

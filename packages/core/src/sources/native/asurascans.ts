@@ -17,7 +17,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { checkHealthViaProbe, fetchWithRetries, noPagesError, siteHeaders } from './http.js';
+import { checkHealthViaProbe, fetchWithRetries, noPagesError, pinToOrigin, siteHeaders } from './http.js';
 
 const UA = randomUserAgent();
 
@@ -76,7 +76,7 @@ export class AsuraScansConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const mangaUrl = manga.url || new URL(manga.id, BASE).href;
+        const mangaUrl = pinToOrigin(manga.url || new URL(manga.id, BASE).href, BASE, { id: this.id });
         const html = await this._getText(mangaUrl);
         const document = parseDocument(html);
 
@@ -116,7 +116,7 @@ export class AsuraScansConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, BASE, { id: this.id });
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
 

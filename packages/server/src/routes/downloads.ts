@@ -45,8 +45,15 @@ export function registerDownloadRoutes(app: FastifyInstance, queue: DownloadQueu
         };
     }>('/api/downloads', async (request, reply) => {
         const body = request.body;
-        if (!body?.sourceId || !body?.mangaId || !Array.isArray(body?.chapters) || body.chapters.length === 0) {
-            return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and a non-empty chapters array' });
+        if (
+            !body?.sourceId ||
+            !body?.mangaId ||
+            typeof body.mangaTitle !== 'string' ||
+            !body.mangaTitle.trim() ||
+            !Array.isArray(body?.chapters) ||
+            body.chapters.length === 0
+        ) {
+            return reply.code(400).send({ error: 'Body must contain sourceId, mangaId, mangaTitle and a non-empty chapters array' });
         }
         const source = await sourceRegistry.get(body.sourceId);
         if (!source) {

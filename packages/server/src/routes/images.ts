@@ -6,7 +6,7 @@
 import type { SourceRegistry } from '@tanko/core';
 import type { FastifyInstance } from 'fastify';
 import { ByteBudgetCache } from '../util/image-cache.js';
-import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
+import { assertPublicHttpUrl, fetchGuarded, readImageResponse } from '../util/net-guard.js';
 
 const FETCH_TIMEOUT_MS = 10_000;
 /** Total RAM the image cache may use. */
@@ -40,14 +40,12 @@ async function fetchImage(target: URL, referer: string, userAgent: string): Prom
         return { error: 'Failed to fetch remote image', retryable: false };
     }
 
-    const contentType = response.headers.get('content-type')?.toLowerCase() || '';
-    if (!response.ok || !contentType.startsWith('image')) {
-        await response.body?.cancel().catch(() => undefined);
-        return { error: `Remote host returned ${response.status}`, retryable: true };
-    }
-
     try {
-        return { image: { contentType, body: await readBodyCapped(response, MAX_IMAGE_BYTES) } };
+        const result = await readImageResponse(response, MAX_IMAGE_BYTES);
+        if (!result.ok) {
+            return { error: `Remote host returned ${result.status}`, retryable: true };
+        }
+        return { image: { contentType: result.contentType, body: result.body } };
     } catch {
         return { error: 'Remote image is too large', retryable: false };
     }

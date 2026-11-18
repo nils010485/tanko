@@ -300,6 +300,7 @@ export function MigrationModal({
                         <div className="overflow-y-auto px-5 py-4">
                             <div className="flex gap-3">
                                 <Cover
+                                    key={current.id}
                                     title={current.title}
                                     thumbnail={current.thumbnail}
                                     sourceId={current.sourceId}

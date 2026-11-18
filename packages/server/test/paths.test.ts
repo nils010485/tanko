@@ -184,6 +184,39 @@ describe('outputExists', () => {
         }
     });
 
+    it('treats an interrupted img chapter found under an alternate name as missing', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const seriesDir = path.join(base, 'Src', 'Serie');
+            fs.mkdirSync(path.join(seriesDir, 'Serie - Ch.1'), { recursive: true });
+            fs.writeFileSync(path.join(seriesDir, 'Serie - Ch.1', '001.jpg'), 'x');
+            const paths = chapterPaths(base, 'Src', 'Serie', 'Ch.1');
+            expect(paths.existing).toBe(path.join(seriesDir, 'Serie - Ch.1'));
+            expect(outputExists(paths, 'img', 30)).toBe(false);
+            expect(outputExists(paths, 'img', 1)).toBe(true);
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('ignores a regular file carrying the chapter directory name (ENOTDIR)', async () => {
+        const fs = await import('node:fs');
+        const os = await import('node:os');
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tanko-paths-'));
+        try {
+            const seriesDir = path.join(base, 'Src', 'Serie');
+            fs.mkdirSync(seriesDir, { recursive: true });
+            fs.writeFileSync(path.join(seriesDir, 'Chapter 1'), 'not a directory');
+            const paths = chapterPaths(base, 'Src', 'Serie', 'Ch.1');
+            expect(paths.existing).toBeUndefined();
+            expect(outputExists(paths, 'img', 5)).toBe(false);
+        } finally {
+            fs.rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('prefers a v2 file when both versions of a chapter exist', async () => {
         const fs = await import('node:fs');
         const os = await import('node:os');

@@ -11,7 +11,7 @@ import path from 'node:path';
 import type { SourceAdapter, SourceRegistry } from '@tanko/core';
 import type { DownloadJobDto, DownloadStatus, QueueSettingsDto, QueueStatusDto } from '@tanko/shared';
 import JSZip from 'jszip';
-import type { Database } from '../db.js';
+import { addColumn, type Database } from '../db.js';
 import { makeQueries, ownershipGuard } from '../library/context.js';
 import type { EventBus } from '../ws.js';
 import { finalizeCbz } from './archive.js';
@@ -533,9 +533,7 @@ export class DownloadQueue {
         `);
         // older installs: add the auto-retry counter
         const columns = this.opts.db.db.prepare('PRAGMA table_info(download_jobs)').all() as Array<{ name: string }>;
-        if (!columns.some(column => column.name === 'auto_retries')) {
-            this.opts.db.db.exec('ALTER TABLE download_jobs ADD COLUMN auto_retries INTEGER NOT NULL DEFAULT 0');
-        }
+        addColumn(this.opts.db, 'download_jobs', columns, 'auto_retries', 'auto_retries INTEGER NOT NULL DEFAULT 0');
     }
 
     /** After a crash/restart, jobs stuck in queued/downloading go back to queued. */
@@ -619,6 +617,7 @@ export class DownloadQueue {
                     level: 'error',
                     category: 'system',
                     code: 'downloads.internalError',
+                    params: { jobId: row.id, error: String((error as Error)?.message ?? error) },
                     message: `Erreur interne après le job #${row.id} : ${String((error as Error)?.message ?? error)}`
                 });
             });
@@ -661,6 +660,11 @@ export class DownloadQueue {
             this._update(row.id, { pages_total: pages.length });
             const zip = isCbz ? new JSZip() : undefined;
             if (!isCbz) {
+                // an interrupted img chapter resumes in its existing directory
+                // (alternate name included) instead of forking a second folder
+                if (paths.existing) {
+                    paths.directory = paths.existing;
+                }
                 fs.mkdirSync(paths.directory, { recursive: true });
             }
             const { mode, pageCount } = await this._downloadPages(row, pages, source, paths, zip);
@@ -698,7 +702,7 @@ export class DownloadQueue {
             events: this.opts.events,
             gate: this.gate,
             checkCancel: jobId => this._checkCancel(jobId),
-            waitWhilePaused: () => this._waitWhilePaused(),
+            waitWhilePaused: jobId => this._waitWhilePaused(jobId),
             update: (jobId, patch) => this._update(jobId, patch)
         });
     }
@@ -720,8 +724,11 @@ export class DownloadQueue {
         }
     }
 
-    private async _waitWhilePaused(): Promise<void> {
+    private async _waitWhilePaused(jobId: number): Promise<void> {
         while (this.paused) {
+            // a cancel during a pause must free the per-source slot now,
+            // not when the queue happens to resume
+            this._checkCancel(jobId);
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }

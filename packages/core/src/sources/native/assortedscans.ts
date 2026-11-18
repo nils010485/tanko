@@ -12,7 +12,7 @@
 
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { checkHealthViaProbe, fetchJson, noPagesError } from './http.js';
+import { checkHealthViaProbe, fetchJson, noPagesError, pinToOrigin } from './http.js';
 
 interface MaSeries {
     slug: string;
@@ -108,9 +108,8 @@ export class AssortedScansConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const endpoint = (chapter.url || chapter.id).includes('/api/v2/chapters/')
-            ? chapter.url || chapter.id
-            : `${this.base}/api/v2/chapters/${chapter.id}/pages`;
+        const raw = (chapter.url || chapter.id).includes('/api/v2/chapters/') ? chapter.url || chapter.id : `${this.base}/api/v2/chapters/${chapter.id}/pages`;
+        const endpoint = pinToOrigin(raw, this.base, { id: this.id });
         const json = await fetchJson<MaPagesResponse>(endpoint, { id: this.id, timeoutMs: 30_000, label: this.label });
         const images = (json.results || []).map(page => page.image).filter((image): image is string => !!image);
         if (images.length === 0) {

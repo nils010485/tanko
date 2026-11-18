@@ -13,7 +13,7 @@
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaProbe, fetchNativeText, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaProbe, fetchNativeText, noPagesError, pinToOrigin } from './http.js';
 
 interface DrakeSeries {
     slug: string;
@@ -145,7 +145,7 @@ export class DrakeScansConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const seriesUrl = (manga.url || manga.id).replace(/\/$/, '');
+        const seriesUrl = pinToOrigin((manga.url || manga.id).replace(/\/$/, ''), this.base, { id: this.id });
         const chapters: ChapterInfo[] = [];
         const seen = new Set<number>();
         let page = 1;
@@ -175,11 +175,11 @@ export class DrakeScansConnector implements SourceAdapter {
         if (chapters.length === 0) {
             throw new SourceError(`No chapters found for "${manga.title}" on ${this.label}`, this.id);
         }
-        return chapters.sort((a, b) => Number(a.id.match(/chapter\/(\d+)/)?.[1] || 0) - Number(b.id.match(/chapter\/(\d+)/)?.[1] || 0));
+        return chapters.sort((a, b) => Number(a.id.match(/chapter\/(\d+(?:\.\d+)?)/)?.[1] || 0) - Number(b.id.match(/chapter\/(\d+(?:\.\d+)?)/)?.[1] || 0));
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const html = await this._getText(chapterUrl);
         const blob = this._flightData(html);
         const pages = (this._arrayAfter(blob, '"pages":') || []) as DrakePage[];

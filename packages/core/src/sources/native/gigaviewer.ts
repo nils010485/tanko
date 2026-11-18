@@ -10,7 +10,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, pinToOrigin } from './http.js';
 
 interface GigaViewerOptions {
     id: string;
@@ -89,7 +89,7 @@ export class GigaViewerConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const atomHref = parseDocument(html).querySelector('link[rel="alternate"][type="application/atom+xml"]')?.getAttribute('href');
         if (!atomHref) {
             throw new SourceError(`Flux Atom introuvable pour "${manga.title}" sur ${this.label}`, this.id);
@@ -113,7 +113,7 @@ export class GigaViewerConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const raw = parseDocument(html).querySelector('script#episode-json')?.getAttribute('data-value');
         if (!raw) {
             throw new SourceError(`episode-json introuvable pour "${chapter.title}" sur ${this.label}`, this.id);

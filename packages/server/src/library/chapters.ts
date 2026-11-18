@@ -62,11 +62,14 @@ export async function checkForNewChapters(ctx: StoreContext, entryId: number): P
     // source now carries are absorbed into the real chapter: same file,
     // real chapter id, no duplicate row
     const known = new Set(rows.map(item => item.chapter_id));
-    // every row by chapter number, local ghosts first so they keep priority
+    // every row by chapter number, local ghosts first so they keep priority.
+    // A row the source still lists under its current id is NOT a candidate:
+    // absorbing it would re-id a known chapter when numbers duplicate.
+    const listedIds = new Set(chapters.map(chapter => chapter.id));
     const byNumber = new Map<number, ChapterRow>();
     for (const row of rows) {
         const number = parseChapterNumber(row.title);
-        if (number === null) {
+        if (number === null || listedIds.has(row.chapter_id)) {
             continue;
         }
         const current = byNumber.get(number);
@@ -353,7 +356,8 @@ export function listChapters(ctx: StoreContext, entryId: number): LibraryChapter
                          AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)) AS retry_exhausted,
                 EXISTS(SELECT 1 FROM download_jobs j
                        WHERE j.entry_id = c.entry_id AND j.chapter_id = c.chapter_id
-                         AND j.status = 'failed') AS retry_planned`
+                         AND j.status = 'failed' AND c.status <> 'lost'
+                         AND EXISTS(SELECT 1 FROM library l WHERE l.id = j.entry_id AND l.source_id = j.source_id AND l.hidden = 0 AND l.paused = 0)) AS retry_planned`
         : ', 0 AS retry_exhausted, 0 AS retry_planned';
     const rows = ctx.q.all<ChapterRow & { history_count: number; retry_exhausted: number; retry_planned: number }>(
         `SELECT c.*,

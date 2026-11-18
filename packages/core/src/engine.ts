@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { LegacyConnector } from './legacy-types.js';
-import { currentAbortSignal } from './shims/abort-scope.js';
+import { currentAbortSignal, raceAbort } from './shims/abort-scope.js';
 import { browserEnabled, getPageHTML } from './shims/browser.js';
 import { ConnectorPool } from './shims/connector-pool.js';
 import { installGlobals } from './shims/globals.js';
@@ -115,6 +115,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
         for (const file of CONNECTOR_OVERRIDES) {
             fs.copyFileSync(path.join(VENDOR_PATH, 'connectors', file), path.join(syncedConnectors, file));
         }
+        refreshManifest(syncedConnectors, CONNECTOR_OVERRIDES);
     }
     const settings = new HeadlessSettings(dataDirectory);
     const storage = new HeadlessStorage(settings);
@@ -173,13 +174,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
                 const scope = currentAbortSignal();
                 const own = init?.signal ?? input.signal;
                 const signal = scope && own ? AbortSignal.any([scope, own]) : (scope ?? own);
-                if (!signal) {
-                    return bridge.fetch(input);
-                }
-                const aborted = new Promise<never>((_, reject) => {
-                    signal.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
-                });
-                return Promise.race([bridge.fetch(input), aborted]);
+                return signal ? raceAbort(bridge.fetch(input), signal) : bridge.fetch(input);
             }
             // Kill the whole crawl when the owning operation is aborted (see
             // shims/abort-scope.ts): the scope signal rides along every fetch.
@@ -216,6 +211,25 @@ function readManifest(directory: string): Record<string, string> | null {
     } catch {
         return null;
     }
+}
+
+/** Re-hash the self-healed override copies in the synced manifest, or
+ *  loadConnectors would refuse them on the next boot. */
+function refreshManifest(directory: string, files: string[]): void {
+    const manifestPath = path.join(directory, '.manifest.json');
+    let manifest: { commit?: string; files?: Record<string, string> };
+    try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch {
+        return; // no readable manifest: integrity checking is skipped for this tree
+    }
+    const hashes = manifest.files ?? {};
+    for (const file of files) {
+        hashes[file] = createHash('sha256')
+            .update(fs.readFileSync(path.join(directory, file)))
+            .digest('hex');
+    }
+    fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, files: hashes }, null, 2));
 }
 
 function manifestMatches(manifest: Record<string, string>, directory: string, file: string): boolean {

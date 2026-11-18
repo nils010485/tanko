@@ -45,8 +45,8 @@ export class SourceRegistry {
         }
         this.nativeIds.clear();
         this.registerNatives();
-        const nativeHosts = [...this.adapters.values()].map(adapter => hostOf(adapter.url)).filter((host): host is string => !!host);
-        const stillShadowed = (host: string | undefined) => host !== undefined && nativeHosts.some(native => sameSite(native, host));
+        const hosts = this.nativeHosts();
+        const stillShadowed = (host: string | undefined) => host !== undefined && hosts.some(native => sameSite(native, host));
         for (const [id, adapter] of [...this.adapters]) {
             if (this.nativeIds.has(id)) {
                 continue;
@@ -73,6 +73,11 @@ export class SourceRegistry {
         }
     }
 
+    /** Native connectors only: legacy adapters must never shadow themselves. */
+    private nativeHosts(): string[] {
+        return [...this.nativeIds].map(id => hostOf(this.adapters.get(id)?.url)).filter((host): host is string => !!host);
+    }
+
     ensureLoaded(): Promise<void> {
         // shared promise: concurrent callers wait for the same load, and a
         // failed load can be retried on the next call instead of sticking
@@ -84,7 +89,7 @@ export class SourceRegistry {
     }
 
     private async _load(): Promise<void> {
-        const nativeHosts = [...this.adapters.values()].map(adapter => hostOf(adapter.url)).filter((host): host is string => !!host);
+        const nativeHosts = this.nativeHosts();
         const { connectors, failures } = await loadConnectors();
         for (const connector of connectors) {
             const id = String(connector.id);

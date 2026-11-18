@@ -12,7 +12,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, backgroundUrl, checkHealthViaProbe, noPagesError } from './http.js';
+import { absoluteUrl, backgroundUrl, checkHealthViaProbe, noPagesError, pinToOrigin } from './http.js';
 
 export class KuMangaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -134,8 +134,8 @@ export class KuMangaConnector implements SourceAdapter {
     /** /capitulo/<n> 302s to /manga/c/<chapterId>; the reader is /manga/leer/<id>. */
     private async _resolveReaderUrl(chapterUrl: string): Promise<string> {
         // _get follows redirects internally: its final URL is the /manga/c/ intermediate
-        const { url } = await this._get(chapterUrl);
-        return url.replace('/manga/c/', '/manga/leer/');
+        const { url } = await this._get(pinToOrigin(chapterUrl, this.base, { id: this.id }));
+        return pinToOrigin(url.replace('/manga/c/', '/manga/leer/'), this.base, { id: this.id });
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {

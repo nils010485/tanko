@@ -150,7 +150,7 @@ export function chapterPaths(
             existing = path.join(seriesDir, `${name}.cbz`);
             break;
         }
-        if (fs.existsSync(path.join(seriesDir, name)) && fs.readdirSync(path.join(seriesDir, name)).some(entry => !entry.startsWith('.'))) {
+        if (isNonEmptyDirectory(path.join(seriesDir, name))) {
             existing = path.join(seriesDir, name);
             break;
         }
@@ -238,14 +238,31 @@ export function detectMime(data: Uint8Array, fallback: string): string {
  *  counts (callers that don't know the page count). */
 export function outputExists(paths: ChapterPaths, format: 'img' | 'cbz', expectedPages?: number): boolean {
     if (paths.existing) {
-        return true;
+        // an interrupted 'img' chapter found under an alternate name is still
+        // incomplete: only a full page count (or a CBZ) proves completion
+        if (format !== 'img' || expectedPages === undefined || /\.cbz$/i.test(paths.existing)) {
+            return true;
+        }
+        return countChapterFiles(paths.existing) >= expectedPages;
     }
     if (format === 'cbz') {
         return fs.existsSync(paths.cbzFile);
     }
+    return countChapterFiles(paths.directory) >= (expectedPages ?? 1);
+}
+
+function countChapterFiles(directory: string): number {
     try {
-        const count = fs.readdirSync(paths.directory).filter(entry => !entry.startsWith('.')).length;
-        return expectedPages === undefined ? count > 0 : count >= expectedPages;
+        return fs.readdirSync(directory).filter(entry => !entry.startsWith('.')).length;
+    } catch {
+        return 0;
+    }
+}
+
+/** A regular file carrying the chapter name must not crash the scan (ENOTDIR). */
+function isNonEmptyDirectory(directory: string): boolean {
+    try {
+        return fs.statSync(directory).isDirectory() && fs.readdirSync(directory).some(entry => !entry.startsWith('.'));
     } catch {
         return false;
     }

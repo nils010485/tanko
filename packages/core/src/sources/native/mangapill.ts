@@ -9,7 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 export class MangaPillConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -54,7 +54,7 @@ export class MangaPillConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('#chapters a')]) {
@@ -70,7 +70,7 @@ export class MangaPillConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('img[data-src], source[data-src]')]
             .map(el => el.getAttribute('data-src'))

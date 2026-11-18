@@ -85,6 +85,14 @@ export async function matchAll(ctx: MatcherContext, jobId: number, options: Impo
                     )
                     .run((error as Error).message, now(), jobId, series.path);
             }
+            if (ctx.cancelRequested.has(jobId)) {
+                // the claim must not strand the row in 'matching': resume()
+                // only picks up 'pending' series
+                ctx.sql
+                    .prepare(`UPDATE import_series SET status = 'pending', updated_at = ? WHERE job_id = ? AND path = ? AND status = 'matching'`)
+                    .run(now(), jobId, series.path);
+                return;
+            }
             ctx.onProgress?.(jobId);
         }
     };

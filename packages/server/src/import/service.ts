@@ -153,6 +153,8 @@ export class ImportService {
             return;
         }
         const handle = this.startActivityJob(jobId);
+        // rows left 'matching' by a crash or a cancelled run are pending again
+        this.sql.prepare(`UPDATE import_series SET status = 'pending' WHERE job_id = ? AND status = 'matching'`).run(jobId);
         const pending = this.sql.prepare(`SELECT COUNT(*) AS n FROM import_series WHERE job_id = ? AND status = 'pending'`).get(jobId) as unknown as {
             n: number;
         };

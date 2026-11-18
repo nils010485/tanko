@@ -10,7 +10,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { checkHealthViaSearch, fetchNativeText } from './http.js';
+import { checkHealthViaSearch, fetchNativeText, pinToOrigin } from './http.js';
 
 export class BilibiliManhuaConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -62,7 +62,7 @@ export class BilibiliManhuaConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || `${this.base}/detail/${manga.id}`);
+        const html = await this._getText(pinToOrigin(manga.url || `${this.base}/detail/${manga.id}`, this.base, { id: this.id }));
         const document = parseDocument(html);
         const chapters = new Map<string, ChapterInfo>();
         for (const anchor of [...document.querySelectorAll(`a[href*="/${manga.id}/"]`)]) {
@@ -84,7 +84,7 @@ export class BilibiliManhuaConnector implements SourceAdapter {
 
     /** Best effort: signed reader images captured from the rendered reader DOM. */
     async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const readerUrl = chapter.url || `${this.base}/${manga.id}/${chapter.id}`;
+        const readerUrl = pinToOrigin(chapter.url || `${this.base}/${manga.id}/${chapter.id}`, this.base, { id: this.id });
         const html = await this._getText(readerUrl);
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('img')]

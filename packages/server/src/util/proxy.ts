@@ -87,7 +87,7 @@ export function parseProxyUrl(raw: string): ProxyConfig {
         port,
         // '' (no userinfo) and 'anonymous' are different: keep undefined when absent
         username: url.username ? decodeURIComponent(url.username) : undefined,
-        password: url.username ? decodeURIComponent(url.password) : undefined
+        password: url.username || url.password ? decodeURIComponent(url.password) : undefined
     };
 }
 
@@ -154,7 +154,7 @@ async function openSocks5Tunnel(config: ProxyConfig, host: string, port: number)
     const socket = await connectSocket(config.host, config.port, signal);
     const reader = createReader(socket);
     try {
-        const user = config.username === undefined ? null : Buffer.from(config.username, 'utf8');
+        const user = config.username === undefined && config.password === undefined ? null : Buffer.from(config.username ?? '', 'utf8');
         const password = Buffer.from(config.password ?? '', 'utf8');
         if (user && (user.length > 255 || password.length > 255)) {
             throw new Error('SOCKS5 credentials are longer than 255 bytes');
@@ -180,6 +180,9 @@ async function openSocks5Tunnel(config: ProxyConfig, host: string, port: number)
             throw new Error(`Unsupported SOCKS5 authentication method ${method}`);
         }
         const target = Buffer.from(host, 'utf8');
+        if (target.length > 255) {
+            throw new Error('SOCKS5 target hostname is longer than 255 bytes');
+        }
         socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, 0x03, target.length]), target, Buffer.from([port >> 8, port & 0xff])]));
         const reply = await reader.read(4, signal);
         if (reply[1] !== 0x00) {
@@ -249,8 +252,8 @@ async function openHttp2Tunnel(config: ProxyConfig, host: string, port: number):
     const target = `${authorityHost(host)}:${port}`;
     // CONNECT carries the target in :authority only (:path is forbidden there)
     const headers: http2.OutgoingHttpHeaders = { ':method': 'CONNECT', ':authority': target };
-    if (config.username !== undefined) {
-        headers['proxy-authorization'] = basicAuth(config.username, config.password ?? '');
+    if (config.username !== undefined || config.password !== undefined) {
+        headers['proxy-authorization'] = basicAuth(config.username ?? '', config.password ?? '');
     }
     const stream = session.request(headers);
     try {
@@ -283,7 +286,7 @@ function parseAuthority(authority: string): { host: string; port: number } | nul
     }
     const port = Number(match[2] ?? match[4]);
     const host = match[1] ?? match[3];
-    return host && Number.isInteger(port) ? { host, port } : null;
+    return host && Number.isInteger(port) && port >= 1 && port <= 65535 ? { host, port } : null;
 }
 
 /**
@@ -303,14 +306,20 @@ async function startRelay(openTunnel: (host: string, port: number) => Promise<Du
             clientSocket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
             return;
         }
+        let tunnel: Duplex | undefined;
+        // the client may hang up while the tunnel is being dialed
+        clientSocket.on('close', () => tunnel?.destroy());
         try {
-            const tunnel = await openTunnel(target.host, target.port);
+            tunnel = await openTunnel(target.host, target.port);
+            if (clientSocket.destroyed) {
+                tunnel.destroy();
+                return;
+            }
             clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
             if (head.length) {
                 tunnel.write(head);
             }
             tunnel.on('error', () => clientSocket.destroy());
-            clientSocket.on('close', () => tunnel.destroy());
             tunnel.pipe(clientSocket);
             clientSocket.pipe(tunnel);
         } catch (error) {
@@ -330,7 +339,13 @@ async function startRelay(openTunnel: (host: string, port: number) => Promise<Du
     server.on('connect', (request, clientSocket, head) => {
         void handleConnect(request, clientSocket, head);
     });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            server.removeListener('error', reject);
+            resolve();
+        });
+    });
     const address = server.address();
     if (!address || typeof address === 'string') {
         throw new Error('Cannot start the proxy relay');
@@ -358,7 +373,10 @@ export interface ProxyRuntime {
  *  to undici; SOCKS5 and HTTP/2 go through the loopback relay). */
 export async function createProxyRuntime(config: ProxyConfig): Promise<ProxyRuntime> {
     if (config.protocol === 'http' || config.protocol === 'https') {
-        const credentials = config.username === undefined ? '' : `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password ?? '')}@`;
+        const credentials =
+            config.username === undefined && config.password === undefined
+                ? ''
+                : `${encodeURIComponent(config.username ?? '')}:${encodeURIComponent(config.password ?? '')}@`;
         const dispatcher = new ProxyAgent({ uri: `${config.protocol}://${credentials}${authorityHost(config.host)}:${config.port}` });
         return { dispatcher, close: () => dispatcher.close() };
     }

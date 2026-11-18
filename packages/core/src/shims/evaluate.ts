@@ -39,7 +39,7 @@ type ChildToParent = { type: 'ready' } | { type: 'fetch'; reqId: number; request
  * walking up to the topmost package.json - npm workspaces put node_modules
  * there.
  */
-function dependencyRoot(): string {
+export function dependencyRoot(): string {
     let dir = path.dirname(CHILD_ENTRY);
     let top = dir;
     for (let hop = 0; hop < 10; hop++) {
@@ -100,6 +100,7 @@ async function withChild(payload: EvalPayload, fetchVia: FetchVia, hardened: boo
 
     let settled = false;
     let gotReady = false;
+    let timedOut = false;
     let settle: (outcome: EvalOutcome) => void = () => undefined;
     const outcomePromise = new Promise<EvalOutcome>(resolve => {
         settle = resolve;
@@ -129,9 +130,10 @@ async function withChild(payload: EvalPayload, fetchVia: FetchVia, hardened: boo
         }
     });
     child.on('exit', (code, signal) => {
-        if (!gotReady) {
+        if (!gotReady && !timedOut) {
             // refused to boot: unknown --permission flag on this node, or a
-            // bare runtime that cannot even load the entry
+            // bare runtime that cannot even load the entry. A kill-timer exit
+            // is a slow script, not a broken sandbox: keep the current mode.
             childMode = hardened ? 'plain' : 'unavailable';
         }
         finish({ ok: false, error: `evaluation worker exited (code ${String(code)}, signal ${String(signal)})` });
@@ -141,6 +143,7 @@ async function withChild(payload: EvalPayload, fetchVia: FetchVia, hardened: boo
     });
 
     const killTimer = setTimeout(() => {
+        timedOut = true;
         child.kill('SIGKILL');
         finish({ ok: false, error: 'script evaluation timed out' });
     }, payload.timeoutMs + KILL_GRACE_MS);

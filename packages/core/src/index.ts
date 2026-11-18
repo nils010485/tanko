@@ -3,20 +3,17 @@
 export {
     CONNECTOR_OVERRIDES,
     createEngine,
-    getConnectorFilePath,
     getConnectorPool,
     getVendorDirectory,
-    inProcessConnectors,
     loadConnectors,
     VENDOR_PATH
 } from './engine.js';
 export { closeBrowser, isAntiBotShell } from './shims/browser.js';
-export { ConnectorPool, type ConnectorPoolOptions } from './shims/connector-pool.js';
 export { HeadlessRequest, HostGate, randomUserAgent, retryAfterMs } from './shims/request.js';
 export { createComicInfoXML } from './shims/storage.js';
 export { LegacySourceAdapter } from './sources/legacy-adapter.js';
 export { normalizeAsuraPath } from './sources/native/asurascans.js';
-export { loadOverrides, reloadOverrides } from './sources/native/config.js';
+export { reloadOverrides } from './sources/native/config.js';
 export { MadaraConnector } from './sources/native/madara.js';
 export { MangastreamConnector } from './sources/native/mangastream.js';
 export { SourceRegistry } from './sources/registry.js';

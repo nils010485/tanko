@@ -9,7 +9,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError, pinToOrigin } from './http.js';
 
 /** Archive pages scanned for a local (client-side) title search. */
 const SEARCH_PAGES = 5;
@@ -78,7 +78,7 @@ export class BlackArmyConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const document = parseDocument(await this._getText(manga.url || manga.id));
+        const document = parseDocument(await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id })));
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('a.chapter-card')]) {
             const href = absoluteUrl(anchor.getAttribute('href'), this.base);
@@ -93,7 +93,7 @@ export class BlackArmyConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const html = await this._getText(chapterUrl);
         // reader credentials are appended right after the check_chapter action
         const marker = html.indexOf("'check_chapter'");

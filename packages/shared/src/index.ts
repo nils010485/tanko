@@ -203,8 +203,6 @@ export interface LibraryAlternativeDto {
     mangaId: string;
     title: string;
     url?: string | null;
-    chapterCount?: number | null;
-    score?: number | null;
     addedAt: string;
 }
 

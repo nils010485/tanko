@@ -40,7 +40,7 @@ function upsert<T extends { id: number }>(list: T[], item: T, prepend = false): 
     return next;
 }
 
-export function useLiveState(): LiveState {
+export function useLiveState(activityVisible = false): LiveState {
     const [connected, setConnected] = useState(false);
     const [library, setLibrary] = useState<LibraryEntryDto[]>([]);
     const [libraryLoaded, setLibraryLoaded] = useState(false);
@@ -55,6 +55,9 @@ export function useLiveState(): LiveState {
     const logSeq = useRef(0);
     /** Row ids already known (REST load or previous frames) - WS replay dedupe. */
     const seenLogIds = useRef<Set<number>>(new Set());
+    /** While the Activity tab is open, incoming errors are seen immediately. */
+    const activityVisibleRef = useRef(activityVisible);
+    activityVisibleRef.current = activityVisible;
 
     const refreshLibrary = useCallback(async () => {
         try {
@@ -110,6 +113,11 @@ export function useLiveState(): LiveState {
         localStorage.setItem('tanko.activitySeenAt', new Date().toISOString());
         setUnreadErrors(0);
     }, []);
+    useEffect(() => {
+        if (activityVisible) {
+            markActivitySeen();
+        }
+    }, [activityVisible, markActivitySeen]);
     useEffect(() => {
         refreshLibrary();
         refreshSchedule();
@@ -189,7 +197,9 @@ export function useLiveState(): LiveState {
                                 seenLogIds.current.add(message.id);
                             }
                             if (message.level === 'warn' || message.level === 'error') {
-                                setUnreadErrors(current => current + 1);
+                                if (!activityVisibleRef.current) {
+                                    setUnreadErrors(current => current + 1);
+                                }
                             }
                             setLogs(current =>
                                 [{ ...message, id: message.id ?? --logSeq.current, category: message.category ?? 'system' }, ...current].slice(0, 300)

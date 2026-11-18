@@ -25,6 +25,8 @@ export function useLibraryActions({
 }) {
     const [busy, setBusy] = useState<Record<string, boolean>>({});
     const [expanded, setExpanded] = useState<number | null>(null);
+    const expandedRef = useRef(expanded);
+    expandedRef.current = expanded;
     const [chapters, setChapters] = useState<LibraryChapterDto[] | null>(null);
     const [pendingRemove, setPendingRemove] = useState<LibraryEntryDto | null>(null);
     const [pendingDisk, setPendingDisk] = useState<LibraryEntryDto | null>(null);
@@ -74,8 +76,13 @@ export function useLibraryActions({
         setBusy: setBusyFlag,
         // keep an open chapters panel in step with the new statuses
         reloadChapters: async entryId => {
-            if (expanded === entryId) {
-                setChapters(await api.entryChapters(entryId));
+            if (expandedRef.current !== entryId) {
+                return;
+            }
+            const list = await api.entryChapters(entryId);
+            // re-check after the await: the user may have expanded another series
+            if (expandedRef.current === entryId) {
+                setChapters(list);
             }
         }
     });

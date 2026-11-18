@@ -22,6 +22,15 @@ export function Cover({ title, thumbnail, sourceId, coverUrl, className = '' }: 
     const [brokenCover, setBrokenCover] = useState(false);
     const [brokenThumbnail, setBrokenThumbnail] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    // a different series must not inherit the previous one's broken/loaded state
+    const imageKey = `${coverUrl ?? ''}|${thumbnail ?? ''}|${sourceId ?? ''}`;
+    const [prevImageKey, setPrevImageKey] = useState(imageKey);
+    if (prevImageKey !== imageKey) {
+        setPrevImageKey(imageKey);
+        setBrokenCover(false);
+        setBrokenThumbnail(false);
+        setLoaded(false);
+    }
     // an image already in the browser cache may not fire onLoad after mount
     const markIfCached = useCallback((img: HTMLImageElement | null) => {
         if (img?.complete && img.naturalWidth > 0) setLoaded(true);

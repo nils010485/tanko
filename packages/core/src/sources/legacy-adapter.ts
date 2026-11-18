@@ -178,9 +178,10 @@ export class LegacySourceAdapter implements SourceAdapter {
             let crawlScope: AbortController | undefined;
             const listPromise = withAbortScope(scope => {
                 crawlScope = scope;
-                return target
-                    ? target.pool.run<LegacyManga[]>(this.id, target.filePath, 'getMangaList', [], scope.signal)
-                    : this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback));
+                if (target) {
+                    return target.pool.run<LegacyManga[]>(this.id, target.filePath, 'getMangaList', [], scope.signal);
+                }
+                return this.initialize().then(() => this._promisify<LegacyManga[] | undefined>(callback => this.connector._getMangaList(callback)));
             });
             let slowTimer: ReturnType<typeof setTimeout> | undefined;
             const mangas = await Promise.race([

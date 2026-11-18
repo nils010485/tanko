@@ -8,7 +8,7 @@ import { type ComponentType, useMemo, useRef, useState } from 'react';
 import { IconActivity, IconArrowLeftRight, IconCheck, IconGlobe, type IconProps, IconRefresh, IconSettings } from '../components/icons.js';
 import { useToast } from '../components/toast.js';
 import { Badge, Button, Card, EmptyState, Input, ProgressBar, SectionTitle } from '../components/ui.js';
-import { useI18n } from '../i18n/index.js';
+import { type TFunction, useI18n } from '../i18n/index.js';
 import { api } from '../lib/api.js';
 import { usePoll } from '../lib/hooks.js';
 import type { LogLine } from '../lib/live.js';
@@ -32,6 +32,16 @@ const SUGGESTION_CODES = new Set([
     'failover.downloadFailures.suggested',
     'failover.afterCheckFailures.suggested'
 ]);
+
+/** Translated event text; an unknown code falls back to the server message. */
+function logText(log: LogLine, t: TFunction): string {
+    if (!log.code) {
+        return log.message;
+    }
+    const key = `activity.${log.code}`;
+    const translated = t(key as Parameters<TFunction>[0], log.params);
+    return translated === key ? log.message || translated : translated;
+}
 
 /** Pulse counter card. */
 function Stat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'emerald' | 'orange' }) {
@@ -93,7 +103,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         // match the displayed (translated) text and the raw fallback message alike
-        const text = (log: LogLine) => (log.code ? t(`activity.${log.code}` as Parameters<typeof t>[0], log.params) : log.message);
+        const text = (log: LogLine) => logText(log, t);
         return [...logs, ...older].filter(
             log =>
                 (level === 'all' || log.level === level) &&
@@ -305,7 +315,7 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
                                             <Icon size={15} />
                                         </span>
                                         <div className="min-w-0 flex-1 break-words text-fg">
-                                            {log.code ? tt(`activity.${log.code}`, log.params) : log.message}
+                                            {logText(log, t)}
                                             {entry && (
                                                 <button
                                                     type="button"

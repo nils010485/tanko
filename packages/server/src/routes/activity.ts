@@ -32,7 +32,7 @@ export function registerActivityRoutes(
             activeFailures: entries.filter(entry => (entry.checkFailures ?? 0) > 0).length,
             sourcesHealthy: sources.filter(source => source.status === 'ok').length,
             sourcesTotal: sources.length,
-            errorsSince: since !== undefined && !Number.isNaN(Date.parse(since)) ? activity.errorCountSince(since) : undefined
+            errorsSince: since !== undefined && !Number.isNaN(Date.parse(since)) ? activity.errorCountSince(new Date(since).toISOString()) : undefined
         } satisfies ActivityStatsDto;
     });
 

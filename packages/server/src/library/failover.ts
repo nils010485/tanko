@@ -267,7 +267,6 @@ export class FailoverService {
                 mangaTitle: row.title,
                 url: row.url ?? undefined,
                 score: 1,
-                chapterCount: row.chapter_count ?? undefined,
                 linked: true
             }));
         }

@@ -9,7 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, MangaInfo, PageList } from '../types.js';
 import { SourceError } from '../types.js';
-import { noPagesError } from './http.js';
+import { noPagesError, pinToOrigin } from './http.js';
 import { VComicsConnector } from './vcomics.js';
 
 export class AzoraFlyConnector extends VComicsConnector {
@@ -39,7 +39,7 @@ export class AzoraFlyConnector extends VComicsConnector {
     /** Reader images: img[data-reader-page-image] sorted by data-reader-index
      *  on /series/{slug}/chapter-{n} (plain storage.azorafly.com CDN urls). */
     override async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const html = await this._getText(chapterUrl);
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('img[data-reader-page-image]')]

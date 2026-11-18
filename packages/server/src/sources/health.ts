@@ -6,7 +6,7 @@
 
 import type { HealthResult, SourceAdapter } from '@tanko/core';
 import type { SourceHealthDto } from '@tanko/shared';
-import type { Database } from '../db.js';
+import { addColumn, type Database } from '../db.js';
 import type { EventBus } from '../ws.js';
 
 const PROBE_CONCURRENCY = 4;
@@ -119,24 +119,25 @@ export class SourceHealthService {
         if (this.checking.has(sourceId)) {
             return { sourceId, status: 'checking' };
         }
-        const adapter = await this.opts.getAdapter(sourceId);
-        if (!adapter) {
-            // adapter gone (upstream connector removed): drop the stale row -
-            // its expired next_probe_at would eat sweep quota forever
-            this.opts.db.db.prepare('DELETE FROM source_health WHERE source_id = ?').run(sourceId);
-            return { sourceId, status: 'error', error: 'Unknown source' };
-        }
+        // claim before the first await: concurrent probes must not both pass
         this.checking.add(sourceId);
-        if (!opts?.quiet) {
-            this.opts.events.publishLog({
-                level: 'info',
-                category: 'source',
-                code: 'source.healthCheck',
-                params: { label: adapter.label },
-                message: `Health check: ${adapter.label}...`
-            });
-        }
         try {
+            const adapter = await this.opts.getAdapter(sourceId);
+            if (!adapter) {
+                // adapter gone (upstream connector removed): drop the stale row -
+                // its expired next_probe_at would eat sweep quota forever
+                this.opts.db.db.prepare('DELETE FROM source_health WHERE source_id = ?').run(sourceId);
+                return { sourceId, status: 'error', error: 'Unknown source' };
+            }
+            if (!opts?.quiet) {
+                this.opts.events.publishLog({
+                    level: 'info',
+                    category: 'source',
+                    code: 'source.healthCheck',
+                    params: { label: adapter.label },
+                    message: `Health check: ${adapter.label}...`
+                });
+            }
             const result = await adapter.checkHealth();
             const checkedAt = this._recordResult(sourceId, result);
             return {
@@ -339,9 +340,9 @@ export class SourceHealthService {
         `);
         // older installs: add the backoff columns, keep the last results
         const columns = this.opts.db.db.prepare('PRAGMA table_info(source_health)').all() as Array<{ name: string }>;
-        this._addColumn('source_health', columns, 'failure_count', 'failure_count INTEGER NOT NULL DEFAULT 0');
-        this._addColumn('source_health', columns, 'next_probe_at', 'next_probe_at TEXT');
-        this._addColumn('source_health', columns, 'via', 'via TEXT');
+        addColumn(this.opts.db, 'source_health', columns, 'failure_count', 'failure_count INTEGER NOT NULL DEFAULT 0');
+        addColumn(this.opts.db, 'source_health', columns, 'next_probe_at', 'next_probe_at TEXT');
+        addColumn(this.opts.db, 'source_health', columns, 'via', 'via TEXT');
     }
 
     /** Single write path for probe outcomes: last result + backoff bookkeeping
@@ -384,13 +385,6 @@ export class SourceHealthService {
     private _nextFailureCount(sourceId: string): number {
         const row = this.opts.db.db.prepare('SELECT failure_count AS n FROM source_health WHERE source_id = ?').get(sourceId) as { n: number } | undefined;
         return (row?.n ?? 0) + 1;
-    }
-
-    /** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
-    private _addColumn(table: string, columns: Array<{ name: string }>, name: string, ddl: string): void {
-        if (!columns.some(column => column.name === name)) {
-            this.opts.db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-        }
     }
 
     private _toDto(row: HealthRow): SourceHealthDto {

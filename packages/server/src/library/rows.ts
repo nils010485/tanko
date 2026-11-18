@@ -80,7 +80,7 @@ export interface ChapterRow {
     chapter_id: string;
     title: string;
     language: string | null;
-    status: 'new' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    status: 'new' | 'missing' | 'queued' | 'downloaded' | 'failed' | 'lost';
     path: string | null;
     discovered_at: string;
     downloaded_at: string | null;
@@ -112,8 +112,6 @@ export interface AlternativeRow {
     manga_id: string;
     title: string;
     url: string | null;
-    chapter_count: number | null;
-    score: number | null;
     added_at: string;
 }
 

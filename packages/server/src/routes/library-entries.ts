@@ -19,8 +19,6 @@ function toAlternativeDto(row: AlternativeRow): LibraryAlternativeDto {
         mangaId: row.manga_id,
         title: row.title,
         url: row.url,
-        chapterCount: row.chapter_count,
-        score: row.score,
         addedAt: row.added_at
     };
 }
@@ -90,7 +88,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
         };
     }>('/api/library', async (request, reply) => {
         const body = request.body;
-        if (!body?.sourceId || !body?.mangaId || !body?.title) {
+        if (!body?.sourceId || !body?.mangaId || typeof body.title !== 'string' || !body.title.trim()) {
             return reply.code(400).send({ error: 'Body must contain sourceId, mangaId and title' });
         }
         // duplicate guard: the same series already tracked under another

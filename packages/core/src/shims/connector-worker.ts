@@ -20,7 +20,8 @@ import { pathToFileURL } from 'node:url';
 import type { EngineContext } from '../engine.js';
 import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
 import { searchLegacyMangas } from '../sources/legacy-search.js';
-import { currentAbortSignal, withAbortScope } from './abort-scope.js';
+import { errorMessage } from '../sources/types.js';
+import { currentAbortSignal, raceAbort, withAbortScope } from './abort-scope.js';
 import { isAntiBotShell } from './browser.js';
 import { evaluateIsolated } from './evaluate.js';
 import type { FetchVia, WireRequest, WireResponse } from './evaluate-child.js';
@@ -56,25 +57,6 @@ export type ConnectorEvent =
 const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 
 type Reply = { resolve: (value: unknown) => void; reject: (error: Error) => void };
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
-function abortReason(signal: AbortSignal): Error {
-    return signal.reason instanceof Error ? signal.reason : new Error('aborted');
-}
-
-/** The parent may drop the request (op cancelled, worker recycled): stop waiting for it. */
-function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) {
-        return Promise.reject(abortReason(signal));
-    }
-    const aborted = new Promise<never>((_, reject) => {
-        signal.addEventListener('abort', () => reject(abortReason(signal)), { once: true });
-    });
-    return Promise.race([promise, aborted]);
-}
 
 /** IPC values must be structured-cloneable; a non-cloneable result is a real failure, not silently coerced. */
 function transferable(value: unknown): unknown {
@@ -189,9 +171,17 @@ function startConnectorWorker(): void {
 
     // connectors read Engine.Settings entries ({ value }) for tuning only, and
     // never touch Engine.Storage during list operations (that is drive-side)
-    const settings = new Proxy({ save: () => undefined, load: () => undefined } as Record<string, unknown>, {
-        get: (target, key) => (typeof key === 'string' && !(key in target) ? { value: undefined } : Reflect.get(target, key))
-    });
+    const settings = new Proxy(
+        {
+            save: () => undefined,
+            load: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined
+        } as Record<string, unknown>,
+        {
+            get: (target, key) => (typeof key === 'string' && !(key in target) ? { value: undefined } : Reflect.get(target, key))
+        }
+    );
     const storage = {
         loadMangaList: async () => [],
         saveMangaList: async () => undefined,
@@ -282,6 +272,7 @@ function startConnectorWorker(): void {
                     connector._getPageList(toLegacyManga(connector, args[0]), toLegacyChapter(connector, args[0], args[1]), callback)
                 );
             case 'handleConnectorURI':
+                await connector.initialize();
                 return await connector.handleConnectorURI(new URL(String(args[0])));
             default:
                 throw new Error(`unsupported connector method "${method}"`);

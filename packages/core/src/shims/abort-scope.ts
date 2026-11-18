@@ -36,3 +36,21 @@ export function withAbortScope<T>(fn: (scope: AbortController) => T): T {
 export function currentAbortSignal(): AbortSignal | undefined {
     return storage.getStore()?.signal;
 }
+
+function abortReason(signal: AbortSignal): Error {
+    return signal.reason instanceof Error ? signal.reason : new Error('aborted');
+}
+
+/** Reject as soon as `signal` aborts; the listener is removed once `promise`
+ *  settles so a long-lived scope signal doesn't accumulate listeners. */
+export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) {
+        return Promise.reject(abortReason(signal));
+    }
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(abortReason(signal));
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+    return Promise.race([promise, aborted]).finally(() => signal.removeEventListener('abort', onAbort));
+}

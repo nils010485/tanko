@@ -235,8 +235,7 @@ const CAPTURE_IMAGE_PATTERN = /https?:\/\/[^\s"'\\]+?\/image_(\d+)\.(?:jpe?g|png
 
 export async function browserCapturePageImages(origin: string, url: string, timeoutMs = 30_000, imagePattern?: RegExp): Promise<string[]> {
     requireBrowser();
-    const run = async (): Promise<string[]> => {
-        const page = await getSession(origin);
+    const run = async (page: Page): Promise<string[]> => {
         const seen = new Map<number, string>();
         const pattern = imagePattern ?? CAPTURE_IMAGE_PATTERN;
         const collect = (text: string): void => {
@@ -277,8 +276,9 @@ export async function browserCapturePageImages(origin: string, url: string, time
         }
         return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, imageUrl]) => imageUrl);
     };
-    // navigate the shared session page one capture at a time
-    const queued = captureQueue.catch(() => undefined).then(run);
+    // navigate the shared session page one capture at a time; an empty
+    // capture smells like an expired clearance: evict and retry once
+    const queued = captureQueue.catch(() => undefined).then(() => withSession(origin, run, images => images.length === 0));
     captureQueue = queued.catch(() => undefined);
     return queued;
 }

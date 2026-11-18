@@ -9,7 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 export class ThreeHentaiConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -67,7 +67,7 @@ export class ThreeHentaiConnector implements SourceAdapter {
     }
 
     async getPages(manga: MangaInfo, _chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const images: string[] = [];
         for (const img of [...document.querySelectorAll('#thumbnail-gallery img')]) {

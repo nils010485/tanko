@@ -23,7 +23,7 @@ const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 
 const KEEP_LANG = 'en'; // e.g. 'en,fr'
-const DB_FILE = '/data/hakuneko.db';
+const DB_FILE = '/data/tanko.db';
 
 const keep = new Set(
     KEEP_LANG.split(',')

@@ -34,6 +34,7 @@ describe('parseProxyUrl', () => {
     it('keeps an empty password and decodes the percent-encoded ones', () => {
         expect(parseProxyUrl('socks5://user:@host:1080')).toMatchObject({ username: 'user', password: '' });
         expect(parseProxyUrl('socks5://user:p%40ss@host:1080')).toMatchObject({ password: 'p@ss' });
+        expect(parseProxyUrl('socks5://:p%40ss@host:1080')).toMatchObject({ username: undefined, password: 'p@ss' });
     });
 
     it('rejects unsupported schemes, empty strings and non-URLs', () => {

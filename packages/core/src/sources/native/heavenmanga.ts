@@ -9,7 +9,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 interface DataTablesRow {
     id?: number | string;
@@ -104,7 +104,7 @@ export class HeavenMangaConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const seriesUrl = manga.url || manga.id;
+        const seriesUrl = pinToOrigin(manga.url || manga.id, this.base, { id: this.id });
         try {
             const json = await this._getJson(`${seriesUrl}?draw=1&start=0&length=${CHAPTERS_PAGE_SIZE}`);
             const sortable: Array<{ chapter: ChapterInfo; number: number }> = [];
@@ -148,7 +148,7 @@ export class HeavenMangaConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         let html = await this._getText(chapterUrl);
         let document = parseDocument(html);
         // chapter page redirects through a#leer to the actual reader

@@ -7,6 +7,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+/** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
+export function addColumn(db: Database, table: string, columns: Array<{ name: string }>, name: string, ddl: string): void {
+    if (!columns.some(column => column.name === name)) {
+        db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    }
+}
+
 export class Database {
     readonly db: DatabaseSync;
 

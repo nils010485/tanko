@@ -6,12 +6,12 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/dashboard/package.json packages/dashboard/
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
@@ -27,12 +27,12 @@ FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/dashboard/package.json packages/dashboard/
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # headless Chromium for the optional anti-bot browser backend (fetchUI fallback),
 # and git for the connectors updater (POST /api/sources/update). Xvfb lets

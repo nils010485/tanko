@@ -111,6 +111,7 @@ export function getPackStatus(db: Database): SourcesPackStatus {
 }
 
 export function startPackPolling(options: { dataDirectory: string; db: Database; onApplied?: () => void }): void {
+    stopPackPolling(); // a second start must not orphan the previous timers
     const poll = async () => {
         try {
             const info = await syncSourcesPack(options);

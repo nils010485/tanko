@@ -16,7 +16,7 @@ const INCOMPLETE_DETECTION_KEY = 'incomplete-detection';
 const STALLED_DETECTION_KEY = 'stalled-detection';
 const AUTO_MIGRATE_EXACT_KEY = 'auto-migrate-exact';
 const HIDE_ADULT_SOURCES_KEY = 'hide-adult-sources';
-const PROXY_KEY = 'proxy';
+export const PROXY_KEY = 'proxy';
 
 /** Opt-in boolean flags sharing the same validate/persist/read logic:
  *  PATCH body field → KV store key. */
@@ -209,9 +209,10 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             if (body.proxy.url !== undefined && typeof body.proxy.url !== 'string') {
                 return reply.code(400).send({ error: 'proxy.url must be a string' });
             }
-            if (body.proxy.enabled === true) {
+            const current = readProxySettings(db);
+            if (body.proxy.enabled ?? current.enabled) {
                 try {
-                    parseProxyUrl(body.proxy.url ?? readProxySettings(db).url);
+                    parseProxyUrl((body.proxy.url ?? current.url).trim());
                 } catch (error) {
                     return reply.code(400).send({ error: (error as Error).message });
                 }
@@ -252,8 +253,9 @@ export function registerSettingsRoutes(app: FastifyInstance, queue: DownloadQueu
             const current = readProxySettings(db);
             const url = body.proxy.url === undefined ? current.url : body.proxy.url.trim();
             const merged: ProxySettingsDto = { ...current, ...body.proxy, url };
-            db.kvSet(PROXY_KEY, JSON.stringify(merged));
+            // apply first: a failing runtime must not leave a bad URL in SQLite
             await applyProxy(merged);
+            db.kvSet(PROXY_KEY, JSON.stringify(merged));
         }
         const settings = queue.updateSettings(body);
         persistQueueSettings(db, settings);
