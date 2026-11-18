@@ -81,7 +81,7 @@ export class MangalibConnector implements SourceAdapter {
     }
 
     async searchMangas(query: string): Promise<MangaInfo[]> {
-        const url = new URL(`${API}/manga`);
+        const url = new URL(`${this.cfg.api}/manga`);
         url.searchParams.set('limit', '20');
         url.searchParams.set('offset', '0');
         url.searchParams.set('q', query.trim());
@@ -95,7 +95,7 @@ export class MangalibConnector implements SourceAdapter {
             results.push({
                 id: item.slug,
                 title,
-                url: `${API}/manga/${item.slug}`,
+                url: `${this.cfg.api}/manga/${item.slug}`,
                 thumbnail: item.cover?.thumbnail || item.cover?.default || undefined
             });
         }
@@ -104,7 +104,7 @@ export class MangalibConnector implements SourceAdapter {
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
         const slug = manga.id.replace(/^.*\/manga\//, '');
-        const response = await this.api<LibChaptersResponse>(new URL(`${API}/manga/${slug}/chapters`));
+        const response = await this.api<LibChaptersResponse>(new URL(`${this.cfg.api}/manga/${slug}/chapters`));
         const chapters: ChapterInfo[] = [];
         for (const chapter of response.data || []) {
             if (!chapter.volume || !chapter.number) {
@@ -116,7 +116,7 @@ export class MangalibConnector implements SourceAdapter {
             chapters.push({
                 id: `v=${chapter.volume};n=${chapter.number};b=${branch ?? ''}`,
                 title,
-                url: `${API}/manga/${slug}/chapter?volume=${encodeURIComponent(chapter.volume)}&number=${encodeURIComponent(chapter.number)}${branch ? `&branch_id=${branch}` : ''}`,
+                url: `${this.cfg.api}/manga/${slug}/chapter?volume=${encodeURIComponent(chapter.volume)}&number=${encodeURIComponent(chapter.number)}${branch ? `&branch_id=${branch}` : ''}`,
                 language: 'ru'
             });
         }
@@ -132,7 +132,7 @@ export class MangalibConnector implements SourceAdapter {
         const volume = chapter.id.match(/v=([^;]*)/)?.[1] || '';
         const number = chapter.id.match(/n=([^;]*)/)?.[1] || '';
         const branch = chapter.id.match(/b=([^;]*)/)?.[1] || '';
-        const url = new URL(`${API}/manga/${slug}/chapter`);
+        const url = new URL(`${this.cfg.api}/manga/${slug}/chapter`);
         url.searchParams.set('volume', volume);
         url.searchParams.set('number', number);
         if (branch) {
@@ -158,7 +158,7 @@ export class MangalibConnector implements SourceAdapter {
 
     async checkHealth(): Promise<HealthResult> {
         return checkHealthViaProbe(async () => {
-            const url = new URL(`${API}/manga`);
+            const url = new URL(`${this.cfg.api}/manga`);
             url.searchParams.set('limit', '20');
             url.searchParams.set('offset', '0');
             const response = await this.api<LibListResponse>(url);

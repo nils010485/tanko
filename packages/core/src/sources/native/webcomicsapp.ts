@@ -9,7 +9,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchRefererImage, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchRefererImage, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 export class WebComicsAppConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -99,7 +99,7 @@ export class WebComicsAppConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._renderScrolled(chapter.url || chapter.id);
+        const html = await this._renderScrolled(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('.reader-page img, img[src*="mangaina"]')]
             .map(img => (img.getAttribute('src') || '').trim())

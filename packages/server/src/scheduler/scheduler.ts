@@ -41,6 +41,8 @@ export type { ScheduleSettings } from './settings.js';
 export class Scheduler {
     private job: Cron | undefined;
     private retryTimer: ReturnType<typeof setTimeout> | undefined;
+    /** stop() is final until the next _startJob(): an in-flight run must not re-arm timers after it. */
+    private stopped = false;
     private settings: ScheduleSettings;
     private running = false;
     private lastRun: LastRunSummary = { seriesChecked: 0, newChaptersFound: 0 };
@@ -361,6 +363,7 @@ export class Scheduler {
     }
 
     stop(): void {
+        this.stopped = true;
         this.job?.stop();
         this.job = undefined;
         if (this.retryTimer) {
@@ -447,6 +450,9 @@ export class Scheduler {
         if (failoverProbed?.has(entry.id)) {
             return; // already probed in this run (download-failure loop)
         }
+        if (this.opts.queue.hasPendingJobs(entry.id)) {
+            return; // active downloads own the entry: migrating under them races the queue
+        }
         failoverProbed?.add(entry.id);
         if (!this.opts.failover.tryBeginProbe(entry.id)) {
             return; // an immediate or backstop probe already crawls for this entry
@@ -474,7 +480,7 @@ export class Scheduler {
 
     /** Schedule a one-off re-check of the entries that just failed (see RETRY_DELAY_MS). */
     private _scheduleRetry(failedIds: Set<number>, round: number): void {
-        if (failedIds.size === 0 || round >= MAX_RETRY_ROUNDS || !this.settings.enabled) {
+        if (this.stopped || failedIds.size === 0 || round >= MAX_RETRY_ROUNDS || !this.settings.enabled) {
             return;
         }
         // a pending retry from a previous run is superseded by the fresh id set
@@ -517,6 +523,7 @@ export class Scheduler {
     }
 
     private _startJob(): void {
+        this.stopped = false;
         this.job?.stop();
         this.job = undefined;
         if (!this.settings.enabled || !this.settings.cron) {

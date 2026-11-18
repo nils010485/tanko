@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unwrapSource } from '../cache/cached-adapter.js';
 import { adultAllowed, chapterAllowed, mangaLanguagesAllowed } from '../languages.js';
 import { ByteBudgetCache } from '../util/image-cache.js';
-import { assertPublicHttpUrl, fetchGuarded, readBodyCapped } from '../util/net-guard.js';
+import { assertPublicHttpUrl, BlockedUrlError, fetchGuarded, readImageResponse } from '../util/net-guard.js';
 import { withTimeout } from '../util/timeout.js';
 
 function handleSourceError(reply: FastifyReply, error: unknown) {
@@ -24,23 +24,11 @@ const SEARCH_TIMEOUT_MS = 30_000;
 const SEARCH_RESULTS_CAP = 50;
 
 async function timedSourceSearch(source: SourceAdapter, sourceId: string, query: string, languages: string[]): Promise<MangaInfo[]> {
+    const label = `Search on "${sourceId}"`;
     try {
-        return await new Promise<MangaInfo[]>((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error('source search timed out')), SEARCH_TIMEOUT_MS);
-            timer.unref();
-            source.searchMangas(query, { languages }).then(
-                value => {
-                    clearTimeout(timer);
-                    resolve(value);
-                },
-                error => {
-                    clearTimeout(timer);
-                    reject(error);
-                }
-            );
-        });
+        return await withTimeout(source.searchMangas(query, { languages }), SEARCH_TIMEOUT_MS, label);
     } catch (error) {
-        if (error instanceof Error && error.message === 'source search timed out') {
+        if (error instanceof Error && error.message === `${label} timed out after ${SEARCH_TIMEOUT_MS}ms`) {
             throw new SourceError(`Search on "${sourceId}" timed out after ${SEARCH_TIMEOUT_MS / 1000}s`, sourceId);
         }
         throw error;
@@ -139,7 +127,12 @@ async function fetchPageImage(url: string, source: SourceAdapter | undefined): P
         // the legacy engine follows redirects internally and cannot be
         // hop-checked: the final URL is the last guard available - refuse to
         // serve bodies that ended up on a private address
-        await assertPublicHttpUrl(response.url || url);
+        try {
+            await assertPublicHttpUrl(response.url || url);
+        } catch (error) {
+            await response.body?.cancel().catch(() => undefined);
+            throw error;
+        }
         return response;
     }
     // native connectors may run inside a solved browser session: their image
@@ -333,18 +326,22 @@ export function registerSourceRoutes(
         try {
             const entry = await pageImageGate.run(url, async () => {
                 const response = await fetchPageImage(url, source);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                // hotlink protection answers 200 with HTML: never cache or
+                // serve it as an image on the dashboard's own origin
+                const result = await readImageResponse(response, MAX_PAGE_IMAGE_BYTES);
+                if (!result.ok) {
+                    throw new Error(
+                        result.status >= 200 && result.status < 300 ? `Not an image (${result.contentType || 'unknown type'})` : `HTTP ${result.status}`
+                    );
                 }
-                const body = await readBodyCapped(response, MAX_PAGE_IMAGE_BYTES);
-                return { contentType: response.headers.get('content-type') || 'image/jpeg', body };
+                return { contentType: result.contentType, body: result.body };
             });
             pageImageCache.set(cacheKey, entry);
             reply.header('Content-Type', entry.contentType);
             reply.header('Cache-Control', 'public, max-age=3600');
             return reply.send(entry.body);
         } catch (error) {
-            return reply.code(502).send({ error: (error as Error).message });
+            return reply.code(error instanceof BlockedUrlError ? 400 : 502).send({ error: (error as Error).message });
         }
     });
 }

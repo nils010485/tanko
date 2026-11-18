@@ -55,10 +55,10 @@ function prepareHeaders(request: LegacyRequest, defaultUserAgent: string): { hea
         ['Sec-Fetch-Site', headers.get('x-sec-fetch-site')]
     ];
 
-    for (const name of [...headers.keys()]) {
-        if (name.toLowerCase().startsWith('x-')) {
-            headers.delete(name);
-        }
+    // only the known pseudo-headers are consumed; other x-* (x-requested-with,
+    // x-csrf-token, ...) are real headers the destination expects
+    for (const name of ['x-user-agent', 'x-cookie', 'x-referer', 'x-origin', 'x-sec-fetch-dest', 'x-sec-fetch-mode', 'x-sec-fetch-site']) {
+        headers.delete(name);
     }
 
     headers.set('User-Agent', userAgent);
@@ -75,6 +75,23 @@ function prepareHeaders(request: LegacyRequest, defaultUserAgent: string): { hea
     }
 
     return { headers, extraCookie };
+}
+
+/** Materialize a standard Request into the legacy shape: its body is a stream
+ *  (not _body) and must be buffered once so rate-limit retries can resend it. */
+async function asLegacyRequest(request: LegacyRequest | string): Promise<LegacyRequest> {
+    if (typeof request === 'string') {
+        return { url: request, headers: new Headers() };
+    }
+    if (request instanceof Request) {
+        return {
+            url: request.url,
+            method: request.method,
+            headers: request.headers,
+            _body: request.body ? Buffer.from(await request.arrayBuffer()) : undefined
+        };
+    }
+    return request;
 }
 
 /**
@@ -174,8 +191,9 @@ export class HeadlessRequest {
      * retried with the announced delay (bounded) within the caller's timeout.
      */
     async fetch(request: LegacyRequest | string, timeout = 60000): Promise<Response> {
-        const legacyRequest = typeof request === 'string' ? { url: request, headers: new Headers() } : request;
+        const legacyRequest = await asLegacyRequest(request);
         const url = legacyRequest.url;
+        const method = legacyRequest.method || 'GET';
         const deadline = Date.now() + timeout;
         await this.awaitHostBackoff(url, deadline);
 
@@ -192,9 +210,9 @@ export class HeadlessRequest {
             }
 
             response = await fetch(url, {
-                method: legacyRequest.method || 'GET',
+                method,
                 headers,
-                body: legacyRequest.method === 'POST' ? legacyRequest._body : undefined,
+                body: method !== 'GET' && method !== 'HEAD' ? legacyRequest._body : undefined,
                 redirect: 'follow',
                 signal: AbortSignal.timeout(Math.max(1, deadline - Date.now()))
             });

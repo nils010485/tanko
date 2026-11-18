@@ -9,7 +9,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, fetchRefererImage, noPagesError, pinToOrigin } from './http.js';
 
 export class LineWebtoonConnector implements SourceAdapter {
     readonly kind = 'native' as const;
@@ -68,7 +68,7 @@ export class LineWebtoonConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const seriesUrl = new URL(manga.url || manga.id);
+        const seriesUrl = new URL(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const chapters: ChapterInfo[] = [];
         const seen = new Set<string>();
         for (let page = 1; page <= 999; page++) {
@@ -108,7 +108,7 @@ export class LineWebtoonConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const images = [...document.querySelectorAll('img[data-url]')]
             .map(img => img.getAttribute('data-url'))

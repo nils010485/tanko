@@ -161,13 +161,15 @@ export function backgroundUrl(element: Element | null | undefined): string | und
 }
 
 export function createThrottle(minIntervalMs: number): () => Promise<void> {
-    let lastRequestAt = 0;
+    let nextSlotAt = 0;
     return async () => {
-        const wait = lastRequestAt + minIntervalMs - Date.now();
-        if (wait > 0) {
-            await new Promise(resolve => setTimeout(resolve, wait));
+        // reserve the slot synchronously: concurrent callers each get their own
+        const now = Date.now();
+        const slot = Math.max(now, nextSlotAt);
+        nextSlotAt = slot + minIntervalMs;
+        if (slot > now) {
+            await new Promise(resolve => setTimeout(resolve, slot - now));
         }
-        lastRequestAt = Date.now();
     };
 }
 

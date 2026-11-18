@@ -11,15 +11,14 @@
  */
 import { type ChildProcess, fork } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { errorMessage } from '../sources/types.js';
 import type { ConnectorCommand, ConnectorEvent, RenderOptions, RenderResult } from './connector-worker.js';
+import { dependencyRoot } from './evaluate.js';
 import type { WireRequest, WireResponse } from './evaluate-child.js';
 import { type HeadlessRequest, HostGate } from './request.js';
-
-const require = createRequire(import.meta.url);
 
 const DEFAULT_POOL_SIZE = 4;
 const DEFAULT_OP_TIMEOUT_MS = 90_000;
@@ -47,10 +46,6 @@ function degradeToPlain(reason: string): void {
     }, SPAWN_MODE_RETRY_MS).unref();
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * The compiled worker in production; when the pool itself runs from source
  * (vitest) the built package copy, since a forked process cannot read TS.
@@ -65,18 +60,6 @@ function workerEntry(): string {
         throw new Error(`connector worker entry not found (looked for ${candidates.join(', ')}) - build @tanko/core first`);
     }
     return entry;
-}
-
-/**
- * Read allow-list of the hardened worker: the root that serves this package
- * and its dependencies (workspace hoisting aware), plus the connector's vendor
- * tree - connectors import '../engine/Connector.mjs' and sibling templates.
- */
-function dependencyRoot(): string {
-    const resolved = require.resolve('linkedom');
-    const marker = `${path.sep}node_modules${path.sep}`;
-    const index = resolved.lastIndexOf(marker);
-    return index < 0 ? path.dirname(resolved) : resolved.slice(0, index);
 }
 
 interface Slot {
@@ -355,7 +338,12 @@ export class ConnectorPool {
         if (pending && pending.child === child) {
             return pending.promise;
         }
-        const promise = this.loadConnector(connectorId, filePath, child).finally(() => this.loads.delete(connectorId));
+        const promise = this.loadConnector(connectorId, filePath, child).finally(() => {
+            // a newer load may have replaced this entry while it was in flight
+            if (this.loads.get(connectorId)?.promise === promise) {
+                this.loads.delete(connectorId);
+            }
+        });
         this.loads.set(connectorId, { child, promise });
         return promise;
     }

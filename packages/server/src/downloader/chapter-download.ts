@@ -26,7 +26,7 @@ export interface ChapterDownloadContext {
     gate: DomainGate;
     /** throws Error('cancelled') - the tested abort contract */
     checkCancel: (jobId: number) => void;
-    waitWhilePaused: () => Promise<void>;
+    waitWhilePaused: (jobId: number) => Promise<void>;
     update: (jobId: number, patch: Partial<Pick<JobRow, 'status' | 'progress' | 'pages_total' | 'pages_done' | 'error' | 'path'>>) => void;
 }
 
@@ -54,7 +54,7 @@ export async function downloadChapterPages(
     for (let index = 0; index < pages.length; index++) {
         ctx.checkCancel(row.id);
         const pauseStart = Date.now();
-        await ctx.waitWhilePaused();
+        await ctx.waitWhilePaused(row.id);
         pausedMs += Date.now() - pauseStart;
         ctx.checkCancel(row.id);
         if (Date.now() - startedAt - pausedMs > CHAPTER_DEADLINE_MS) {

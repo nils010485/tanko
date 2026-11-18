@@ -7,7 +7,7 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 interface MangastreamOptions {
     id: string;
@@ -67,7 +67,7 @@ export class MangastreamConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('div#chapterlist ul li div.eph-num a, .eplister ul li a')]) {
@@ -84,7 +84,7 @@ export class MangastreamConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const html = await this._getText(chapterUrl);
         // reader payloads are embedded server-side: ts_reader.run({...sources:[{images:[...]}]})
         const json = html.match(/ts_reader\.run\((\{.*?\})\);?\s*<\/script>/s)?.[1];

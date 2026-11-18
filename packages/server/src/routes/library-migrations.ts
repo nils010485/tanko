@@ -89,12 +89,23 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         if (!entry) {
             return reply;
         }
+        if (queue.hasPendingJobs(entry.id)) {
+            return assertNoRunningDownloads(reply);
+        }
+        if (!failover.tryBeginProbe(entry.id)) {
+            return reply.code(409).send({ error: 'Une recherche de source est déjà en cours pour cette série - réessayez dans un instant' });
+        }
         try {
             const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
+            if (outcome === 'migrated') {
+                store.requeueFailedAfterMigration(entry.id, queue);
+            }
             const updated = publishEntry(entry.id);
             return { outcome, entry: updated };
         } catch (error) {
             return reply.code(502).send({ error: (error as Error).message });
+        } finally {
+            failover.endProbe(entry.id);
         }
     });
 

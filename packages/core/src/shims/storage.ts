@@ -1,28 +1,15 @@
 /**
- * Headless replacement for Engine.Storage.
- * Keeps the same on-disk layout as Hakuneko:
- *   <base>/<Connector>/<Manga>/<Chapter>/{01.jpg,...}   (format 'img')
- *   <base>/<Connector>/<Manga>/<Chapter>.cbz            (format '.cbz')
+ * Headless replacement for Engine.Storage. The server owns downloads (its
+ * downloader writes files/CBZ itself); what the legacy engine still needs is
+ * the catalog cache (<data>/config/hakuneko.mangas-<connector>) and the path
+ * sanitizer the vendor Chapter/Manga constructors call.
  */
 
-import { exec } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import JSZip from 'jszip';
-import type { LegacyChapter, LegacyConnector, LegacyManga } from '../legacy-types.js';
+import type { LegacyConnector, LegacyManga } from '../legacy-types.js';
 import type { HeadlessSettings } from './settings.js';
-
-const extensions = {
-    img: 'img',
-    cbz: '.cbz'
-};
-
-/** One page of a chapter, ready to be written to disk. */
-interface PageData {
-    name: string;
-    data: Blob;
-}
 
 export function createComicInfoXML(mangaName: string, chapterName: string, pageCount: number): string {
     const escapeXml = (text: unknown) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -97,72 +84,6 @@ export class HeadlessStorage {
         return this._existingNames(this._mangaOutputPath(manga), false);
     }
 
-    async saveChapterPages(chapter: LegacyChapter, content: Blob[]): Promise<void> {
-        const leadingZeroes = String(content.length).length;
-        const pageData: PageData[] = content.map((page, index) => ({
-            name: this._pageFileName(index + 1, page.type, leadingZeroes),
-            data: page
-        }));
-
-        const output = this._chapterOutputPath(chapter);
-        const format = String(this.settings.chapterFormat.value ?? '');
-        if (format === extensions.img) {
-            this._createDirectoryChain(output);
-            await this._saveChapterPagesFolder(output, pageData);
-        } else if (format === extensions.cbz) {
-            this._createDirectoryChain(path.dirname(output));
-            await this._saveChapterPagesCBZ(output, pageData, chapter.manga.title, chapter.title);
-        } else {
-            throw new Error(`Unsupported output format: ${format}`);
-        }
-        this._runPostChapterDownloadCommand(chapter, output);
-    }
-
-    private async _saveChapterPagesFolder(directory: string, pageData: PageData[]): Promise<void> {
-        for (const page of pageData) {
-            const data = Buffer.from(await page.data.arrayBuffer());
-            fs.writeFileSync(path.join(directory, page.name), data);
-        }
-    }
-
-    private async _saveChapterPagesCBZ(archive: string, pageData: PageData[], mangaName: string, chapterName: string): Promise<void> {
-        const zip = new JSZip();
-        zip.file('ComicInfo.xml', createComicInfoXML(mangaName, chapterName, pageData.length));
-        for (const page of pageData) {
-            zip.file(page.name, Buffer.from(await page.data.arrayBuffer()));
-        }
-        const data = await zip.generateAsync({ compression: 'STORE', type: 'nodebuffer' });
-        fs.writeFileSync(archive, data);
-    }
-
-    private _runPostChapterDownloadCommand(chapter: LegacyChapter, outputPath: string): void {
-        let command = String(this.settings.postChapterDownloadCommand.value ?? '');
-        if (command) {
-            command = command
-                .replace(/%PATH%/g, outputPath)
-                .replace(/%C%/g, chapter.manga.connector.label)
-                .replace(/%M%/g, chapter.manga.title)
-                .replace(/%O%/g, chapter.title);
-            exec(command, { cwd: path.dirname(outputPath) }, error => {
-                if (error) {
-                    console.error('[storage] post-download command failed:', error);
-                }
-            });
-        }
-    }
-
-    async loadChapterPages(chapter: LegacyChapter): Promise<string[]> {
-        const directory = this._chapterOutputPath(chapter);
-        if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
-            throw new Error(`No chapter content found: ${directory}`);
-        }
-        return fs
-            .readdirSync(directory)
-            .filter(file => !file.startsWith('.'))
-            .sort()
-            .map(file => encodeURI(`file://${path.join(directory, file).replace(/\\/g, '/')}`));
-    }
-
     _connectorOutputPath(connector: LegacyConnector): string {
         let output = String(this.settings.baseDirectory.value);
         if (connector.config?.path) {
@@ -175,19 +96,6 @@ export class HeadlessStorage {
 
     _mangaOutputPath(manga: LegacyManga): string {
         return path.join(this._connectorOutputPath(manga.connector), this.sanatizePath(manga.title));
-    }
-
-    _chapterOutputPath(chapter: LegacyChapter): string {
-        let output = path.join(this._mangaOutputPath(chapter.manga), this.sanatizePath(chapter.title));
-        const format = String(this.settings.chapterFormat.value ?? '');
-        if (format !== extensions.img) {
-            output += format;
-        }
-        return output;
-    }
-
-    _createDirectoryChain(directory: string): void {
-        fs.mkdirSync(directory, { recursive: true });
     }
 
     sanatizePath(name: string): string {
@@ -203,24 +111,6 @@ export class HeadlessStorage {
             name = name.replace(/[/:]/g, '');
         }
         return name.replace(/[.\s]+$/g, '').trim();
-    }
-
-    _pageFileName(number: number, mimeType: string, leadingZeroes: number): string {
-        const fileName = String(number).padStart(leadingZeroes, '0');
-        const map: Array<[string, string]> = [
-            ['image/webp', '.webp'],
-            ['image/jpeg', '.jpg'],
-            ['image/png', '.png'],
-            ['image/gif', '.gif'],
-            ['image/bmp', '.bmp'],
-            ['image/', '.img']
-        ];
-        for (const [mime, ext] of map) {
-            if (mimeType && mimeType.indexOf(mime) > -1) {
-                return fileName + ext;
-            }
-        }
-        return `${fileName}.bin`;
     }
 
     async saveTempFile(name: string, data: string | NodeJS.ArrayBufferView): Promise<string> {

@@ -26,6 +26,7 @@ export class ByteBudgetCache<T> {
         const previous = this.map.get(key);
         if (previous !== undefined) {
             this.bytes -= this.costOf(previous);
+            this.map.delete(key); // an overwrite refreshes LRU recency too
         }
         this.map.set(key, value);
         this.bytes += this.costOf(value);

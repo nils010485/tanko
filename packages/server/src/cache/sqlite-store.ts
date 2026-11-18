@@ -58,12 +58,17 @@ export class SqliteCacheStore implements CacheStore {
     }
 
     async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+        this.setSerialized(key, JSON.stringify(value), ttlSeconds);
+    }
+
+    /** Write an already-serialized value: the tiered store sizes its memory entry from the same string. */
+    setSerialized(key: string, json: string, ttlSeconds: number): void {
         const expiresAt = Date.now() + ttlSeconds * 1000;
         this.db.db
             .prepare(
                 'INSERT INTO cache (key, value, expires_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at'
             )
-            .run(key, JSON.stringify(value), expiresAt);
+            .run(key, json, expiresAt);
     }
 
     async delete(key: string): Promise<void> {

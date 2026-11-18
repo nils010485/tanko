@@ -43,6 +43,7 @@ import {
     createLanguagePreference,
     createStalledDetectionPref,
     loadPersistedQueueSettings,
+    PROXY_KEY,
     readProxySettings,
     registerSettingsRoutes
 } from './routes/settings.js';
@@ -64,7 +65,16 @@ const config = loadConfig();
 // before the first outbound request (connector pack download)
 const database = new Database(config.dataDirectory);
 installProxyFetch();
-await applyProxy(readProxySettings(database));
+let proxyBootError: string | undefined;
+try {
+    await applyProxy(readProxySettings(database));
+} catch (error) {
+    // a proxy persisted by an older build must not brick the boot: disable
+    // it, start direct, and surface the problem once Activity is wired
+    proxyBootError = (error as Error).message;
+    database.kvSet(PROXY_KEY, JSON.stringify({ ...readProxySettings(database), enabled: false }));
+    console.error(`[server] invalid persisted proxy, starting without it: ${proxyBootError}`);
+}
 // credentials stay out of the startup log
 console.log(`[server] outbound proxy: ${activeProxy()?.replace(/\/\/[^@]*@/, '//***@') ?? 'direct connection'}`);
 
@@ -75,29 +85,46 @@ console.log(`[engine] loaded ${connectors.length} connectors (${failures} failed
 const events = new EventBus();
 
 // last-resort handlers: log (and surface in Activity) instead of dying
-// silently - the downloader owns long-running state that must not vanish
+// silently - the downloader owns long-running state that must not vanish.
+// During shutdown the database may already be closed: console only.
+let shuttingDown = false;
 process.on('unhandledRejection', reason => {
     console.error('[server] unhandled rejection:', reason);
-    events.publishLog({
-        level: 'error',
-        category: 'system',
-        code: 'system.unhandledRejection',
-        message: `Rejet de promesse non géré : ${String(reason)}`
-    });
+    if (!shuttingDown) {
+        events.publishLog({
+            level: 'error',
+            category: 'system',
+            code: 'system.unhandledRejection',
+            params: { error: String(reason) },
+            message: `Rejet de promesse non géré : ${String(reason)}`
+        });
+    }
 });
 process.on('uncaughtException', error => {
     console.error('[server] uncaught exception:', error);
-    events.publishLog({
-        level: 'error',
-        category: 'system',
-        code: 'system.uncaughtException',
-        message: `Exception non interceptée : ${error.message}`
-    });
+    if (!shuttingDown) {
+        events.publishLog({
+            level: 'error',
+            category: 'system',
+            code: 'system.uncaughtException',
+            params: { error: error.message },
+            message: `Exception non interceptée : ${error.message}`
+        });
+    }
 });
 
 const activity = new ActivityService({ db: database });
 // every `log` event is persisted; the returned row id tags the broadcast copy
 events.setLogSink(event => activity.add(event));
+if (proxyBootError) {
+    events.publishLog({
+        level: 'error',
+        category: 'system',
+        code: 'system.proxyDisabled',
+        params: { error: proxyBootError },
+        message: `Proxy invalide au démarrage, désactivé (connexion directe) : ${proxyBootError}`
+    });
+}
 const cacheStore = new TieredCacheStore(new SqliteCacheStore(database));
 const sourceRegistry = new SourceRegistry(adapter => new CachedSourceAdapter(adapter, cacheStore));
 const persistedQueueSettings = loadPersistedQueueSettings(database);
@@ -425,6 +452,10 @@ console.log(`[server] listening on http://${config.host}:${config.port} (data: $
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, async () => {
+        if (shuttingDown) {
+            return;
+        }
+        shuttingDown = true;
         console.log(`[server] received ${signal}, shutting down...`);
         queue.stop();
         scheduler.stop();
@@ -432,11 +463,13 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         stopPackPolling();
         await app.close();
         cacheStore.dispose();
-        database.close();
-        // solved-session pages + Chromium: teardown is ours, not puppeteer's
+        // solved-session pages + Chromium: teardown is ours, not puppeteer's.
+        // The database closes LAST: pool/browser teardown and the last-resort
+        // process handlers still write Activity rows through it.
         const { closeBrowser, getConnectorPool } = await import('@tanko/core');
         await getConnectorPool()?.dispose();
         await closeBrowser().catch(() => undefined);
+        database.close();
         process.exit(0);
     });
 }

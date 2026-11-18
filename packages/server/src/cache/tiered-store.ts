@@ -31,8 +31,9 @@ export class TieredCacheStore implements CacheStore {
     }
 
     async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
-        await this.inner.set(key, value, ttlSeconds);
-        this.memory.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000, bytes: JSON.stringify(value).length });
+        const json = JSON.stringify(value);
+        this.inner.setSerialized(key, json, ttlSeconds);
+        this.memory.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000, bytes: json.length });
     }
 
     async delete(key: string): Promise<void> {

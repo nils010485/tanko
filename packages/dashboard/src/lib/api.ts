@@ -244,7 +244,7 @@ export const api = {
         return request<DownloadsPageDto>(`/api/downloads?${qs(query)}`);
     },
     downloadStatus: () => request<QueueStatusDto>('/api/downloads/status'),
-    enqueue: (payload: { sourceId: string; mangaId: string; mangaTitle?: string; chapters: Array<{ id: string; title: string }> }) =>
+    enqueue: (payload: { sourceId: string; mangaId: string; mangaTitle: string; chapters: Array<{ id: string; title: string }> }) =>
         request<{ added: number; skipped: number; retried: number }>('/api/downloads', { method: 'POST', body: JSON.stringify(payload) }),
     // Cancel (queued/downloading) or dismiss from history (finished) a single job
     removeJob: (jobId: number) => request<{ ok: boolean }>(`/api/downloads/${jobId}`, { method: 'DELETE' }),

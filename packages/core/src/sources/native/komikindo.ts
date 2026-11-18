@@ -6,7 +6,7 @@
 
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, lazySrc, noPagesError, pinToOrigin } from './http.js';
 
 /** Catalog pages scanned for a local (client-side) title search. */
 const SEARCH_PAGES = 5;
@@ -77,7 +77,7 @@ export class KomikIndoConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const document = parseDocument(await this._getText(manga.url || manga.id));
+        const document = parseDocument(await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id })));
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll('div#chapter_list span.lchx a')]) {
             const href = absoluteUrl(anchor.getAttribute('href'), this.base);
@@ -93,7 +93,7 @@ export class KomikIndoConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const document = parseDocument(await this._getText(chapter.url || chapter.id));
+        const document = parseDocument(await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id })));
         const images = [...document.querySelectorAll('div#chimg-auh img')]
             .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
             .filter((src): src is string => !!src && !src.startsWith('data:'))

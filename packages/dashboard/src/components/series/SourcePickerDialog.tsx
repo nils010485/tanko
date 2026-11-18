@@ -86,8 +86,8 @@ export function SourcePickerDialog({
                                             sourceLabel: alternative.sourceLabel,
                                             mangaId: alternative.mangaId,
                                             mangaTitle: alternative.title,
-                                            chapterCount: alternative.chapterCount ?? entry.chapterCount,
-                                            score: alternative.score ?? 1
+                                            chapterCount: entry.chapterCount,
+                                            score: 1
                                         })
                                     }
                                     loading={migratingTo === alternative.sourceId}

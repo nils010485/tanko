@@ -8,7 +8,7 @@
 import { parseDocument } from '../../shims/dom.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, pinToOrigin } from './http.js';
 
 interface FoolSlideOptions {
     id: string;
@@ -79,7 +79,7 @@ export class FoolSlideConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const html = await this._getText(manga.url || manga.id);
+        const html = await this._getText(pinToOrigin(manga.url || manga.id, this.base, { id: this.id }));
         const document = parseDocument(html);
         const chapters: ChapterInfo[] = [];
         for (const anchor of [...document.querySelectorAll<HTMLAnchorElement>('div.list div.element div.title a')]) {
@@ -95,7 +95,7 @@ export class FoolSlideConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const html = await this._getText(chapter.url || chapter.id);
+        const html = await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id }));
         const raw = html.match(/var\s+pages\s*=\s*(\[[\s\S]*?\]);/)?.[1];
         if (!raw) {
             throw new SourceError(`Liste de pages introuvable pour "${chapter.title}" sur ${this.label}`, this.id);

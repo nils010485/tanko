@@ -64,6 +64,9 @@ export function isPrivateAddress(address: string): boolean {
     return v6List.check(address, 'ipv6');
 }
 
+/** URL rejected by the SSRF guard: a bad client request (400), not an upstream failure (502). */
+export class BlockedUrlError extends Error {}
+
 /** Resolve a hostname and reject when ANY resolved address is private
  *  (a public name with one private A/AAAA record is still a rebinding probe). */
 async function assertPublicHost(hostname: string): Promise<void> {
@@ -71,7 +74,7 @@ async function assertPublicHost(hostname: string): Promise<void> {
     const host = hostname.replace(/^\[(.+)\]$/, '$1');
     if (net.isIP(host) !== 0) {
         if (isPrivateAddress(host)) {
-            throw new Error(`Blocked private address: ${host}`);
+            throw new BlockedUrlError(`Blocked private address: ${host}`);
         }
         return;
     }
@@ -83,15 +86,20 @@ async function assertPublicHost(hostname: string): Promise<void> {
     }
     for (const { address } of records) {
         if (isPrivateAddress(address)) {
-            throw new Error(`Blocked private address for ${hostname}: ${address}`);
+            throw new BlockedUrlError(`Blocked private address for ${hostname}: ${address}`);
         }
     }
 }
 
 export async function assertPublicHttpUrl(raw: string): Promise<URL> {
-    const target = new URL(raw);
+    let target: URL;
+    try {
+        target = new URL(raw);
+    } catch {
+        throw new BlockedUrlError(`Invalid URL: ${raw}`);
+    }
     if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-        throw new Error('Only http(s) URLs are allowed');
+        throw new BlockedUrlError('Only http(s) URLs are allowed');
     }
     await assertPublicHost(target.hostname);
     return target;
@@ -129,6 +137,19 @@ export async function fetchGuarded(raw: string, init: RequestInit = {}): Promise
         }
         target = await assertPublicHttpUrl(new URL(location, target).href);
     }
+}
+
+/** Shared image-proxy contract: refuse non-image bodies (hotlink-protection
+ *  HTML served with a 200) and free the socket on refusal; cap the accepted body. */
+export type ImageReadResult = { ok: true; contentType: string; body: Buffer } | { ok: false; status: number; contentType: string };
+
+export async function readImageResponse(response: Response, maxBytes: number): Promise<ImageReadResult> {
+    const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+    if (!response.ok || !contentType.startsWith('image')) {
+        await response.body?.cancel().catch(() => undefined);
+        return { ok: false, status: response.status, contentType };
+    }
+    return { ok: true, contentType, body: await readBodyCapped(response, maxBytes) };
 }
 
 /** Read a response body as a Buffer, aborting as soon as maxBytes is exceeded. */

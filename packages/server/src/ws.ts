@@ -50,11 +50,14 @@ export class EventBus {
     }
 
     attach(socket: WebSocket): void {
+        socket.on('close', () => this.clients.delete(socket));
+        socket.on('error', () => this.clients.delete(socket));
         this.clients.add(socket);
+        if (socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
         for (const event of this.history.slice(-REPLAY_SIZE)) {
             socket.send(JSON.stringify(event));
         }
-        socket.on('close', () => this.clients.delete(socket));
-        socket.on('error', () => this.clients.delete(socket));
     }
 }

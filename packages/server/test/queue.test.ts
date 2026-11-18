@@ -279,11 +279,12 @@ describe('DownloadQueue', () => {
     });
 
     it('skips chapters whose output already exists', async () => {
-        // pre-create the chapter directory with a file -> job completes without downloading
+        // pre-create the FULL chapter directory -> job completes without downloading
         const directory = path.join(tmpDir, 'downloads', 'Test Source', 'Test Manga', 'Chapter Existing');
         fs.mkdirSync(directory, { recursive: true });
-
-        fs.writeFileSync(path.join(directory, '01.png'), PNG);
+        for (const name of ['1.png', '2.png', '3.png']) {
+            fs.writeFileSync(path.join(directory, name), 'pre-existing');
+        }
 
         queue.enqueue([
             {
@@ -296,8 +297,29 @@ describe('DownloadQueue', () => {
         ]);
         const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-existing') as any[];
         await waitForJob(rows[0].id, ['completed']);
-        // the shortcut must NOT have downloaded: only the pre-created file remains
-        expect(fs.readdirSync(directory)).toEqual(['01.png']);
+        // the shortcut must NOT have downloaded: the pre-created files stay untouched
+        expect(fs.readdirSync(directory).sort()).toEqual(['1.png', '2.png', '3.png']);
+        expect(fs.readFileSync(path.join(directory, '1.png'), 'utf8')).toBe('pre-existing');
+    });
+
+    it('re-downloads an interrupted img chapter instead of marking it complete', async () => {
+        const directory = path.join(tmpDir, 'downloads', 'Test Source', 'Test Manga', 'Chapter Partial');
+        fs.mkdirSync(directory, { recursive: true });
+        fs.writeFileSync(path.join(directory, '1.png'), 'partial');
+
+        queue.enqueue([
+            {
+                sourceId: 'test-source',
+                mangaId: 'manga-1',
+                mangaTitle: 'Test Manga',
+                chapterId: 'chapter-partial',
+                chapterTitle: 'Chapter Partial'
+            }
+        ]);
+        const rows = database.db.prepare('SELECT * FROM download_jobs WHERE chapter_id = ?').all('chapter-partial') as any[];
+        await waitForJob(rows[0].id, ['completed']);
+        expect(fs.readdirSync(directory).sort()).toEqual(['1.png', '2.png', '3.png']);
+        expect(fs.readFileSync(path.join(directory, '1.png'), 'utf8')).not.toBe('partial');
     });
 
     it('prunes finished jobs older than the retention, keeps recent and active ones', () => {

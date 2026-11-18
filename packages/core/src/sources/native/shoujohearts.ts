@@ -10,7 +10,7 @@ import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError } from './http.js';
+import { absoluteUrl, checkHealthViaSearch, fetchNativeText, noPagesError, pinToOrigin } from './http.js';
 
 interface ShoujoHeartsOptions {
     id: string;
@@ -71,7 +71,7 @@ export class ShoujoHeartsConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const seriesUrl = (manga.url || manga.id).replace(/\/?$/, '/');
+        const seriesUrl = pinToOrigin((manga.url || manga.id).replace(/\/?$/, '/'), this.base, { id: this.id });
         const slug = new URL(seriesUrl).pathname.match(/\/reader\/manga\/([^/]+)/)?.[1];
         const chapters: ChapterInfo[] = [];
         try {
@@ -115,7 +115,7 @@ export class ShoujoHeartsConnector implements SourceAdapter {
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const document = parseDocument(await this._getText(chapter.url || chapter.id));
+        const document = parseDocument(await this._getText(pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id })));
         const images = [...document.querySelectorAll('div.reading-content img')]
             .map(img => (img.getAttribute('data-src') || img.getAttribute('src') || '').trim())
             .filter(src => !!src && !src.startsWith('data:'))

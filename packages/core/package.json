@@ -16,8 +16,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tanko/shared": "*",
-    "jszip": "^3.10.1",
     "linkedom": "^0.18.5",
     "protobufjs": "^7.4.0",
     "puppeteer-core": "^25.17.0",

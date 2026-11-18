@@ -124,6 +124,8 @@ export default function Series({
     const { t, formatDate } = useI18n();
     /** Ignore responses that resolve after a newer fetch started (series switch, poll, refresh). */
     const requestSeq = useRef(0);
+    /** Ignore picker responses that resolve after it was closed or the series changed. */
+    const pickerSeq = useRef(0);
     /** Ignore page responses that resolve after the preview was closed or replaced. */
     const previewSeq = useRef(0);
     const closePreview = () => {
@@ -167,6 +169,10 @@ export default function Series({
         previewSeq.current++;
         setPreview(null);
         setBusy({});
+        pickerSeq.current++;
+        setPicker({ open: false, loading: false, error: '', data: null });
+        setLinked(null);
+        setMissingDialog(false);
         void loadChapters();
     }, [loadChapters]);
 
@@ -183,7 +189,10 @@ export default function Series({
     }, [jobsActive, retriesFrozen, failedRetrying, loadChapters]);
 
     useEscapeKey(closePreview, preview !== null);
-    useEscapeKey(() => setPicker(current => ({ ...current, open: false })), picker.open);
+    useEscapeKey(() => {
+        pickerSeq.current++;
+        setPicker(current => ({ ...current, open: false }));
+    }, picker.open);
 
     const setBusyFlag = (key: string, value: boolean) => setBusy(current => ({ ...current, [key]: value }));
 
@@ -238,15 +247,23 @@ export default function Series({
     /** Open the manual source picker: same series on the other sources, with
      *  chapter counts so a starved current source is obvious. */
     const openPicker = async () => {
+        const seq = ++pickerSeq.current;
         setPicker({ open: true, loading: true, error: '', data: null });
         try {
             const data = await api.entryAlternatives(entryId);
+            if (pickerSeq.current !== seq) {
+                return;
+            }
             setPicker({ open: true, loading: false, error: '', data });
             void loadLinked();
             if (data.autoAliases) {
                 await refreshLibrary();
             }
         } catch (error) {
+            if (pickerSeq.current !== seq) {
+                return;
+            }
+            setLinked([]); // a failed crawl must not leave the linked list loading forever
             setPicker({ open: true, loading: false, error: (error as Error).message, data: null });
         }
     };
@@ -272,7 +289,10 @@ export default function Series({
             setUnlinking(null);
         }
     };
-    const closePicker = () => setPicker(current => ({ ...current, open: false }));
+    const closePicker = () => {
+        pickerSeq.current++;
+        setPicker(current => ({ ...current, open: false }));
+    };
 
     /** Save the alias list, refresh the entry, then re-run the source search -
      *  editing a name only ever aims at finding more sources. */

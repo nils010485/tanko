@@ -86,6 +86,9 @@ export function noteSourceFailure(ctx: StoreContext, sourceId: string, open: boo
         return undefined;
     }
     if (row.closed_at !== null) {
+        if (!open) {
+            return undefined; // a closed wave is only reactivated by a new open
+        }
         const flap = Date.parse(row.closed_at) + OUTAGE_SILENCE_MS > now.getTime();
         const startedAt = flap ? row.started_at : iso;
         const escalatedAt = flap ? row.escalated_at : null;

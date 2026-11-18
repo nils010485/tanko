@@ -3,7 +3,7 @@
  * Runs on every store construction (CREATE IF NOT EXISTS + addColumn no-ops).
  */
 import { normalizeAsuraPath } from '@tanko/core';
-import type { Database } from '../db.js';
+import { addColumn, type Database } from '../db.js';
 
 /** Create the library tables and bring older databases up to date. */
 export function migrateLibrarySchema(db: Database): void {
@@ -72,8 +72,6 @@ export function migrateLibrarySchema(db: Database): void {
             manga_id      TEXT NOT NULL,
             title         TEXT NOT NULL,
             url           TEXT,
-            chapter_count INTEGER,
-            score         REAL,
             added_at      TEXT NOT NULL,
             UNIQUE(entry_id, source_id, manga_id)
         );
@@ -123,13 +121,6 @@ export function migrateLibrarySchema(db: Database): void {
     if (!db.kvGet('schema.asuraIdsNormalized')) {
         normalizeAsuraIds(db);
         db.kvSet('schema.asuraIdsNormalized', new Date().toISOString());
-    }
-}
-
-/** ALTER TABLE helper: adds `ddl` (must reference `name`) to `table` when the column is missing. */
-function addColumn(db: Database, table: string, columns: Array<{ name: string }>, name: string, ddl: string): void {
-    if (!columns.some(column => column.name === name)) {
-        db.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
     }
 }
 
@@ -187,8 +178,11 @@ function normalizeAsuraIds(db: Database): void {
         group.sort((a, b) => rank(a) - rank(b));
         const winner = group[0];
         for (const loser of group.slice(1)) {
-            updateChapter.run(normalizeAsuraId(winner.chapter_id), loser.path, loser.downloaded_at, winner.id);
+            // delete first: the loser may already carry the normalized id and
+            // UNIQUE(entry_id, chapter_id) would reject the winner's update
+            const { path, downloaded_at } = loser;
             remove.run(loser.id);
+            updateChapter.run(normalizeAsuraId(winner.chapter_id), path, downloaded_at, winner.id);
         }
     }
 }

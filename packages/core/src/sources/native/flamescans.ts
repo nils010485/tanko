@@ -12,7 +12,7 @@
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
 import { SourceError } from '../types.js';
-import { checkHealthViaProbe, noPagesError } from './http.js';
+import { checkHealthViaProbe, noPagesError, pinToOrigin } from './http.js';
 
 interface FlameSeries {
     series_id: number;
@@ -99,7 +99,7 @@ export class FlameScansConnector implements SourceAdapter {
     }
 
     async getChapters(manga: MangaInfo): Promise<ChapterInfo[]> {
-        const data = await this._getNextData(manga.url || `${this.base}/series/${manga.id}`);
+        const data = await this._getNextData(pinToOrigin(manga.url || `${this.base}/series/${manga.id}`, this.base, { id: this.id }));
         const chapters = data?.props?.pageProps?.chapters;
         if (!Array.isArray(chapters) || chapters.length === 0) {
             throw new SourceError(`No chapters found for "${manga.title}" on ${this.label}`, this.id);
@@ -118,7 +118,7 @@ export class FlameScansConnector implements SourceAdapter {
     }
 
     async getPages(manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {
-        const chapterUrl = chapter.url || chapter.id;
+        const chapterUrl = pinToOrigin(chapter.url || chapter.id, this.base, { id: this.id });
         const data = await this._getNextData(chapterUrl);
         const reader = data?.props?.pageProps?.chapter;
         const token = data?.props?.pageProps?.token || chapterUrl.split('/').pop();

@@ -55,7 +55,7 @@ export default function App() {
     const [seriesId, navigateSeries] = useHashSeriesId();
     const [navOpen, setNavOpen] = useState(false);
     const [libraryFocusFilter, setLibraryFocusFilter] = useState<string | null>(null);
-    const live = useLiveState();
+    const live = useLiveState(tab === 'activity');
     const { t } = useI18n();
     // becomes true 3s after mount: the offline banner may then show when the WS is down
     const [offlineReady, setOfflineReady] = useState(false);
@@ -71,13 +71,6 @@ export default function App() {
         const timer = setTimeout(() => setOfflineReady(true), 3000);
         return () => clearTimeout(timer);
     }, []);
-
-    // entering the Activity tab marks the unread error counter as seen
-    useEffect(() => {
-        if (tab === 'activity') {
-            live.markActivitySeen();
-        }
-    }, [tab, live.markActivitySeen]);
 
     // close the mobile navigation with Escape
     useEffect(() => {
