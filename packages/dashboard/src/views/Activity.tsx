@@ -103,12 +103,11 @@ export default function Activity({ logs, library, onOpenSeries }: { logs: LogLin
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         // match the displayed (translated) text and the raw fallback message alike
-        const text = (log: LogLine) => logText(log, t);
         return [...logs, ...older].filter(
             log =>
                 (level === 'all' || log.level === level) &&
                 (categories.size === 0 || categories.has(log.category ?? 'system')) &&
-                (!needle || text(log).toLowerCase().includes(needle) || log.message.toLowerCase().includes(needle))
+                (!needle || logText(log, t).toLowerCase().includes(needle) || log.message.toLowerCase().includes(needle))
         );
     }, [logs, older, level, categories, query, t]);
 
