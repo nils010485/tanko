@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../core/dist/shims/browser.js', () => ({
     detectChromium: vi.fn(),
     browserEnabled: vi.fn(() => true),
+    browserBackend: vi.fn(() => 'stealth'),
     isAntiBotShell: vi.fn((html: string, status?: number) => status === 403 || /un instant|just a moment|vérification/i.test(html)),
+    isChallengeShell: vi.fn((html: string) => /un instant|just a moment|vérification/i.test(html)),
     getBrowser: vi.fn(),
     getPageHTML: vi.fn(),
     closeBrowser: vi.fn()
@@ -31,8 +33,19 @@ const challenge403 = () =>
         status: 403,
         headers: { 'content-type': 'text/html' }
     });
+const challenge200 = () =>
+    new Response('<html><head><title>Un instant…</title></head><body>challenge</body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=UTF-8' }
+    });
 
 const okHtml = (title: string) => `<html><head><title>${title}</title></head><body>${'content '.repeat(500)}</body></html>`;
+/** Small legit search row: no challenge signal, so it must NOT escalate. */
+const legitSearchPage = () =>
+    new Response('<div class="c-tabs-item__content"><div class="post-title"><a href="/manga/solo/">Solo</a></div></div>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+    });
 
 function connector(): MadaraConnector {
     return new MadaraConnector({ id: 'test', label: 'Test', base: 'https://madara.test' });
@@ -75,6 +88,29 @@ describe('MadaraConnector anti-bot escalation', () => {
         await source.searchMangas('b');
         expect(fetchMock).toHaveBeenCalledTimes(1); // second search went straight to the browser
         expect(browserFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('escalates a challenge served with HTTP 200 instead of parsing it as content', async () => {
+        fetchMock.mockImplementation(async () => challenge200());
+        vi.mocked(browserFetch).mockResolvedValue({
+            status: 200,
+            ok: true,
+            headers: {},
+            body: JSON.stringify({ success: true, data: [{ title: 'Solo Manga', url: 'https://madara.test/manga/solo/' }] })
+        });
+        const results = await connector().searchMangas('solo');
+        expect(results).toHaveLength(1);
+        expect(results[0]?.title).toBe('Solo Manga');
+        expect(fetchMock).toHaveBeenCalledTimes(1); // one raw attempt, then escalation
+        expect(browserFetch).toHaveBeenCalledWith('https://madara.test', 'https://madara.test/wp-admin/admin-ajax.php', expect.anything());
+    });
+
+    it('leaves a small legit 200 response alone (no challenge signal)', async () => {
+        fetchMock.mockImplementation(async () => legitSearchPage());
+        const results = await connector().searchMangas('solo');
+        expect(results).toHaveLength(1);
+        expect(results[0]?.title).toBe('Solo');
+        expect(browserFetch).not.toHaveBeenCalled();
     });
 
     it('fails with a classifiable anti-bot error when no browser exists', async () => {
@@ -124,5 +160,17 @@ describe('MadaraConnector anti-bot escalation', () => {
         const result = await connector().checkHealth();
         expect(result.ok).toBe(false);
         expect(result.error).toMatch(/^anti-bot:/);
+    });
+
+    it('checkHealth: browser answers a challenge page -> the error names the status', async () => {
+        vi.mocked(browserFetch).mockResolvedValue({
+            status: 403,
+            ok: false,
+            headers: {},
+            body: '<html><head><title>Un instant…</title></head><body>challenge</body></html>'
+        });
+        const result = await connector().checkHealth();
+        expect(result.ok).toBe(false);
+        expect(result.error).toBe('anti-bot: Cloudflare challenge not solved (HTTP 403 via browser)');
     });
 });
