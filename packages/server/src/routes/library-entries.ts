@@ -300,10 +300,7 @@ export function registerLibraryEntriesRoutes(app: FastifyInstance, deps: Library
                             outcome = 'skip';
                             break;
                         }
-                        const migrated = await failover.maybeMigrate({ id, sourceId: entry.sourceId, title: entry.title });
-                        if (migrated === 'migrated') {
-                            store.requeueFailedAfterMigration(id, queue);
-                        }
+                        await failover.maybeMigrate({ id, sourceId: entry.sourceId, title: entry.title });
                         outcome = 'ok';
                         publishEntry(id);
                         break;

@@ -202,9 +202,6 @@ export class Scheduler {
                             sourceId: entry.sourceId,
                             message: `${failoverMessage(entry.title, outcome)} (${entry.downloadFailures} téléchargements en échec)`
                         });
-                        if (outcome === 'migrated') {
-                            this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
-                        }
                     } catch (error) {
                         console.warn(`[failover] "${entry.title}":`, (error as Error).message);
                     } finally {
@@ -504,9 +501,6 @@ export class Scheduler {
                 entryId: entry.id,
                 message: failoverMessage(entry.title, outcome)
             });
-            if (outcome === 'migrated') {
-                this.opts.store.requeueFailedAfterMigration(entry.id, this.opts.queue);
-            }
             this._publishEntryUpdated(entry.id);
         } catch (migrationError) {
             console.warn(`[failover] "${entry.title}":`, (migrationError as Error).message);

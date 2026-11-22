@@ -597,9 +597,9 @@ export class LibraryStore {
         return migration.migrateEntry(this.ctx, entryId, target);
     }
 
-    /** Re-queue the chapters that failed on the old source after a migration. */
-    requeueFailedAfterMigration(entryId: number, queue: DownloadQueue): number {
-        return migration.requeueFailedAfterMigration(this.ctx, entryId, queue);
+    /** Resume the downloads after a migration: old-source failures + the chapters the new source lists. */
+    resumeDownloadsAfterMigration(entryId: number, queue: DownloadQueue): number {
+        return migration.resumeDownloadsAfterMigration(this.ctx, entryId, queue);
     }
 
     /** Undo the latest source migration (restores entry fields + chapter rows). */

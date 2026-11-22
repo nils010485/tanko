@@ -32,9 +32,6 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
                     return { outcome: 'skipped', detail: 'ignorée (téléchargements en cours)' };
                 }
                 const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-                if (outcome === 'migrated') {
-                    store.requeueFailedAfterMigration(entry.id, queue);
-                }
                 return {
                     outcome,
                     detail: failoverDetail(outcome),
@@ -97,9 +94,6 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
         }
         try {
             const outcome = await failover.maybeMigrate({ id: entry.id, sourceId: entry.sourceId, title: entry.title });
-            if (outcome === 'migrated') {
-                store.requeueFailedAfterMigration(entry.id, queue);
-            }
             const updated = publishEntry(entry.id);
             return { outcome, entry: updated };
         } catch (error) {
@@ -121,7 +115,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
             }
             try {
                 const result = await store.migrateEntry(Number(entryId), entry.migrationSuggestion);
-                store.requeueFailedAfterMigration(Number(entryId), queue);
+                store.resumeDownloadsAfterMigration(Number(entryId), queue);
                 const updated = publishEntry(Number(entryId));
                 return { applied: true, ...result, entry: updated };
             } catch (error) {
@@ -167,7 +161,7 @@ export function registerLibraryMigrationsRoutes(app: FastifyInstance, deps: Libr
                 url: target.url,
                 score: target.score
             });
-            store.requeueFailedAfterMigration(entry.id, queue);
+            store.resumeDownloadsAfterMigration(entry.id, queue);
             const updated = publishEntry(entry.id);
             return { ...result, entry: updated };
         } catch (error) {
