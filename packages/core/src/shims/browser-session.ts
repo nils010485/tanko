@@ -13,12 +13,13 @@
  *  - a page is never closed synchronously on eviction - evicted pages get a
  *    grace period, then close; requests that raced with the eviction retry
  *    once on a fresh session;
- *  - failed solves are negatively cached per origin: a host we cannot solve
- *    must not cost a 30s stall on every request.
+ *  - failed solves are negatively cached per origin with an exponential
+ *    backoff and their last error kept: a host we cannot solve must not cost
+ *    a 30s stall on every request, and the cause must stay visible.
  */
 
 import type { Page } from 'puppeteer-core';
-import { browserEnabled, getBrowser, isAntiBotShell } from './browser.js';
+import { browserBackend, browserEnabled, getBrowser, isAntiBotShell } from './browser.js';
 
 export interface BrowserResponse {
     status: number;
@@ -33,17 +34,27 @@ const SOLVE_TIMEOUT_MS = 30_000;
 const SOLVE_POLL_MS = 1000;
 /** Evicted pages stay alive this long: in-flight evaluates may still run. */
 const GRACE_CLOSE_MS = 60_000;
-/** A failed solve poisons its origin for this long (no retry storm). */
+/** First delay of the per-origin backoff after a failed solve (no retry storm). */
 const NEGATIVE_CACHE_MS = 60 * 1000;
+/** Cap of the per-origin backoff: a blocked host is retried at this pace. */
+const MAX_NEGATIVE_CACHE_MS = 15 * 60_000;
+/** Pause between the two solve attempts: a CF rate-limit page needs a moment. */
+const SOLVE_RETRY_PAUSE_MS = 3000;
 
 interface Session {
     page: Page;
     expiresAt: number;
 }
 
+interface SolveFailure {
+    until: number;
+    delayMs: number;
+    lastError: string;
+}
+
 const sessions = new Map<string, Session>();
 const inflight = new Map<string, Promise<Page>>();
-const solveFailUntil = new Map<string, number>();
+const solveFailures = new Map<string, SolveFailure>();
 /** Global solve serialization, kept separate from the per-origin dedupe. */
 let solveQueue: Promise<unknown> = Promise.resolve();
 /** Captures navigate the shared session page: one at a time, all origins. */
@@ -70,7 +81,57 @@ function evict(origin: string, closeAfterMs = GRACE_CLOSE_MS): void {
 
 /** A dead tab crashes evaluate with one of these protocol errors. */
 function isPageDeath(error: unknown): boolean {
-    return /target closed|session closed|browser has disconnected|protocol error/i.test(String((error as Error)?.message || ''));
+    return /target closed|session closed|browser has disconnected|protocol error|page crashed|execution context was destroyed/i.test(
+        String((error as Error)?.message || '')
+    );
+}
+
+/** Narrower check for a content() read: losing the execution context only means
+ *  the page is navigating (post-solve redirect), the tab itself is alive. */
+function isTabGone(error: unknown): boolean {
+    return /target closed|session closed|browser has disconnected/i.test(String((error as Error)?.message || ''));
+}
+
+/** Record a failed solve cycle: exponential backoff, jittered, capped, with the
+ *  root cause kept for the cooldown message. */
+function recordSolveFailure(origin: string, error: unknown): void {
+    const previous = solveFailures.get(origin);
+    const grown = previous ? Math.min(previous.delayMs * 2, MAX_NEGATIVE_CACHE_MS) : NEGATIVE_CACHE_MS;
+    const delayMs = Math.min(Math.round(grown * (0.8 + Math.random() * 0.4)), MAX_NEGATIVE_CACHE_MS);
+    const lastError = (error as Error)?.message || String(error);
+    solveFailures.set(origin, { until: Date.now() + delayMs, delayMs, lastError });
+    console.warn(`[anti-bot] solve failed on ${origin} (backend: ${browserBackend()}): ${lastError} - retry in ${Math.round(delayMs / 1000)}s`);
+}
+
+/** cf_clearance for `origin`: the only proof that a 403/503 interstitial ran. */
+async function hasClearance(page: Page, origin: string): Promise<boolean> {
+    const cookies = await page.cookies(origin).catch(() => []);
+    return cookies.some(cookie => cookie.name === 'cf_clearance');
+}
+
+/** Click the Cloudflare widget inside its cross-origin iframe. Best-effort: a
+ *  solve must never fail on this helper, and the frame can detach mid-click. */
+async function clickTurnstile(page: Page): Promise<void> {
+    try {
+        for (const frame of page.frames()) {
+            if (!frame.url().includes('challenges.cloudflare.com')) {
+                continue;
+            }
+            try {
+                const box = await (await frame.frameElement())?.boundingBox();
+                if (!box || box.width === 0 || box.height === 0) {
+                    continue; // widget not laid out yet (hidden or still mounting)
+                }
+                // left-center heuristic, on the IFRAME box: the checkbox sits at
+                // the widget's left edge
+                await page.mouse.click(box.x + 30, box.y + box.height / 2);
+            } catch {
+                /* frame detached between frames() and the click: next cycle */
+            }
+        }
+    } catch {
+        /* no frames / page gone: polling decides the outcome */
+    }
 }
 
 /** Navigate to the origin and wait until the challenge (if any) is solved. */
@@ -80,9 +141,11 @@ async function solve(origin: string): Promise<Page> {
             return await solveOnce(origin);
         } catch (error) {
             if (attempt >= 1) {
-                solveFailUntil.set(origin, Date.now() + NEGATIVE_CACHE_MS);
+                recordSolveFailure(origin, error);
                 throw error;
             }
+            // let a rate-limit interstitial settle before the second attempt
+            await new Promise(resolve => setTimeout(resolve, SOLVE_RETRY_PAUSE_MS + Math.random() * 1000));
         }
     }
 }
@@ -90,20 +153,49 @@ async function solve(origin: string): Promise<Page> {
 async function solveOnce(origin: string): Promise<Page> {
     const browser = await getBrowser();
     const page = await browser.newPage();
+    /** Status of the last main-frame navigation: a 403/503 needs a clearance
+     *  cookie, however large the shell body is. */
+    let status: number | undefined;
+    const onResponse = (response: { status(): number; request(): { isNavigationRequest(): boolean }; frame(): unknown }): void => {
+        if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
+            status = response.status();
+        }
+    };
+    page.on('response', onResponse);
     try {
         await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: SOLVE_TIMEOUT_MS });
         // poll instead of one fixed wait: Turnstile auto-solve takes ~7-9s
         const deadline = Date.now() + SOLVE_TIMEOUT_MS;
         while (Date.now() < deadline) {
-            if (!isAntiBotShell(await page.content())) {
-                return page;
+            let html: string | undefined;
+            try {
+                html = await page.content();
+            } catch (error) {
+                // the post-solve redirect destroys the execution context: the
+                // page is alive and polling again is the right move
+                if (page.isClosed() || isTabGone(error)) {
+                    throw error;
+                }
             }
+            if (html !== undefined && !isAntiBotShell(html)) {
+                if (status !== 403 && status !== 503) {
+                    return page;
+                }
+                // a fat 403/503 body passes the size heuristic without ever
+                // having been solved: only the clearance cookie proves it
+                if (await hasClearance(page, origin)) {
+                    return page;
+                }
+            }
+            await clickTurnstile(page);
             await new Promise(resolve => setTimeout(resolve, SOLVE_POLL_MS));
         }
         throw new Error(`anti-bot: challenge not solved within ${SOLVE_TIMEOUT_MS}ms on ${origin}`);
     } catch (error) {
         await page.close().catch(() => undefined);
         throw error;
+    } finally {
+        page.off('response', onResponse);
     }
 }
 
@@ -121,15 +213,18 @@ async function getSession(origin: string): Promise<Page> {
     if (cached) {
         evict(origin);
     }
-    if (Date.now() < (solveFailUntil.get(origin) ?? 0)) {
-        throw new Error(`anti-bot: challenge solve failed recently on ${origin}; not retrying yet`);
+    const failure = solveFailures.get(origin);
+    if (failure && Date.now() < failure.until) {
+        throw new Error(
+            `anti-bot: challenge solve failed recently on ${origin} (backend: ${browserBackend()}; last error: ${failure.lastError}); retry in ${Math.ceil((failure.until - Date.now()) / 1000)}s`
+        );
     }
     // dedupe concurrent solves for the same origin behind one promise
     let pending = inflight.get(origin);
     if (!pending) {
         pending = queuedSolve(origin).then(page => {
             sessions.set(origin, { page, expiresAt: Date.now() + BROWSER_SESSION_MS });
-            solveFailUntil.delete(origin);
+            solveFailures.delete(origin);
             // idle expiry: a session nobody revisits must not hold a tab forever
             const timer = setTimeout(() => {
                 const session = sessions.get(origin);

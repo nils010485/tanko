@@ -24,6 +24,16 @@ export function browserEnabled(): boolean {
     return detectChromium() !== undefined;
 }
 
+export type BrowserBackend = 'remote' | 'stealth' | 'headless' | 'none';
+
+/** Which backend the last launch settled on - 'none' before any launch or when
+ *  no Chromium exists at all, so a failure message can say what ran. */
+let activeBackend: BrowserBackend = 'none';
+
+export function browserBackend(): BrowserBackend {
+    return browserEnabled() ? activeBackend : 'none';
+}
+
 /** Heuristic shared with the request shim: true when the page is a JS/anti-bot shell.
  *  `status` (when the caller has it) is the strongest signal - a 403/503 body
  *  is never usable payload. Challenge pages localize their <title> ("Un
@@ -47,6 +57,16 @@ export function isAntiBotShell(html: string, status?: number): boolean {
     // challenge scripts persist AFTER a successful solve -> they only count
     // when the page is too thin to be real content
     return (CHALLENGE_MARKER.test(html) && html.length < THIN_PAGE_BYTES) || html.length < 1000;
+}
+
+/** Strong challenge signals only: a WAF interstitial served with HTTP 200 is
+ *  recognizable by its title or its challenge scripts, never by size alone
+ *  (small legit AJAX fragments must not match). */
+export function isChallengeShell(html: string): boolean {
+    if (!html) {
+        return false;
+    }
+    return CHALLENGE_TITLE.test(html) || (CHALLENGE_MARKER.test(html) && html.length < THIN_PAGE_BYTES);
 }
 
 interface PageResult {
@@ -75,7 +95,9 @@ async function launch(): Promise<Browser> {
     if (BROWSER_URL) {
         // external browser (podman/docker container with CDP): connect, never own it
         const { default: puppeteer } = await import('puppeteer-core');
-        return puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null });
+        const browser = await puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null });
+        activeBackend = 'remote';
+        return browser;
     }
     const executablePath = detectChromium();
     if (!executablePath) {
@@ -104,13 +126,17 @@ async function launch(): Promise<Browser> {
             turnstile: true
         } as unknown as Parameters<typeof connect>[0]);
         containPageSetupRejections(page);
+        activeBackend = 'stealth';
         return browser as unknown as Browser;
-    } catch {
+    } catch (error) {
         // not installed (npm i --omit=optional) or launch failed
+        console.warn('[browser] puppeteer-real-browser unavailable, falling back to plain headless (Turnstile auto-solve lost):', (error as Error).message);
     }
     // dynamic import so the dependency is only loaded when actually used
     const { default: puppeteer } = await import('puppeteer-core');
-    return puppeteer.launch({ executablePath, headless: true, args });
+    const browser = await puppeteer.launch({ executablePath, headless: true, args });
+    activeBackend = 'headless';
+    return browser;
 }
 
 export async function getBrowser(): Promise<Browser> {

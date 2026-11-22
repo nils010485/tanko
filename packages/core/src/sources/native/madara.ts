@@ -9,7 +9,7 @@
  *  - pages  : `img.wp-manga-chapter-img` on the chapter page
  */
 
-import { browserEnabled, isAntiBotShell } from '../../shims/browser.js';
+import { browserEnabled, isAntiBotShell, isChallengeShell } from '../../shims/browser.js';
 import { BROWSER_SESSION_MS, type BrowserResponse, browserCapturePageImages, browserFetch, browserFetchBinary } from '../../shims/browser-session.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent, retryAfterMs } from '../../shims/request.js';
@@ -428,8 +428,21 @@ export class MadaraConnector implements SourceAdapter {
             }
             throw new SourceError(`${init.method || 'GET'} ${url} failed after retries`, this.id, error);
         }
-        if ((response.status === 403 || response.status === 503) && isAntiBotShell(await response.text().catch(() => ''), response.status)) {
-            // proven anti-bot challenge -> escalate to the solved browser session
+        // proven anti-bot challenge -> escalate to the solved browser session.
+        // A WAF interstitial served with HTTP 200 counts too: it would otherwise
+        // parse as "no chapters found" and the failover misreads it as a content removal
+        let challenged = false;
+        if (response.status === 403 || response.status === 503) {
+            challenged = isAntiBotShell(await response.text().catch(() => ''), response.status);
+        } else if (response.status === 200 && (response.headers.get('content-type') || '').includes('text/html')) {
+            challenged = isChallengeShell(
+                await response
+                    .clone()
+                    .text()
+                    .catch(() => '')
+            );
+        }
+        if (challenged) {
             if (!browserEnabled()) {
                 throw new SourceError(`anti-bot: ${this.base} requires a browser (Cloudflare); no Chromium available`, this.id);
             }
@@ -548,7 +561,7 @@ export class MadaraConnector implements SourceAdapter {
             ok,
             latencyMs: Date.now() - startedAt,
             via: ok ? 'browser' : undefined,
-            error: ok ? undefined : 'anti-bot: Cloudflare challenge not solved (browser present but blocked)'
+            error: ok ? undefined : `anti-bot: Cloudflare challenge not solved (HTTP ${response.status} via browser)`
         };
     }
 
