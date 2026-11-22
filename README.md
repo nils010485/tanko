@@ -33,7 +33,6 @@ you ever managing source outages.
   CONNECT or a gost HTTP/2 tunnel, with a built-in connectivity test
 - Existing library import and source failover
 
-## Quickstart (Docker)
 ## Requirements
 
 Measured on the shipped Docker image:
@@ -45,6 +44,8 @@ Measured on the shipped Docker image:
 - **Docker or Podman**; or Node.js >= 22 to run outside a container (Chromium
   is optional there - only used if a system binary is present).
 
+
+## Quickstart (Docker)
 
 ```bash
 cp docker-compose.yml.example docker-compose.yml
