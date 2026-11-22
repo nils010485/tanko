@@ -26,8 +26,12 @@ check:
 
 # --- Image OCI sur le registry interne : kaniko (pas de daemon, pas de privilège)
 # INTERNAL_CA = variable CI de type « fichier » portant le root CA interne (TLS du registry).
+# `latest` n'est poussé QUE sur un tag git : c'est la référence que suivent les
+# serveurs, donc un commit sur main ne déploie jamais rien.
+# needs: [] => l'image se construit dès le départ, sans attendre les tests.
 image:oci:
   stage: image
+  needs: []
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
@@ -37,10 +41,10 @@ image:oci:
   rules:
     - if: $CI_COMMIT_TAG
       variables:
-        IMAGE_TAGS: "$CI_COMMIT_TAG"
+        IMAGE_TAGS: "$CI_COMMIT_TAG latest"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       variables:
-        IMAGE_TAGS: "$CI_COMMIT_SHORT_SHA latest"
+        IMAGE_TAGS: "$CI_COMMIT_SHORT_SHA"
   script:
     - |
       mkdir -p /kaniko/.docker
