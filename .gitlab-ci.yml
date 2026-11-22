@@ -29,6 +29,8 @@ check:
 # `latest` n'est poussé QUE sur un tag git : c'est la référence que suivent les
 # serveurs, donc un commit sur main ne déploie jamais rien.
 # needs: [] => l'image se construit dès le départ, sans attendre les tests.
+# APP_VERSION : la version affichée par l'app vient de son manifeste ; on y
+# injecte le tag git pour qu'elle corresponde à la release déployée.
 image:oci:
   stage: image
   needs: []
@@ -51,11 +53,14 @@ image:oci:
       AUTH=$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
       printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
     - |
+      VER="${APP_VERSION:-$CI_COMMIT_TAG}"
+      VER="${VER#v}"
       set -- --context "$BUILD_CONTEXT" --dockerfile "$DOCKERFILE" \
              --registry-certificate "$CI_REGISTRY=$INTERNAL_CA" \
              --cache=true --cache-repo "$CI_REGISTRY_IMAGE/cache" \
              --label "org.opencontainers.image.title=$CI_PROJECT_NAME" \
              --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" \
              --label "org.opencontainers.image.source=$CI_PROJECT_URL"
+      if [ -n "$VER" ]; then set -- "$@" --build-arg "APP_VERSION=$VER"; fi
       for tag in $IMAGE_TAGS; do set -- "$@" --destination "$CI_REGISTRY_IMAGE:$tag"; done
       /kaniko/executor "$@"

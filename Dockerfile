@@ -6,11 +6,21 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
+# Le dashboard affiche __APP_VERSION__ lu dans packages/dashboard/package.json.
+# La CI y injecte le tag git (--build-arg APP_VERSION) pour que l'UI montre la
+# release reellement deployee au lieu de la version figee du fichier.
+ARG APP_VERSION=""
+
 COPY package.json package-lock.json* .npmrc ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/dashboard/package.json packages/dashboard/
+RUN if [ -n "$APP_VERSION" ]; then \
+      for f in package.json packages/shared/package.json packages/core/package.json packages/server/package.json packages/dashboard/package.json; do \
+        node -e 'const fs=require("fs"),f=process.argv[1],v=process.env.APP_VERSION;const j=JSON.parse(fs.readFileSync(f,"utf8"));j.version=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$f"; \
+      done; \
+    fi
 RUN npm ci --no-audit --no-fund
 
 COPY tsconfig.base.json ./
@@ -27,11 +37,23 @@ FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
+# Le dashboard affiche __APP_VERSION__ lu dans packages/dashboard/package.json.
+# La CI y injecte le tag git (--build-arg APP_VERSION) pour que l'UI montre la
+# release reellement deployee au lieu de la version figee du fichier.
+ARG APP_VERSION=""
+
+ENV APP_VERSION=${APP_VERSION}
+
 COPY package.json package-lock.json* .npmrc ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/dashboard/package.json packages/dashboard/
+RUN if [ -n "$APP_VERSION" ]; then \
+      for f in package.json packages/shared/package.json packages/core/package.json packages/server/package.json packages/dashboard/package.json; do \
+        node -e 'const fs=require("fs"),f=process.argv[1],v=process.env.APP_VERSION;const j=JSON.parse(fs.readFileSync(f,"utf8"));j.version=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$f"; \
+      done; \
+    fi
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # headless Chromium for the optional anti-bot browser backend (fetchUI fallback),
