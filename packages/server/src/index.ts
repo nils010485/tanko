@@ -202,7 +202,16 @@ const failover = new FailoverService({
             'migrations',
             'Migration automatique',
             `« ${entry.title} » migré vers ${target.sourceLabel} (correspondance exacte, ${kept}/${total} chapitres conservés) - annulable depuis la fiche de la série`
-        )
+        ),
+    // late-bound like the hooks above: `queue` is declared below. Best-effort -
+    // a queueing failure must never turn an applied migration into an error
+    afterMigrate: entryId => {
+        try {
+            library.resumeDownloadsAfterMigration(entryId, queue);
+        } catch (error) {
+            console.warn('[failover] reprise des téléchargements après migration:', (error as Error).message);
+        }
+    }
 });
 
 const queue = new DownloadQueue({
@@ -328,9 +337,6 @@ function handleDownloadFailure(job: DownloadJobDto): void {
                 sourceId: entry.sourceId,
                 message: failoverDownloadMessage(entry.title, failures, outcome)
             });
-            if (outcome === 'migrated') {
-                library.requeueFailedAfterMigration(entryId, queue);
-            }
         } catch (error) {
             console.warn(`[failover] "${entry.title}":`, (error as Error).message);
         } finally {

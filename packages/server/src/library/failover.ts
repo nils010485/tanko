@@ -152,6 +152,8 @@ export class FailoverService {
             onSuggestion?: (entry: { id: number; title: string }, target: { sourceLabel: string; chapterCount?: number }, currentChapters: number) => void;
             /** Webhook hook: an exact-match migration was applied automatically. */
             onAutoMigrate?: (entry: { id: number; title: string }, target: { sourceLabel: string }, kept: number, total: number) => void;
+            /** Called right after a migration is applied: the wiring resumes the downloads. */
+            afterMigrate?: (entryId: number) => void;
             /** Structured log sink (Activity feed) - absent: diagnostics dropped. */
             log?: (message: string) => void;
         }
@@ -431,6 +433,7 @@ export class FailoverService {
             // queuing a suggestion the user would trivially confirm
             if ((better.score ?? 0) >= EXACT_MATCH_SCORE && this.opts.isAutoMigrateExactEnabled?.()) {
                 const result = await this.opts.store.migrateEntry(entry.id, better);
+                this.opts.afterMigrate?.(entry.id);
                 this.opts.onAutoMigrate?.(entry, better, result.kept, result.total);
                 this._log(
                     `[failover] "${entry.title}" migré automatiquement vers ${better.sourceLabel} (correspondance exacte, ${result.kept}/${result.total} chapitres conservés)`
@@ -537,6 +540,7 @@ export class FailoverService {
         const confidence = confidenceFor(target.score);
         if (confidence === 'auto' && auto) {
             const result = await this.opts.store.migrateEntry(entry.id, target);
+            this.opts.afterMigrate?.(entry.id);
             this._log(`[failover] "${entry.title}" migré vers ${target.sourceLabel} (${result.kept}/${result.total} chapitres conservés)`);
             return 'migrated';
         }

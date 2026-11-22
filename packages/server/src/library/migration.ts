@@ -1,8 +1,8 @@
 /**
  * Source migrations: move an entry to another source while carrying the
  * downloaded files over (matched by chapter number), keep a full snapshot
- * for the undo, re-queue the chapters that failed on the old source, and
- * store/dismiss the failover's migration suggestions.
+ * for the undo, resume the downloads afterwards, and store/dismiss the
+ * failover's migration suggestions.
  */
 import path from 'node:path';
 import type { SourceAdapter } from '@tanko/core';
@@ -10,8 +10,9 @@ import { listChapterEntries } from '../downloader/paths.js';
 import type { DownloadQueue } from '../downloader/queue.js';
 import { parseChapterNumber } from '../import/scanner.js';
 import { chapterAllowed } from '../languages.js';
+import { loadSettings } from '../scheduler/settings.js';
 import { withTimeout } from '../util/timeout.js';
-import { enqueueSelected, markChaptersQueued } from './chapters.js';
+import { enqueueNewChapters, enqueueSelected, markChaptersQueued } from './chapters.js';
 import type { StoreContext } from './context.js';
 import { getEntryRow, isDownloaded, seriesDirectory } from './context.js';
 import type { ChapterRow, EntryRow, MigrationTarget } from './rows.js';
@@ -65,10 +66,13 @@ export async function migrateEntry(ctx: StoreContext, entryId: number, target: M
     return result;
 }
 
-/** After a migration rebuilt the chapter list on a new source, re-queue the
- *  chapters whose download failed on the old one (matched by chapter number,
- *  like the file carry-over) so the interrupted download resumes by itself. */
-export function requeueFailedAfterMigration(ctx: StoreContext, entryId: number, queue: DownloadQueue): number {
+/** After a migration rebuilt the chapter list on a new source, resume the
+ *  downloads: re-queue the chapters whose download failed on the old one
+ *  (matched by chapter number, like the file carry-over) so the interrupted
+ *  download resumes by itself, then grab the chapters the new source lists -
+ *  when both the entry's autoDownload and the scheduler's autoDownload
+ *  setting are on. */
+export function resumeDownloadsAfterMigration(ctx: StoreContext, entryId: number, queue: DownloadQueue): number {
     // the still-queued old-source jobs are cancelled through the queue: their
     // library chapters revert and the dashboard hears about it - a raw DELETE
     // would leave them 'queued' forever with no job behind them
@@ -83,34 +87,41 @@ export function requeueFailedAfterMigration(ctx: StoreContext, entryId: number, 
             chapter_title: string;
         }>
     ).map(row => row.chapter_title);
+    const entry = getEntryRow(ctx, entryId);
+    if (!entry) {
+        return 0;
+    }
     const numbers = new Set(
         titles.flatMap(title => {
             const number = parseChapterNumber(title);
             return number === null ? [] : [number];
         })
     );
-    if (numbers.size === 0) {
-        return 0;
+    let queued = 0;
+    if (numbers.size > 0) {
+        const failed = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId).filter(chapter => {
+            const number = parseChapterNumber(chapter.title);
+            return chapter.status !== 'downloaded' && number !== null && numbers.has(number);
+        });
+        // the consumed failures are purged before enqueuing, so a bulk "retry
+        // failed" cannot resurrect the dead source AND the fresh jobs are not
+        // caught by the DELETE themselves
+        ctx.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status = 'failed'").run(entryId);
+        queued += enqueueSelected(entry, failed, queue, () =>
+            markChaptersQueued(
+                ctx,
+                entryId,
+                failed.map(chapter => chapter.chapter_id)
+            )
+        );
     }
-    const entry = getEntryRow(ctx, entryId);
-    if (!entry) {
-        return 0;
+    // the rebuild leaves every chapter the new source lists as 'new': without
+    // this grab they would wait for a manual "download new". 'missing' (the
+    // pre-follow backlog) stays out - migration rows are 'new'
+    if (entry.auto_download === 1 && loadSettings(ctx.db).autoDownload) {
+        queued += enqueueNewChapters(ctx, entryId, queue);
     }
-    const failed = ctx.q.all<ChapterRow>('SELECT * FROM library_chapters WHERE entry_id = ?', entryId).filter(chapter => {
-        const number = parseChapterNumber(chapter.title);
-        return chapter.status !== 'downloaded' && number !== null && numbers.has(number);
-    });
-    // the consumed failures are purged before enqueuing, so a bulk "retry
-    // failed" cannot resurrect the dead source AND the fresh jobs are not
-    // caught by the DELETE themselves
-    ctx.db.db.prepare("DELETE FROM download_jobs WHERE entry_id = ? AND status = 'failed'").run(entryId);
-    return enqueueSelected(entry, failed, queue, () =>
-        markChaptersQueued(
-            ctx,
-            entryId,
-            failed.map(chapter => chapter.chapter_id)
-        )
-    );
+    return queued;
 }
 
 /** Downloaded chapters of an entry keyed by chapter number (first occurrence wins). */

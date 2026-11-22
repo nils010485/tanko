@@ -119,7 +119,7 @@ describe('download retry flow', () => {
         expect(statusOf('r-done')).toBe('downloaded');
     });
 
-    it('requeueFailedAfterMigration re-queues the failed chapters on the new source', () => {
+    it('resumeDownloadsAfterMigration resumes the old-source failures and grabs the missing chapters', () => {
         const now = new Date().toISOString();
         const insertJob = database.db.prepare(
             `INSERT INTO download_jobs
@@ -138,16 +138,17 @@ describe('download retry flow', () => {
         // already carried over by the migration: must NOT be re-queued
         insertChapter.run(entryId, 'new-dl', 'Chapter 5', 'downloaded', now);
 
-        const queued = store.requeueFailedAfterMigration(entryId, queue);
+        const queued = store.resumeDownloadsAfterMigration(entryId, queue);
 
-        expect(queued).toBe(2);
+        // 2 old-source failures by number + the 2 chapters only the new source lists
+        expect(queued).toBe(4);
         expect(statusOf('new-c5')).toBe('queued');
         expect(statusOf('new-c6')).toBe('queued');
-        expect(statusOf('new-c7')).toBe('new');
-        expect(statusOf('new-extra')).toBe('new');
+        expect(statusOf('new-c7')).toBe('queued');
+        expect(statusOf('new-extra')).toBe('queued');
         expect(statusOf('new-dl')).toBe('downloaded');
         const jobs = database.db.prepare("SELECT chapter_id FROM download_jobs WHERE entry_id = ? AND status = 'queued'").all(entryId) as any[];
-        expect(jobs.map(job => job.chapter_id).sort()).toEqual(['new-c5', 'new-c6']);
+        expect(jobs.map(job => job.chapter_id).sort()).toEqual(['new-c5', 'new-c6', 'new-c7', 'new-extra']);
         // the consumed old-source failures are purged: no resurrection via "retry failed"
         const failedLeft = database.db.prepare("SELECT COUNT(*) AS n FROM download_jobs WHERE entry_id = ? AND status = 'failed'").get(entryId) as any;
         expect(failedLeft.n).toBe(0);
@@ -166,5 +167,100 @@ describe('download retry flow', () => {
         // one distinct tracked entry, the stale row sits outside the window
         expect(store.countRecentSourceFailures('s', 60 * 60 * 1000)).toBe(1);
         expect(store.countRecentSourceFailures('other', 60 * 60 * 1000)).toBe(0);
+    });
+});
+
+describe('migration resume', () => {
+    const adapters: Record<string, { label: string; getChapters: () => Promise<Array<{ id: string; title: string; language: string }>> }> = {
+        old: { label: 'Old', getChapters: async () => [{ id: 'o1', title: 'Chapter 1', language: 'en' }] },
+        rich: {
+            label: 'Rich',
+            getChapters: async () => [
+                { id: 'n1', title: 'Chapter 1', language: 'en' },
+                { id: 'n2', title: 'Chapter 2', language: 'en' },
+                { id: 'n3', title: 'Chapter 3', language: 'en' }
+            ]
+        }
+    };
+
+    function migrationStore(): LibraryStore {
+        return new LibraryStore({
+            db: database,
+            registry: { get: async (id: string) => adapters[id], list: async () => [] } as never,
+            getPreferredLanguages: () => ['en'],
+            queueSettings: {
+                dataDirectory: path.join(tmpDir, 'downloads'),
+                directoryLayout: 'source',
+                chapterFormat: 'cbz',
+                parallelSources: 1,
+                concurrencyPerSource: 1,
+                throttleMs: 0
+            }
+        });
+    }
+
+    function chaptersOf(id: number): Array<{ chapter_id: string; status: string }> {
+        return database.db.prepare('SELECT chapter_id, status FROM library_chapters WHERE entry_id = ? ORDER BY chapter_id').all(id) as any[];
+    }
+
+    function target(title: string): { sourceId: string; sourceLabel: string; mangaId: string; mangaTitle: string } {
+        return { sourceId: 'rich', sourceLabel: 'Rich', mangaId: `rm-${title}`, mangaTitle: title };
+    }
+
+    it('enqueues the chapters the new source lists, on the new source', async () => {
+        const local = migrationStore();
+        const { entry } = await local.addEntry({ sourceId: 'old', mangaId: 'om1', title: 'Resumed Series', backlog: 'grab' });
+
+        const result = await local.migrateEntry(entry.id, target('Resumed Series'));
+
+        expect(result).toEqual({ kept: 0, total: 3 });
+        expect(chaptersOf(entry.id).map(row => row.status)).toEqual(['new', 'new', 'new']);
+
+        expect(local.resumeDownloadsAfterMigration(entry.id, queue)).toBe(3);
+
+        expect(chaptersOf(entry.id).map(row => row.status)).toEqual(['queued', 'queued', 'queued']);
+        const jobs = database.db
+            .prepare('SELECT chapter_id, source_id, manga_id, status FROM download_jobs WHERE entry_id = ? ORDER BY chapter_id')
+            .all(entry.id) as any[];
+        expect(jobs).toEqual([
+            { chapter_id: 'n1', source_id: 'rich', manga_id: 'rm-Resumed Series', status: 'queued' },
+            { chapter_id: 'n2', source_id: 'rich', manga_id: 'rm-Resumed Series', status: 'queued' },
+            { chapter_id: 'n3', source_id: 'rich', manga_id: 'rm-Resumed Series', status: 'queued' }
+        ]);
+    });
+
+    it('still resumes the old-source failures while the entry has autoDownload off', async () => {
+        const local = migrationStore();
+        const { entry } = await local.addEntry({ sourceId: 'old', mangaId: 'om2', title: 'Manual Series', backlog: 'grab' });
+        local.setAutoDownload(entry.id, false);
+        const now = new Date().toISOString();
+        database.db
+            .prepare(
+                `INSERT INTO download_jobs (entry_id, source_id, manga_id, chapter_id, manga_title, chapter_title, status, progress, pages_total, pages_done, created_at, updated_at)
+                 VALUES (?, 'old', 'om2', 'o2', 'Manual Series', 'Chapter 2', 'failed', 100, 1, 0, ?, ?)`
+            )
+            .run(entry.id, now, now);
+        await local.migrateEntry(entry.id, target('Manual Series'));
+
+        expect(local.resumeDownloadsAfterMigration(entry.id, queue)).toBe(1);
+        expect(chaptersOf(entry.id)).toEqual([
+            { chapter_id: 'n1', status: 'new' },
+            { chapter_id: 'n2', status: 'queued' },
+            { chapter_id: 'n3', status: 'new' }
+        ]);
+    });
+
+    it('leaves every chapter for a manual download while the scheduler autoDownload setting is off', async () => {
+        const local = migrationStore();
+        const { entry } = await local.addEntry({ sourceId: 'old', mangaId: 'om3', title: 'Global Series', backlog: 'grab' });
+        await local.migrateEntry(entry.id, target('Global Series'));
+
+        database.kvSet('schedule', JSON.stringify({ autoDownload: false }));
+        try {
+            expect(local.resumeDownloadsAfterMigration(entry.id, queue)).toBe(0);
+            expect(chaptersOf(entry.id).map(row => row.status)).toEqual(['new', 'new', 'new']);
+        } finally {
+            database.kvSet('schedule', JSON.stringify({ autoDownload: true }));
+        }
     });
 });

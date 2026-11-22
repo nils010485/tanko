@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Database } from '../src/db.js';
 import type { SourceInfo } from '../src/import/service.js';
 import { FailoverService } from '../src/library/failover.js';
@@ -256,6 +256,7 @@ describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () =>
     let autoExactEnabled = false;
     let autoFailover: FailoverService;
     let autoId = 0;
+    const afterMigrate = vi.fn();
 
     beforeAll(async () => {
         autoFailover = new FailoverService({
@@ -264,36 +265,43 @@ describe('opt-in auto-migration on exact matches (autoMigrateExactMatch)', () =>
             listSources: async () => sourceInfos,
             getPreferredLanguages: () => ['en'],
             isDetectionEnabled: () => true,
-            isAutoMigrateExactEnabled: () => autoExactEnabled
+            isAutoMigrateExactEnabled: () => autoExactEnabled,
+            afterMigrate
         });
         const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'ax', title: 'Starved Series', backlog: 'ignore' });
         autoId = entry.id;
     });
 
     it('stores a suggestion, never migrates, while the setting is off - even on an exact match', async () => {
+        afterMigrate.mockClear();
         expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
         const entry = store.getEntry(autoId);
         expect(entry?.migrationSuggestion?.sourceId).toBe('richer'); // score 1
         expect(entry?.sourceId).toBe('current');
+        expect(afterMigrate).not.toHaveBeenCalled();
     });
 
     it('migrates immediately on an exact match once enabled', async () => {
         store.setMigrationSuggestion(autoId, null);
         autoExactEnabled = true;
+        afterMigrate.mockClear();
         expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'current', title: 'Starved Series' }, 8)).toBe('suggested');
         const entry = store.getEntry(autoId);
         expect(entry?.sourceId).toBe('richer');
         expect(entry?.migrationSuggestion).toBeUndefined();
         expect(entry?.canRollbackMigration).toBe(true); // undo stays available
+        expect(afterMigrate).toHaveBeenCalledWith(autoId);
     });
 
     it('still only suggests when the best match is not exact (score < 100 %)', async () => {
         // the entry now lives on 'richer'; the only alternative with ≥ 2×
         // chapters is 'stranger' ("Starved Series - Official", score < 1)
+        afterMigrate.mockClear();
         expect(await autoFailover.suggestIfIncomplete({ id: autoId, sourceId: 'richer', title: 'Starved Series' }, 8)).toBe('suggested');
         const entry = store.getEntry(autoId);
         expect(entry?.sourceId).toBe('richer');
         expect(entry?.migrationSuggestion?.sourceId).toBe('stranger');
+        expect(afterMigrate).not.toHaveBeenCalled();
     });
 });
 
@@ -338,6 +346,25 @@ describe('outage failover (maybeMigrate)', () => {
         const suggestion = store.getEntry(entry.id)?.migrationSuggestion;
         expect(suggestion?.sourceId).toBe('poorer'); // score tie with 'richer': label order wins
         expect(suggestion?.chapterCount).toBe(3); // counted during the usability probe
+    });
+
+    it('calls afterMigrate when the migration is applied, never when only suggested', async () => {
+        const afterMigrate = vi.fn();
+        const local = new FailoverService({
+            registry: registry as never,
+            store,
+            listSources: async () => sourceInfos,
+            getPreferredLanguages: () => ['en'],
+            afterMigrate
+        });
+        const { entry } = await store.addEntry({ sourceId: 'current', mangaId: 'af', title: 'Starved Series', backlog: 'ignore' });
+
+        expect(await local.maybeMigrate({ id: entry.id, sourceId: 'current', title: entry.title }, false)).toBe('suggested');
+        expect(afterMigrate).not.toHaveBeenCalled();
+
+        store.setMigrationSuggestion(entry.id, null);
+        expect(await local.maybeMigrate({ id: entry.id, sourceId: 'current', title: entry.title }, true)).toBe('migrated');
+        expect(afterMigrate).toHaveBeenCalledWith(entry.id);
     });
 });
 
