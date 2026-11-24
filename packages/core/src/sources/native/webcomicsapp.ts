@@ -4,7 +4,7 @@
  * its images after JS hydration + programmatic scrolling (lazy-load).
  */
 
-import { browserEnabled, getBrowser } from '../../shims/browser.js';
+import { browserEnabled, withBrowserPage } from '../../shims/browser.js';
 import { parseDocument } from '../../shims/dom.js';
 import { randomUserAgent } from '../../shims/request.js';
 import type { ChapterInfo, HealthResult, MangaInfo, PageList, SourceAdapter } from '../types.js';
@@ -84,18 +84,14 @@ export class WebComicsAppConnector implements SourceAdapter {
         if (!browserEnabled()) {
             throw new SourceError('Lecteur WebComics: rendu navigateur requis (non disponible)', this.id);
         }
-        const browser = await getBrowser();
-        const page = await browser.newPage();
-        try {
+        return withBrowserPage(async page => {
             await page.goto(url, { waitUntil: 'networkidle2', timeout: 45_000 });
             for (let i = 0; i < scrolls; i++) {
                 await page.evaluate(() => window.scrollBy(0, 2500)).catch(() => undefined);
                 await new Promise(resolve => setTimeout(resolve, 350));
             }
-            return await page.content();
-        } finally {
-            await page.close().catch(() => undefined);
-        }
+            return page.content();
+        });
     }
 
     async getPages(_manga: MangaInfo, chapter: ChapterInfo): Promise<PageList> {

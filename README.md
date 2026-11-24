@@ -30,16 +30,19 @@ you ever managing source outages.
 - Optional first-chapter thumbnails cached locally
 - Cron scheduler with Discord/ntfy notifications
 - Optional outbound proxy for every request: SOCKS5 (with auth), HTTP/HTTPS
-  CONNECT or a gost HTTP/2 tunnel, with a built-in connectivity test
+  CONNECT or a gost HTTP/2 tunnel, with a built-in connectivity test. The
+  anti-bot browser exits through it too (SOCKS5 and gost h2 via the built-in
+  loopback relay)
 - Existing library import and source failover
 
 ## Requirements
 
 Measured on the shipped Docker image:
 
-- **RAM**: ~100 MB at idle, but the embedded headless Chromium (anti-bot
-  fallback) adds ~800 MB as soon as a protected source is checked and stays
-  resident. 1 GB works; 2 GB is comfortable.
+- **RAM**: ~100 MB at idle. The embedded Chromium (anti-bot fallback) adds
+  ~800 MB while a protected source is in use and until 5 minutes after its
+  solved session expires (30 minutes), then exits on its own. 1 GB works;
+  2 GB is comfortable.
 - **Disk**: ~1.4 GB image + your library.
 - **Docker or Podman**; or Node.js >= 22 to run outside a container (Chromium
   is optional there - only used if a system binary is present).

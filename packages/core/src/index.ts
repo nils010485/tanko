@@ -8,7 +8,8 @@ export {
     loadConnectors,
     VENDOR_PATH
 } from './engine.js';
-export { closeBrowser, isAntiBotShell } from './shims/browser.js';
+export type { BrowserProxy } from './shims/browser.js';
+export { closeBrowser, isAntiBotShell, setBrowserProxy } from './shims/browser.js';
 export { HeadlessRequest, HostGate, randomUserAgent, retryAfterMs } from './shims/request.js';
 export { createComicInfoXML } from './shims/storage.js';
 export { LegacySourceAdapter } from './sources/legacy-adapter.js';

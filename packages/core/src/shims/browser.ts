@@ -7,8 +7,9 @@
  *
  * Enabled whenever a Chromium binary is detected - the Docker image ships one.
  */
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import type { Browser } from 'puppeteer-core';
+import type { Browser, Page } from 'puppeteer-core';
 
 /** External Chrome/Chromium exposing CDP (e.g. a podman container publishing
  * port 9222) - takes precedence over a local binary when set. */
@@ -75,6 +76,83 @@ interface PageResult {
 }
 
 let browserPromise: Promise<Browser> | undefined;
+/** Shutdown in progress: getBrowser() waits for it, so a request never lands
+ *  on a browser being closed (the idle shutdown lives in browser-session.ts). */
+let closing: Promise<void> | undefined;
+let activeUses = 0;
+
+/** Hold the browser for one request. A use that leaves nobody holding it hands
+ *  over to the idle shutdown, which decides against parked sessions. */
+export function retainBrowser(): () => void {
+    activeUses++;
+    return () => {
+        if (--activeUses === 0) {
+            void import('./browser-session.js').then(module => module.reapIfIdle());
+        }
+    };
+}
+
+export function browserInUse(): boolean {
+    return activeUses > 0;
+}
+
+/** The proxy as Chrome can use it (resolved by @tanko/server): a URL for
+ *  --proxy-server, plus credentials for HTTP(S) proxies. */
+export interface BrowserProxy {
+    url: string;
+    username?: string;
+    password?: string;
+}
+
+let browserProxy: BrowserProxy | undefined;
+let pageCredentials: { username: string; password: string } | undefined;
+
+function proxyKey(proxy: BrowserProxy | undefined): string {
+    return proxy ? `${proxy.username ?? ''}:${proxy.password ?? ''}@${proxy.url}` : '';
+}
+
+/** Route the browser through the same proxy as fetch(): a Cloudflare clearance
+ *  is bound to the IP that solved the challenge, so a browser exiting elsewhere
+ *  would solve for nothing. A change closes the browser and its sessions. */
+export async function setBrowserProxy(proxy: BrowserProxy | undefined): Promise<void> {
+    if (proxyKey(proxy) === proxyKey(browserProxy)) {
+        return;
+    }
+    browserProxy = proxy;
+    await closeBrowser();
+}
+
+/** puppeteer-real-browser loses the Chrome it launched whenever its CDP
+ *  connection fails, and that tree weighs ~500 MB. Nothing else in the image
+ *  runs a chrome-launcher profile: a leftover one is ours to kill. */
+function killOrphanedLaunch(): Promise<void> {
+    if (process.platform !== 'linux') {
+        return Promise.resolve();
+    }
+    return new Promise(resolve => {
+        execFile('pkill', ['-f', 'user-data-dir=/tmp/lighthouse.'], () => resolve());
+    });
+}
+
+function proxyLaunchOptions(): { flag?: string; credentials?: { username: string; password: string } } {
+    const proxy = browserProxy;
+    if (!proxy) {
+        return {};
+    }
+    const credentials =
+        proxy.username !== undefined || proxy.password !== undefined ? { username: proxy.username ?? '', password: proxy.password ?? '' } : undefined;
+    return { flag: `--proxy-server=${proxy.url}`, credentials };
+}
+
+/** A new page carrying the proxy credentials when the backend does not set
+ *  them itself (puppeteer-real-browser authenticates its own pages). */
+export async function openPage(browser: Browser): Promise<Page> {
+    const page = await browser.newPage();
+    if (pageCredentials) {
+        await page.authenticate(pageCredentials).catch(() => undefined);
+    }
+    return page;
+}
 
 function containPageSetupRejections(page: unknown): void {
     const proto = Object.getPrototypeOf(page) as {
@@ -92,18 +170,25 @@ function containPageSetupRejections(page: unknown): void {
 }
 
 async function launch(): Promise<Browser> {
+    pageCredentials = undefined;
     if (BROWSER_URL) {
         // external browser (podman/docker container with CDP): connect, never own it
+        if (browserProxy) {
+            console.warn('[browser] outbound proxy ignored: the remote browser (TANKO_BROWSER_URL) manages its own network');
+        }
         const { default: puppeteer } = await import('puppeteer-core');
         const browser = await puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null });
         activeBackend = 'remote';
         return browser;
     }
+    const { flag, credentials } = proxyLaunchOptions();
     const executablePath = detectChromium();
     if (!executablePath) {
         throw new Error('No Chromium binary found');
     }
+    await killOrphanedLaunch();
     const args = [
+        ...(flag ? [flag] : []),
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -123,23 +208,30 @@ async function launch(): Promise<Browser> {
             // Turnstile solver); typings only allow boolean
             headless: 'auto',
             customConfig: { chromePath: executablePath, chromeFlags: args },
+            ...(credentials ? { proxy: credentials } : {}), // authenticates every page it opens
             turnstile: true
         } as unknown as Parameters<typeof connect>[0]);
         containPageSetupRejections(page);
         activeBackend = 'stealth';
         return browser as unknown as Browser;
     } catch (error) {
-        // not installed (npm i --omit=optional) or launch failed
+        // not installed (npm i --omit=optional) or launch failed: its Chrome is
+        // orphaned (the connection that would own it never happened)
+        await killOrphanedLaunch();
         console.warn('[browser] puppeteer-real-browser unavailable, falling back to plain headless (Turnstile auto-solve lost):', (error as Error).message);
     }
     // dynamic import so the dependency is only loaded when actually used
     const { default: puppeteer } = await import('puppeteer-core');
+    pageCredentials = credentials;
     const browser = await puppeteer.launch({ executablePath, headless: true, args });
     activeBackend = 'headless';
     return browser;
 }
 
 export async function getBrowser(): Promise<Browser> {
+    while (closing) {
+        await closing;
+    }
     // relaunch when the previous browser process died (connected === false)
     const cached = browserPromise ? await browserPromise.catch(() => undefined) : undefined;
     if (cached?.connected) {
@@ -152,51 +244,67 @@ export async function getBrowser(): Promise<Browser> {
     return browserPromise;
 }
 
-/**
- * Render a page in a real headless Chromium and return the resulting HTML plus the
- * final URL (after any JS redirect / challenge). Waits for the network to settle so
- * client-side redirects complete.
- */
-export async function getPageHTML(url: string, options: { userAgent?: string; referer?: string; timeoutMs?: number } = {}): Promise<PageResult> {
-    const timeoutMs = options.timeoutMs ?? 30000;
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    // hide the automation fingerprint so Cloudflare/anti-bot see a normal browser
-    await page
-        .evaluateOnNewDocument(() => {
-            Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined });
-        })
-        .catch(() => undefined);
+/** One page on the shared browser for the duration of fn: the browser is
+ *  held until the page is closed, so the idle shutdown never pulls it away. */
+export async function withBrowserPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
+    const release = retainBrowser();
+    let page: Page | undefined;
     try {
-        if (options.userAgent) {
-            await page.setUserAgent(options.userAgent);
-        }
-        if (options.referer) {
-            await page.setExtraHTTPHeaders({ Referer: options.referer });
-        }
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: timeoutMs });
-        // give client-side redirects / challenge solvers a moment to run
-        await page.waitForNetworkIdle({ idleTime: 800, timeout: 5000 }).catch(() => undefined);
-        const html: string = await page.content();
-        const finalUrl: string = page.url();
-        return { html, finalUrl };
+        page = await openPage(await getBrowser());
+        return await fn(page);
     } finally {
-        await page.close().catch(() => undefined);
+        await page?.close().catch(() => undefined);
+        release();
     }
 }
 
-export async function closeBrowser(): Promise<void> {
+/**
+ * Render a page in the real Chromium and return the resulting HTML plus the
+ * final URL. The challenge (if any) is solved like a session's: the Turnstile
+ * widget is clicked and the page polled until it is no longer a shell - with
+ * the browser's own User-Agent, which the anti-bot cross-checks. Callers keep
+ * their HTTP html when this throws (a resistant challenge).
+ */
+export async function getPageHTML(url: string, timeoutMs = 30000): Promise<PageResult> {
+    const { openSolvedPage } = await import('./browser-session.js');
+    const release = retainBrowser();
+    try {
+        const page = await openSolvedPage(new URL(url).origin, url, timeoutMs);
+        try {
+            // give client-side rendering a moment to finish
+            await page.waitForNetworkIdle({ idleTime: 800, timeout: 5000 }).catch(() => undefined);
+            return { html: await page.content(), finalUrl: page.url() };
+        } finally {
+            await page.close().catch(() => undefined);
+        }
+    } finally {
+        release();
+    }
+}
+
+/** A browser that does not close must not wedge every later launch. */
+export const EXIT_TIMEOUT_MS = 10_000;
+
+/** Concurrent callers share one shutdown; the next getBrowser() relaunches. */
+export function closeBrowser(): Promise<void> {
+    if (!closing) {
+        closing = shutdown().finally(() => {
+            closing = undefined;
+        });
+    }
+    return closing;
+}
+
+async function shutdown(): Promise<void> {
     // solved-session pages hold cookies for their origin: drop them first
     const { disposeSessions } = await import('./browser-session.js');
     await disposeSessions();
-    if (browserPromise) {
-        const browser = await browserPromise.catch(() => undefined);
-        browserPromise = undefined;
-        if (BROWSER_URL) {
-            // remote browser is shared: release the connection, keep it running
-            await browser?.disconnect().catch(() => undefined);
-        } else {
-            await browser?.close().catch(() => undefined);
-        }
+    const browser = browserPromise ? await browserPromise.catch(() => undefined) : undefined;
+    browserPromise = undefined;
+    if (!browser) {
+        return;
     }
+    // a remote browser is shared: releasing the connection keeps it running
+    const closed = (BROWSER_URL ? browser.disconnect() : browser.close()).catch(() => undefined);
+    await Promise.race([closed, new Promise<void>(resolve => setTimeout(resolve, EXIT_TIMEOUT_MS).unref?.())]);
 }

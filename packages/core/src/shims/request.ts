@@ -283,7 +283,7 @@ export class HeadlessRequest {
         // returns a JS/anti-bot shell (Cloudflare, JS redirect, "Loading...")
         if (isAntiBotShell(html, response.status) && browserEnabled()) {
             try {
-                const rendered = await getPageHTML(finalUrl, { userAgent: this.userAgent, timeoutMs: Math.min(timeout, 30000) });
+                const rendered = await getPageHTML(finalUrl, Math.min(timeout, 30000));
                 if (!isAntiBotShell(rendered.html)) {
                     html = rendered.html;
                     finalUrl = rendered.finalUrl;

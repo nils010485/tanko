@@ -227,7 +227,7 @@ export async function fetchNativeText(url: string, options: NativeTextOptions): 
         return body;
     }
     if (browserEnabled()) {
-        const rendered = await getPageHTML(url, { timeoutMs: options.timeoutMs ?? 30_000 }).catch(() => undefined);
+        const rendered = await getPageHTML(url, options.timeoutMs ?? 30_000).catch(() => undefined);
         if (rendered?.html && !isAntiBotShell(rendered.html)) {
             return rendered.html;
         }

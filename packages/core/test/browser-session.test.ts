@@ -10,11 +10,12 @@ vi.mock('../src/shims/browser.js', async importOriginal => ({
     ...(await importOriginal<typeof import('../src/shims/browser.js')>()),
     browserEnabled: vi.fn(() => true),
     browserBackend: vi.fn(() => 'stealth'),
-    getBrowser: vi.fn()
+    getBrowser: vi.fn(),
+    closeBrowser: vi.fn(async () => undefined)
 }));
 
-import { browserBackend, getBrowser, isChallengeShell } from '../src/shims/browser.js';
-import { browserFetch, disposeSessions } from '../src/shims/browser-session.js';
+import { browserBackend, closeBrowser, getBrowser, isChallengeShell } from '../src/shims/browser.js';
+import { browserFetch, disposeSessions, IDLE_SHUTDOWN_MS } from '../src/shims/browser-session.js';
 
 const SHELL = '<html><head><title>Just a moment...</title></head><body>wait</body></html>';
 const REAL = `<html><head><title>Aqua</title></head><body>${'content '.repeat(500)}</body></html>`;
@@ -53,7 +54,7 @@ function makePage(script: PageScript = {}) {
         isClosed: () => false,
         mainFrame: () => mainFrame,
         browser: () => ({ connected: true }),
-        goto: async () => {
+        goto: vi.fn(async () => {
             for (const handler of handlers.get('response') ?? []) {
                 handler(
                     script.response ?? {
@@ -64,7 +65,7 @@ function makePage(script: PageScript = {}) {
                 );
             }
             return null;
-        },
+        }),
         content: async () => {
             const next = contents[Math.min(reads++, contents.length - 1)];
             if (next instanceof Error) {
@@ -125,6 +126,7 @@ beforeEach(() => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter neutral, retry pause 3500ms
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.mocked(browserBackend).mockReturnValue('stealth');
+    vi.mocked(closeBrowser).mockClear();
 });
 
 afterEach(async () => {
@@ -160,6 +162,15 @@ describe('solveOnce', () => {
         expect(page.close).not.toHaveBeenCalled(); // a navigation race is not a failure
     });
 
+    it('accepts a legitimately small root page: size alone is not a challenge', async () => {
+        const page = makePage({ contents: ['<html><head><title>Home</title></head><body><p>ok</p></body></html>'] });
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([page.page]).browser as never);
+
+        const response = await settle(browserFetch('https://small.test', 'https://small.test/x'));
+        expect(response.body).toBe('page');
+        expect(page.click).not.toHaveBeenCalled();
+    });
+
     it('refuses a fat 403 body without a cf_clearance cookie and times out honestly', async () => {
         const page = makePage({ contents: [FAT_403], navigationStatus: 403, cookies: [] });
         vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([page.page, page.page]).browser as never);
@@ -177,6 +188,78 @@ describe('solveOnce', () => {
         const response = await settle(browserFetch('https://cleared.test', 'https://cleared.test/x'));
         expect(response.body).toBe('page');
         expect(page.close).not.toHaveBeenCalled();
+    });
+    it('meets the challenge on the requested URL, not on the origin root', async () => {
+        const page = makePage({ contents: [SHELL, REAL] });
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([page.page]).browser as never);
+
+        await settle(browserFetch('https://scoped.test', 'https://scoped.test/wp-admin/admin-ajax.php'));
+        expect(page.page.goto).toHaveBeenCalledWith('https://scoped.test/wp-admin/admin-ajax.php', expect.anything());
+    });
+
+    it('refuses a URL outside the session origin before touching the browser', async () => {
+        await expect(browserFetch('https://a.test', 'https://b.test/x')).rejects.toThrow(
+            'anti-bot: cannot fetch https://b.test/x on the session of https://a.test'
+        );
+        expect(getBrowser).not.toHaveBeenCalled();
+    });
+});
+
+describe('idle shutdown', () => {
+    it('shuts the browser down once the grace delay follows the last parked session', async () => {
+        const page = makePage();
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([page.page]).browser as never);
+
+        await settle(browserFetch('https://idle.test', 'https://idle.test/x'));
+        await vi.advanceTimersByTimeAsync(31 * 60 * 1000); // session expiry
+        expect(closeBrowser).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(IDLE_SHUTDOWN_MS);
+        expect(closeBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps it while another origin still has a parked session', async () => {
+        const first = makePage();
+        const second = makePage();
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([first.page, second.page]).browser as never);
+
+        await settle(browserFetch('https://a.test', 'https://a.test/x'));
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+        await settle(browserFetch('https://b.test', 'https://b.test/x'));
+        await vi.advanceTimersByTimeAsync(25 * 60 * 1000); // a.test expired at +31min, b.test lives until +41min
+        expect(closeBrowser).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(6 * 60 * 1000 + IDLE_SHUTDOWN_MS);
+        expect(closeBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('shuts it down after a failed solve left nothing parked', async () => {
+        vi.mocked(getBrowser).mockRejectedValue(new Error('No Chromium binary found'));
+
+        await expect(settle(browserFetch('https://dead.test', 'https://dead.test/x'))).rejects.toThrow('No Chromium binary found');
+        await vi.dynamicImportSettled(); // the release hands over through a dynamic import
+        await vi.advanceTimersByTimeAsync(IDLE_SHUTDOWN_MS);
+        expect(closeBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not close under a request in flight when the grace delay ends', async () => {
+        const expired = makePage();
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([expired.page]).browser as never);
+        await settle(browserFetch('https://busy.test', 'https://busy.test/x'));
+        await vi.advanceTimersByTimeAsync(31 * 60 * 1000); // session expired, grace delay running
+
+        let reachPage!: () => void;
+        const slow = makePage({ contents: [SHELL, REAL] });
+        slow.page.goto = vi.fn(async () => {
+            await new Promise<void>(resolve => {
+                reachPage = resolve;
+            });
+        }) as never;
+        vi.mocked(getBrowser).mockResolvedValue(fakeBrowser([slow.page]).browser as never);
+        const pending = browserFetch('https://busy.test', 'https://busy.test/y');
+        await vi.advanceTimersByTimeAsync(IDLE_SHUTDOWN_MS); // the delay ends while the solve sits on goto()
+        expect(closeBrowser).not.toHaveBeenCalled();
+
+        reachPage();
+        expect(await settle(pending)).toMatchObject({ body: 'page' });
     });
 });
 

@@ -156,7 +156,7 @@ export class LegacySourceAdapter implements SourceAdapter {
                 // real browser - the health check must agree or protected
                 // sources look dead while they actually work
                 if (browserEnabled()) {
-                    const rendered = await getPageHTML(this.connector.url, { timeoutMs: 30_000 }).catch(() => undefined);
+                    const rendered = await getPageHTML(this.connector.url, 30_000).catch(() => undefined);
                     if (rendered && !isAntiBotShell(rendered.html)) {
                         renderedViaBrowser = true;
                     } else {

@@ -128,10 +128,7 @@ export async function createEngine(options: { dataDirectory: string }): Promise<
     void connectorPool?.dispose().catch(() => undefined);
     connectorPool = new ConnectorPool({
         request,
-        renderPage: (url, options) =>
-            browserEnabled()
-                ? getPageHTML(url, { userAgent: request.userAgent, timeoutMs: options.timeoutMs })
-                : Promise.reject(new Error('no browser backend'))
+        renderPage: (url, options) => (browserEnabled() ? getPageHTML(url, options.timeoutMs) : Promise.reject(new Error('no browser backend')))
     });
 
     // Intercept the legacy 'connector://' protocol used for protected media

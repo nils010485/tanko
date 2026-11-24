@@ -11,6 +11,7 @@ import http from 'node:http';
 import http2 from 'node:http2';
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
+import { type BrowserProxy, setBrowserProxy } from '@tanko/core';
 import type { ProxySettingsDto, ProxyTestResultDto } from '@tanko/shared';
 import { type Dispatcher, ProxyAgent } from 'undici';
 
@@ -364,6 +365,9 @@ async function startRelay(openTunnel: (host: string, port: number) => Promise<Du
 
 export interface ProxyRuntime {
     dispatcher: Dispatcher;
+    /** Loopback HTTP CONNECT relay carrying SOCKS5/HTTP/2: the one door the
+     *  anti-bot browser can use too (Chrome speaks CONNECT, nothing else). */
+    relayUrl?: string;
     /** Last tunnel handshake failure (SOCKS5/HTTP2), for actionable probe errors. */
     lastError?: () => string | null;
     close: () => Promise<void>;
@@ -384,6 +388,7 @@ export async function createProxyRuntime(config: ProxyConfig): Promise<ProxyRunt
     const dispatcher = new ProxyAgent({ uri: relay.url, proxyTunnel: true });
     return {
         dispatcher,
+        relayUrl: relay.url,
         lastError: relay.lastError,
         close: async () => {
             await dispatcher.close();
@@ -405,10 +410,25 @@ export async function applyProxy(settings?: Partial<ProxySettingsDto>): Promise<
         return;
     }
     // build first: a bad URL must leave the previous proxy running
-    const next = url ? { key: url, runtime: await createProxyRuntime(parseProxyUrl(url)) } : null;
+    const config = url ? parseProxyUrl(url) : undefined;
+    const next = config ? { key: url, runtime: await createProxyRuntime(config) } : null;
     const previous = active;
     active = next;
+    // the anti-bot browser must exit the same way: its clearances are bound to it
+    await setBrowserProxy(config && next ? browserEgress(config, next.runtime) : undefined);
     await previous?.runtime.close();
+}
+
+/** How Chrome reaches the proxy: it talks to HTTP(S) proxies itself (and
+ *  authenticates), but only reaches SOCKS5 and gost h2 tunnels through the
+ *  loopback CONNECT relay, which needs no credentials. */
+function browserEgress(config: ProxyConfig, runtime: ProxyRuntime): BrowserProxy {
+    if (runtime.relayUrl) {
+        return { url: runtime.relayUrl };
+    }
+    const credentials =
+        config.username === undefined && config.password === undefined ? {} : { username: config.username ?? '', password: config.password ?? '' };
+    return { url: `${config.protocol}://${authorityHost(config.host)}:${config.port}`, ...credentials };
 }
 
 /** Active proxy URL, or null when requests go out directly. */
@@ -420,9 +440,21 @@ const nativeFetch = globalThis.fetch;
 export const directFetch = nativeFetch;
 let installed = false;
 
+/** A proxy is for the outside world: loopback targets stay direct, or no
+ *  local listener is ever reachable (the anti-bot browser's own CDP endpoint
+ *  is discovered through fetch()). */
+function isLoopback(input: RequestInfo | URL): boolean {
+    try {
+        const url = new URL(input instanceof Request ? input.url : input instanceof URL ? input.href : String(input));
+        return url.hostname === 'localhost' || url.hostname === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
+    } catch {
+        return false; // not a URL: fetch() reports it, as it would have
+    }
+}
+
 /** Route every subsequent global fetch() through the active proxy: a single
- *  hook covers sources, downloads, covers, webhooks and the pack updater.
- *  (Requests issued by the embedded Chromium are not affected.) */
+ *  hook covers sources, downloads, covers, webhooks and the pack updater. The
+ *  embedded Chromium follows through setBrowserProxy(). */
 export function installProxyFetch(): void {
     if (installed) {
         return;
@@ -430,7 +462,7 @@ export function installProxyFetch(): void {
     installed = true;
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
         const dispatcher = active?.runtime.dispatcher;
-        return dispatcher ? nativeFetch(input, { ...init, dispatcher } as RequestInit) : nativeFetch(input, init);
+        return dispatcher && !isLoopback(input) ? nativeFetch(input, { ...init, dispatcher } as RequestInit) : nativeFetch(input, init);
     }) as typeof fetch;
 }
 

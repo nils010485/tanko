@@ -65,7 +65,7 @@ export class KuMangaConnector implements SourceAdapter {
             return body;
         }
         if (browserEnabled()) {
-            const rendered = await getPageHTML(url, { timeoutMs: 45_000 }).catch(() => undefined);
+            const rendered = await getPageHTML(url, 45_000).catch(() => undefined);
             if (rendered?.html && !isAntiBotShell(rendered.html)) {
                 return rendered.html;
             }

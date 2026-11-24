@@ -7,7 +7,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import net from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyProxy, installProxyFetch, parseProxyUrl } from '../src/util/proxy.js';
+import { applyProxy, createProxyRuntime, directFetch, installProxyFetch, parseProxyUrl } from '../src/util/proxy.js';
 
 // the server patches fetch() once at boot; the tests need the same hook
 installProxyFetch();
@@ -141,13 +141,32 @@ describe('SOCKS5 tunnel', () => {
         return (origin.address() as AddressInfo).port;
     };
 
+    /** The tunnel on its own: the fetch() hook keeps loopback targets direct
+     *  (a proxy never reaches the client's own loopback), so a loopback origin
+     *  must be handed to the dispatcher explicitly. */
+    const openTunnel = async (url: string) => {
+        const runtime = await createProxyRuntime(parseProxyUrl(url));
+        cleanups.push(runtime.close);
+        return runtime.dispatcher;
+    };
+
+    it('never sends a loopback target through the proxy', async () => {
+        const originPort = await startOrigin();
+        // a proxy nothing listens on: any request routed through it fails
+        await applyProxy({ enabled: true, url: 'http://127.0.0.1:9' });
+
+        expect(await (await fetch(`http://127.0.0.1:${originPort}/page`)).text()).toBe('through-the-tunnel');
+        expect(await (await fetch(new Request(`http://127.0.0.1:${originPort}/page`))).text()).toBe('through-the-tunnel');
+        await expect(fetch('http://example.invalid/')).rejects.toThrow();
+    });
+
     it('tunnels fetch() through the proxy, sending the hostname (remote DNS)', async () => {
         const originPort = await startOrigin();
         const proxy = await startSocks5Server();
         cleanups.push(proxy.close);
 
-        await applyProxy({ enabled: true, url: `socks5h://127.0.0.1:${proxy.port}` });
-        const response = await fetch(`http://127.0.0.1:${originPort}/page`);
+        const dispatcher = await openTunnel(`socks5h://127.0.0.1:${proxy.port}`);
+        const response = await directFetch(`http://127.0.0.1:${originPort}/page`, { dispatcher } as RequestInit);
 
         expect(await response.text()).toBe('through-the-tunnel');
         // the client sends the address to the proxy, which is the one dialing it
@@ -159,8 +178,8 @@ describe('SOCKS5 tunnel', () => {
         const proxy = await startSocks5Server({ username: 'bot', password: 's3cret' });
         cleanups.push(proxy.close);
 
-        await applyProxy({ enabled: true, url: `socks5://bot:s3cret@127.0.0.1:${proxy.port}` });
-        const response = await fetch(`http://127.0.0.1:${originPort}/page`);
+        const dispatcher = await openTunnel(`socks5://bot:s3cret@127.0.0.1:${proxy.port}`);
+        const response = await directFetch(`http://127.0.0.1:${originPort}/page`, { dispatcher } as RequestInit);
 
         expect(await response.text()).toBe('through-the-tunnel');
         expect(proxy.seen).toHaveLength(1);
@@ -171,8 +190,8 @@ describe('SOCKS5 tunnel', () => {
         const proxy = await startSocks5Server({ username: 'bot', password: 's3cret' });
         cleanups.push(proxy.close);
 
-        await applyProxy({ enabled: true, url: `socks5://bot:wrong@127.0.0.1:${proxy.port}` });
-        await expect(fetch(`http://127.0.0.1:${originPort}/page`)).rejects.toThrow();
+        const dispatcher = await openTunnel(`socks5://bot:wrong@127.0.0.1:${proxy.port}`);
+        await expect(directFetch(`http://127.0.0.1:${originPort}/page`, { dispatcher } as RequestInit)).rejects.toThrow();
         expect(proxy.seen).toHaveLength(0);
     });
 

@@ -50,6 +50,16 @@ function wrapBrowserResponse(response: BrowserResponse): MinimalResponse {
     };
 }
 
+/** The search ajax answering a JSON object is the strongest health proof. */
+function parsesAsObject(body: string): boolean {
+    try {
+        const json: unknown = JSON.parse(body);
+        return json !== null && typeof json === 'object';
+    } catch {
+        return false;
+    }
+}
+
 /** Madara ajax search/ajax-chapter item (wp-manga-search-manga, manga_get_chapters). */
 interface MadaraAjaxItem {
     url?: string;
@@ -551,8 +561,21 @@ export class MadaraConnector implements SourceAdapter {
     }
 
     private async _probeBrowser(startedAt: number): Promise<HealthResult> {
-        const response = await browserFetch(this.base, `${this.base}/?s=a&post_type=wp-manga`);
-        const ok = response.ok && !isAntiBotShell(response.body, response.status);
+        // same two probes as the raw path, in the same order: the ajax first -
+        // the one a challenge rule scoped to wp-admin breaks while every page
+        //  passes - then the server-rendered search page
+        const ajax = await browserFetch(
+            this.base,
+            `${this.base}/wp-admin/admin-ajax.php`,
+            toPlainInit({
+                method: 'POST',
+                headers: this._ajaxHeaders,
+                body: new URLSearchParams({ action: 'wp-manga-search-manga', title: 'a' }).toString()
+            })
+        );
+        const searched = ajax.ok && !isAntiBotShell(ajax.body, ajax.status) && parsesAsObject(ajax.body);
+        const response = searched ? ajax : await browserFetch(this.base, `${this.base}/?s=a&post_type=wp-manga`);
+        const ok = searched || (response.ok && !isAntiBotShell(response.body, response.status));
         if (ok) {
             // warm the sticky browser mode for real traffic
             this._browserUntil = Date.now() + BROWSER_SESSION_MS;
@@ -576,8 +599,7 @@ export class MadaraConnector implements SourceAdapter {
             signal: AbortSignal.timeout(20000)
         }).catch(() => undefined);
         if (ajax?.ok) {
-            const json: unknown = await ajax.json().catch(() => null);
-            if (json !== null && typeof json === 'object') {
+            if (parsesAsObject(await ajax.text().catch(() => ''))) {
                 return { result: { ok: true, latencyMs: Date.now() - startedAt }, antibot: false };
             }
             // 200 with a non-JSON body (old-WP "0"): fall through to the page probe

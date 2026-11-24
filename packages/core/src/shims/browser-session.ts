@@ -15,11 +15,23 @@
  *    once on a fresh session;
  *  - failed solves are negatively cached per origin with an exponential
  *    backoff and their last error kept: a host we cannot solve must not cost
- *    a 30s stall on every request, and the cause must stay visible.
+ *    a 30s stall on every request, and the cause must stay visible;
+ *  - once no session is parked and nothing ran for IDLE_SHUTDOWN_MS, the
+ *    browser is shut down (~800 MB of Chromium must not stay resident for days).
  */
 
 import type { Page } from 'puppeteer-core';
-import { browserBackend, browserEnabled, getBrowser, isAntiBotShell } from './browser.js';
+import {
+    browserBackend,
+    browserEnabled,
+    browserInUse,
+    closeBrowser,
+    getBrowser,
+    isAntiBotShell,
+    isChallengeShell,
+    openPage,
+    retainBrowser
+} from './browser.js';
 
 export interface BrowserResponse {
     status: number;
@@ -34,6 +46,10 @@ const SOLVE_TIMEOUT_MS = 30_000;
 const SOLVE_POLL_MS = 1000;
 /** Evicted pages stay alive this long: in-flight evaluates may still run. */
 const GRACE_CLOSE_MS = 60_000;
+/** The browser outlives its last use by this long when no session is parked:
+ *  while it lives, its context keeps the cookies, so back-to-back one-off
+ *  renders on one origin (legacy connectors) do not re-solve. */
+export const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 /** First delay of the per-origin backoff after a failed solve (no retry storm). */
 const NEGATIVE_CACHE_MS = 60 * 1000;
 /** Cap of the per-origin backoff: a blocked host is retried at this pace. */
@@ -75,8 +91,35 @@ function evict(origin: string, closeAfterMs = GRACE_CLOSE_MS): void {
         return;
     }
     sessions.delete(origin);
-    const timer = setTimeout(() => session.page.close().catch(() => undefined), closeAfterMs);
+    const timer = setTimeout(() => {
+        void session.page
+            .close()
+            .catch(() => undefined)
+            .then(reapIfIdle);
+    }, closeAfterMs);
     timer.unref?.();
+}
+
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Shut the browser down once nothing needs it: no parked session (its
+ *  clearance would be lost) and no request in flight, after a grace delay so
+ *  consecutive requests do not pay a relaunch. Every idle signal restarts the
+ *  delay; the callback re-checks. The next request relaunches, and getBrowser()
+ *  waits for a shutdown in progress. */
+export function reapIfIdle(): void {
+    clearTimeout(idleTimer);
+    idleTimer = undefined;
+    if (sessions.size !== 0 || browserInUse()) {
+        return;
+    }
+    idleTimer = setTimeout(() => {
+        idleTimer = undefined;
+        if (sessions.size === 0 && !browserInUse()) {
+            void closeBrowser().catch(() => undefined);
+        }
+    }, IDLE_SHUTDOWN_MS);
+    idleTimer.unref?.();
 }
 
 /** A dead tab crashes evaluate with one of these protocol errors. */
@@ -134,11 +177,18 @@ async function clickTurnstile(page: Page): Promise<void> {
     }
 }
 
-/** Navigate to the origin and wait until the challenge (if any) is solved. */
-async function solve(origin: string): Promise<Page> {
+/** A session never leaves its origin: a URL from another host is a caller's bug. */
+function assertSameOrigin(origin: string, url: string): void {
+    if (new URL(url).origin !== new URL(origin).origin) {
+        throw new Error(`anti-bot: cannot fetch ${url} on the session of ${origin}`);
+    }
+}
+
+/** Navigate to the challenged URL and wait until the challenge (if any) is solved. */
+async function solve(origin: string, url: string): Promise<Page> {
     for (let attempt = 0; ; attempt++) {
         try {
-            return await solveOnce(origin);
+            return await openSolvedPage(origin, url);
         } catch (error) {
             if (attempt >= 1) {
                 recordSolveFailure(origin, error);
@@ -150,9 +200,16 @@ async function solve(origin: string): Promise<Page> {
     }
 }
 
-async function solveOnce(origin: string): Promise<Page> {
+/** A page navigated to `url` once its challenge is solved - on the requested
+ *  URL itself, since a Cloudflare rule can be scoped to a path (wp-admin only)
+ *  while the origin root passes, and the clearance it earns is zone-wide. The
+ *  Turnstile widget is clicked through its iframe, the post-solve navigation
+ *  destroying the execution context is tolerated, and a 403/503 needs a
+ *  cf_clearance cookie however large its body is. The page is closed when the
+ *  challenge resists. */
+export async function openSolvedPage(origin: string, url: string, timeoutMs = SOLVE_TIMEOUT_MS): Promise<Page> {
     const browser = await getBrowser();
-    const page = await browser.newPage();
+    const page = await openPage(browser);
     /** Status of the last main-frame navigation: a 403/503 needs a clearance
      *  cookie, however large the shell body is. */
     let status: number | undefined;
@@ -163,9 +220,9 @@ async function solveOnce(origin: string): Promise<Page> {
     };
     page.on('response', onResponse);
     try {
-        await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: SOLVE_TIMEOUT_MS });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
         // poll instead of one fixed wait: Turnstile auto-solve takes ~7-9s
-        const deadline = Date.now() + SOLVE_TIMEOUT_MS;
+        const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
             let html: string | undefined;
             try {
@@ -177,7 +234,8 @@ async function solveOnce(origin: string): Promise<Page> {
                     throw error;
                 }
             }
-            if (html !== undefined && !isAntiBotShell(html)) {
+            // a legitimately small root is not a challenge: only a challenge shell keeps polling
+            if (html !== undefined && !isChallengeShell(html)) {
                 if (status !== 403 && status !== 503) {
                     return page;
                 }
@@ -190,7 +248,7 @@ async function solveOnce(origin: string): Promise<Page> {
             await clickTurnstile(page);
             await new Promise(resolve => setTimeout(resolve, SOLVE_POLL_MS));
         }
-        throw new Error(`anti-bot: challenge not solved within ${SOLVE_TIMEOUT_MS}ms on ${origin}`);
+        throw new Error(`anti-bot: challenge not solved within ${timeoutMs}ms on ${origin}`);
     } catch (error) {
         await page.close().catch(() => undefined);
         throw error;
@@ -199,13 +257,13 @@ async function solveOnce(origin: string): Promise<Page> {
     }
 }
 
-function queuedSolve(origin: string): Promise<Page> {
-    const run = solveQueue.catch(() => undefined).then(() => solve(origin));
+function queuedSolve(origin: string, url: string): Promise<Page> {
+    const run = solveQueue.catch(() => undefined).then(() => solve(origin, url));
     solveQueue = run.catch(() => undefined);
     return run;
 }
 
-async function getSession(origin: string): Promise<Page> {
+async function getSession(origin: string, url: string): Promise<Page> {
     const cached = sessions.get(origin);
     if (cached && cached.expiresAt > Date.now() && cached.page.browser().connected && !cached.page.isClosed()) {
         return cached.page;
@@ -222,7 +280,7 @@ async function getSession(origin: string): Promise<Page> {
     // dedupe concurrent solves for the same origin behind one promise
     let pending = inflight.get(origin);
     if (!pending) {
-        pending = queuedSolve(origin).then(page => {
+        pending = queuedSolve(origin, url).then(page => {
             sessions.set(origin, { page, expiresAt: Date.now() + BROWSER_SESSION_MS });
             solveFailures.delete(origin);
             // idle expiry: a session nobody revisits must not hold a tab forever
@@ -242,28 +300,34 @@ async function getSession(origin: string): Promise<Page> {
     return pending;
 }
 
-/** Run fn on the solved session, with the shared eviction policy: an early
- *  challenge (clearance expired) or a dead tab evicts the session and retries
- *  exactly once on a fresh one. */
-async function withSession<T>(origin: string, fn: (page: Page) => Promise<T>, isChallenge: (result: T) => boolean): Promise<T> {
-    let page = await getSession(origin);
-    let result: T;
+/** Run fn on the solved session (solved on `url` when there is none yet), with
+ *  the shared eviction policy: an early challenge (clearance expired) or a dead
+ *  tab evicts the session and retries exactly once on a fresh one. */
+async function withSession<T>(origin: string, url: string, fn: (page: Page) => Promise<T>, isChallenge: (result: T) => boolean): Promise<T> {
+    assertSameOrigin(origin, url);
+    const release = retainBrowser();
     try {
-        result = await fn(page);
-    } catch (error) {
-        if (!isPageDeath(error)) {
-            throw error;
+        let page = await getSession(origin, url);
+        let result: T;
+        try {
+            result = await fn(page);
+        } catch (error) {
+            if (!isPageDeath(error)) {
+                throw error;
+            }
+            evict(origin, 0); // tab already dead: no grace needed
+            page = await getSession(origin, url);
+            result = await fn(page);
         }
-        evict(origin, 0); // tab already dead: no grace needed
-        page = await getSession(origin);
-        result = await fn(page);
+        if (isChallenge(result)) {
+            // clearance expired early -> fresh session, retry exactly once
+            evict(origin);
+            result = await fn(await getSession(origin, url));
+        }
+        return result;
+    } finally {
+        release();
     }
-    if (isChallenge(result)) {
-        // clearance expired early -> fresh session, retry exactly once
-        evict(origin);
-        result = await fn(await getSession(origin));
-    }
-    return result;
 }
 
 /** Run fetch() inside the given page context (private helper). */
@@ -293,6 +357,7 @@ export async function browserFetch(
     requireBrowser();
     return withSession(
         origin,
+        url,
         page => evaluateFetch(page, url, init),
         result => (result.status === 403 || result.status === 503) && isAntiBotShell(result.body, result.status)
     );
@@ -303,6 +368,7 @@ export async function browserFetchBinary(origin: string, url: string): Promise<{
     requireBrowser();
     const result = await withSession(
         origin,
+        url,
         page =>
             page.evaluate(async requestUrl => {
                 const response = await fetch(requestUrl);
@@ -373,7 +439,7 @@ export async function browserCapturePageImages(origin: string, url: string, time
     };
     // navigate the shared session page one capture at a time; an empty
     // capture smells like an expired clearance: evict and retry once
-    const queued = captureQueue.catch(() => undefined).then(() => withSession(origin, run, images => images.length === 0));
+    const queued = captureQueue.catch(() => undefined).then(() => withSession(origin, url, run, images => images.length === 0));
     captureQueue = queued.catch(() => undefined);
     return queued;
 }

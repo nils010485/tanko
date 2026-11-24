@@ -299,7 +299,7 @@ export class ComickConnector implements SourceAdapter {
             await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
         }
         if (browserEnabled()) {
-            const rendered = await getPageHTML(url, { timeoutMs: 30_000 }).catch(() => undefined);
+            const rendered = await getPageHTML(url, 30_000).catch(() => undefined);
             if (rendered?.html && !isAntiBotShell(rendered.html)) {
                 return rendered.html;
             }

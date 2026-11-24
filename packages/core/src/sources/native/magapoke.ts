@@ -82,7 +82,7 @@ export class MagaPokeConnector implements SourceAdapter {
         let html = await this._getText(`${SITE}/series`);
         // the series grid is hydrated by Nuxt: the static shell carries no items
         if (!html.includes(SERIES_MARKER) && browserEnabled()) {
-            const rendered = await getPageHTML(`${SITE}/series`, { timeoutMs: 60_000 }).catch(() => undefined);
+            const rendered = await getPageHTML(`${SITE}/series`, 60_000).catch(() => undefined);
             if (rendered?.html) {
                 html = rendered.html;
             }

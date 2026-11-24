@@ -155,6 +155,32 @@ describe('MadaraConnector anti-bot escalation', () => {
         expect(result.error).toBeUndefined();
     });
 
+    it('checkHealth: a challenge scoped to the ajax is met there -> ok via browser', async () => {
+        fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) =>
+            init?.method === 'POST' ? challenge403() : new Response(okHtml('Madara Test - Search'), { status: 200, headers: { 'content-type': 'text/html' } })
+        );
+        vi.mocked(browserFetch).mockResolvedValue({ status: 200, ok: true, headers: {}, body: JSON.stringify({ success: true, data: [] }) });
+
+        const result = await connector().checkHealth();
+        expect(result).toMatchObject({ ok: true, via: 'browser' });
+        // the browser probe meets the challenge where it is: on the ajax
+        expect(browserFetch).toHaveBeenLastCalledWith(
+            'https://madara.test',
+            'https://madara.test/wp-admin/admin-ajax.php',
+            expect.objectContaining({ method: 'POST' })
+        );
+    });
+
+    it('checkHealth: a non-JSON ajax through the browser falls back to the search page', async () => {
+        vi.mocked(browserFetch)
+            .mockResolvedValueOnce({ status: 200, ok: true, headers: {}, body: '0' })
+            .mockResolvedValueOnce({ status: 200, ok: true, headers: {}, body: okHtml('Madara Test - Search') });
+
+        const result = await connector().checkHealth();
+        expect(result).toMatchObject({ ok: true, via: 'browser' });
+        expect(browserFetch).toHaveBeenLastCalledWith('https://madara.test', 'https://madara.test/?s=a&post_type=wp-manga');
+    });
+
     it('checkHealth: browser present but solve fails -> honest anti-bot error', async () => {
         vi.mocked(browserFetch).mockRejectedValue(new Error('anti-bot: challenge not solved within 30000ms on https://madara.test'));
         const result = await connector().checkHealth();
